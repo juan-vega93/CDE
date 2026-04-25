@@ -1,0 +1,25 @@
+{
+  "name": "cde-portal",
+  "private": true,
+  "workspaces": [
+    "apps/frontend",
+    "apps/bff"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev -w frontend",
+    "dev:bff": "npm run dev -w bff"
+  },
+  "dependencies": {
+    "@thatopen/components": "^3.4.0",
+    "@thatopen/components-front": "^3.4.0",
+    "@thatopen/fragments": "^3.4.1",
+    "@thatopen/ui": "^3.4.0",
+    "@thatopen/ui-obc": "^3.4.0",
+    "multer": "^2.1.1",
+    "three": "^0.183.2",
+    "web-ifc": "^0.0.77"
+  },
+  "devDependencies": {
+    "@types/multer": "^2.1.0"
+  }
+}

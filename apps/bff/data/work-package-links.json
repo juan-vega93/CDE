@@ -1,0 +1,149 @@
+[
+  {
+    "id": "wpl-1",
+    "documentId": "doc-wip-arq-002",
+    "documentPath": "/WIP/ARQ/Planta_Preliminar_Areas.docx",
+    "workPackageId": 1,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-23T19:25:51.402Z",
+    "updatedAt": "2026-03-23T19:25:51.402Z"
+  },
+  {
+    "id": "wpl-2",
+    "documentId": "doc-wip-arq-001",
+    "documentPath": "/WIP/ARQ/Borrador_Arquitectura_N01.pdf",
+    "workPackageId": 2,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-23T21:29:07.347Z",
+    "updatedAt": "2026-03-23T21:29:07.347Z"
+  },
+  {
+    "id": "wpl-3",
+    "documentId": "doc-shared-arq-001",
+    "documentPath": "/SHARED/ARQ/Plano_Arquitectura_N01.pdf",
+    "workPackageId": 3,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-23T21:41:33.745Z",
+    "updatedAt": "2026-03-23T21:41:33.745Z"
+  },
+  {
+    "id": "wpl-4",
+    "documentId": "doc-shared-arq-002",
+    "documentPath": "/SHARED/ARQ/Memoria_Descriptiva_Z01.docx",
+    "workPackageId": 4,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-23T22:25:39.421Z",
+    "updatedAt": "2026-03-23T22:25:39.421Z"
+  },
+  {
+    "id": "wpl-5",
+    "documentId": "doc-shared-arq-003",
+    "documentPath": "/SHARED/ARQ/Modelo_Coordinacion_IFC.ifc",
+    "workPackageId": 5,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-24T15:48:46.353Z",
+    "updatedAt": "2026-03-24T15:48:46.353Z"
+  },
+  {
+    "id": "wpl-6",
+    "documentId": "doc-archive-2025-001",
+    "documentPath": "/ARCHIVE/2025/Plano_Historico_R00.pdf",
+    "workPackageId": 6,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-24T15:52:18.399Z",
+    "updatedAt": "2026-03-24T15:52:18.399Z"
+  },
+  {
+    "id": "wpl-7",
+    "documentId": "doc-published-issued-002",
+    "documentPath": "/PUBLISHED/ISSUED/Especificacion_Tecnica_Publicada.docx",
+    "workPackageId": 42,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-24T16:01:57.725Z",
+    "updatedAt": "2026-03-24T16:01:57.725Z"
+  },
+  {
+    "id": "wpl-1774646056765",
+    "documentId": "nc-LzAzLVdJUC9BUlEvMDJfV09SSy8xMDAwMjEtSllTMDEtMDAwLVpaWi1JRkMtQVJRLUUzLTAwMDAwMS5pZmM",
+    "documentPath": "/03-WIP/ARQ/02_WORK/100021-JYS01-000-ZZZ-IFC-ARQ-E3-000001.ifc",
+    "workPackageId": 43,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-27T21:14:16.765Z",
+    "updatedAt": "2026-03-27T21:14:16.765Z"
+  },
+  {
+    "id": "wpl-1774646363335",
+    "documentId": "doc-test-002",
+    "documentPath": "/WIP/ARQ/test-002.ifc",
+    "documentName": "test-002.ifc",
+    "workPackageId": 42,
+    "projectId": 3,
+    "typeId": 13,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-27T21:19:23.335Z",
+    "updatedAt": "2026-03-27T21:19:23.335Z"
+  },
+  {
+    "id": "wpl-1774646884900",
+    "documentId": "doc-real-001",
+    "documentPath": "/03-WIP/ARQ/02_WORK/modelo.ifc",
+    "documentName": "modelo.ifc",
+    "workPackageId": 44,
+    "projectId": 3,
+    "typeId": 13,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-27T21:28:04.900Z",
+    "updatedAt": "2026-03-27T21:28:04.900Z",
+    "workPackageStatusName": "new",
+    "lastSyncedAt": "2026-03-27T21:37:00.565Z"
+  },
+  {
+    "id": "wpl-1774650148871",
+    "documentId": "nc-LzAzLVdJUC9BUlEvMDJfV09SSy8xMDAwMjEtSllTMDEtMDAwLVpaWi1JRkMtRVFNLUUzLTAwMDAwMS5pZmM",
+    "documentPath": "/03-WIP/ARQ/02_WORK/100021-JYS01-000-ZZZ-IFC-EQM-E3-000001.ifc",
+    "documentName": "100021-JYS01-000-ZZZ-IFC-EQM-E3-000001.ifc",
+    "workPackageId": 45,
+    "projectId": 3,
+    "typeId": 13,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-27T22:22:28.871Z",
+    "updatedAt": "2026-03-27T22:22:28.871Z"
+  },
+  {
+    "id": "wpl-1774969241339",
+    "documentId": "nc-L3BydWViYS9MaWJybzEueGxzeA",
+    "documentPath": "/prueba/Libro1.xlsx",
+    "documentName": "Libro1.xlsx",
+    "workPackageId": 46,
+    "projectId": 3,
+    "typeId": 13,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-31T15:00:41.339Z",
+    "updatedAt": "2026-03-31T15:00:41.339Z"
+  },
+  {
+    "id": "wpl-1774969471306",
+    "documentId": "nc-LzAzLVdJUC9CSU0vMDFfSU5QVVQvMTAwMDIxLUpZUzAxLTAwMC1aWlotSUZDLUFSUS1FMy0wMDAwMDEuaWZj",
+    "documentPath": "/03-WIP/BIM/01_INPUT/100021-JYS01-000-ZZZ-IFC-ARQ-E3-000001.ifc",
+    "documentName": "100021-JYS01-000-ZZZ-IFC-ARQ-E3-000001.ifc",
+    "workPackageId": 47,
+    "projectId": 3,
+    "typeId": 13,
+    "linkType": "review",
+    "status": "active",
+    "createdAt": "2026-03-31T15:04:31.306Z",
+    "updatedAt": "2026-03-31T15:04:31.306Z"
+  }
+]

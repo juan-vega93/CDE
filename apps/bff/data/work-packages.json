@@ -1,0 +1,109 @@
+[
+  {
+    "id": 1,
+    "subject": "Revisión de Planta_Preliminar_Areas.docx",
+    "description": "Enviar documento Planta_Preliminar_Areas.docx a revisión técnica",
+    "status": "new",
+    "assigneeId": 23,
+    "dueDate": "2026-04-05",
+    "createdAt": "2026-03-23T19:25:51.399Z"
+  },
+  {
+    "id": 2,
+    "subject": "Revisión de Borrador_Arquitectura_N01.pdf",
+    "description": "Enviar documento Borrador_Arquitectura_N01.pdf a revisión técnica",
+    "status": "new",
+    "assigneeId": 23,
+    "dueDate": "2026-04-05",
+    "createdAt": "2026-03-23T21:29:07.345Z"
+  },
+  {
+    "id": 3,
+    "subject": "Revisión de Plano_Arquitectura_N01.pdf",
+    "description": "Enviar documento Plano_Arquitectura_N01.pdf a revisión técnica",
+    "status": "new",
+    "assigneeId": 23,
+    "dueDate": "2026-04-05",
+    "createdAt": "2026-03-23T21:41:33.742Z"
+  },
+  {
+    "id": 4,
+    "subject": "Revisión de Memoria_Descriptiva_Z01.docx",
+    "description": "Enviar documento Memoria_Descriptiva_Z01.docx a revisión técnica",
+    "status": "new",
+    "assigneeId": 23,
+    "dueDate": "2026-04-05",
+    "createdAt": "2026-03-23T22:25:39.420Z"
+  },
+  {
+    "id": 5,
+    "subject": "Revisión de Modelo_Coordinacion_IFC.ifc",
+    "description": "Enviar documento Modelo_Coordinacion_IFC.ifc a revisión técnica",
+    "status": "new",
+    "assigneeId": 23,
+    "dueDate": "2026-04-05",
+    "createdAt": "2026-03-24T15:48:46.351Z"
+  },
+  {
+    "id": 6,
+    "subject": "Revisión de Plano_Historico_R00.pdf",
+    "description": "Enviar documento Plano_Historico_R00.pdf a revisión técnica",
+    "status": "new",
+    "assigneeId": 23,
+    "dueDate": "2026-04-05",
+    "createdAt": "2026-03-24T15:52:18.397Z"
+  },
+  {
+    "id": 42,
+    "subject": "Revisión de Especificacion_Tecnica_Publicada.docx",
+    "description": "Enviar documento Especificacion_Tecnica_Publicada.docx a revisión técnica",
+    "status": "new",
+    "dueDate": "2026-04-06",
+    "assigneeId": 23,
+    "createdAt": "2026-03-24T11:00:45.106Z"
+  },
+  {
+    "id": 43,
+    "subject": "Revisión de 100021-JYS01-000-ZZZ-IFC-ARQ-E3-000001.ifc",
+    "description": "Enviar documento 100021-JYS01-000-ZZZ-IFC-ARQ-E3-000001.ifc a revisión técnica",
+    "status": "new",
+    "dueDate": "2026-04-06",
+    "assigneeId": 23,
+    "createdAt": "2026-03-27T16:13:04.627Z"
+  },
+  {
+    "id": 44,
+    "subject": "Revisión modelo IFC",
+    "description": "Enviar modelo a revisión BIM",
+    "status": "new",
+    "dueDate": null,
+    "createdAt": "2026-03-27T16:26:52.801Z"
+  },
+  {
+    "id": 45,
+    "subject": "Revisión de 100021-JYS01-000-ZZZ-IFC-EQM-E3-000001.ifc",
+    "description": "Enviar documento 100021-JYS01-000-ZZZ-IFC-EQM-E3-000001.ifc a revisión técnica",
+    "status": "new",
+    "dueDate": "2026-04-06",
+    "assigneeId": 23,
+    "createdAt": "2026-03-27T17:21:16.747Z"
+  },
+  {
+    "id": 46,
+    "subject": "Revisión de Libro1.xlsx",
+    "description": "Enviar documento Libro1.xlsx a revisión técnica",
+    "status": "new",
+    "dueDate": "2026-04-06",
+    "assigneeId": 23,
+    "createdAt": "2026-03-31T09:59:29.549Z"
+  },
+  {
+    "id": 47,
+    "subject": "Revisión de 100021-JYS01-000-ZZZ-IFC-ARQ-E3-000001.ifc",
+    "description": "Enviar documento 100021-JYS01-000-ZZZ-IFC-ARQ-E3-000001.ifc a revisión técnica",
+    "status": "new",
+    "dueDate": "2026-04-06",
+    "assigneeId": 23,
+    "createdAt": "2026-03-31T10:03:19.440Z"
+  }
+]
