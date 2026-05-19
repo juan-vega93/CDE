@@ -359,10 +359,27 @@ function getDerivedFragPath(documentPath: string): string {
     ? documentPath.slice(1)
     : documentPath;
 
-  const parsed = path.posix.parse(cleanPath);
+  const parts = cleanPath.split("/").filter(Boolean);
+
+  if (parts.length < 2) {
+    const parsed = path.posix.parse(cleanPath);
+    return path.posix.join("/_derived", parsed.dir, `${parsed.name}.frag`);
+  }
+
+  const projectCode = parts[0];
+  const fileName = parts[parts.length - 1];
+  const relativeFolder = parts.slice(1, -1).join("/");
+
+  const parsed = path.posix.parse(fileName);
   const fragFileName = `${parsed.name}.frag`;
 
-  return path.posix.join("/_derived", parsed.dir, fragFileName);
+  return path.posix.join(
+    "/",
+    projectCode,
+    "_derived",
+    relativeFolder,
+    fragFileName
+  );
 }
 
 async function ensureDerivedFolderExists(filePath: string): Promise<void> {

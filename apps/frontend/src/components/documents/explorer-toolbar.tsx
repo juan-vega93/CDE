@@ -7,12 +7,16 @@ import { createFolder, uploadDocument } from "@/services/documents.service";
 
 type ExplorerToolbarProps = {
   currentPath: string;
-  parentPath: string | null;
+  parentPath: string;
+  canGoUp?: boolean;
+  projectCode?: string;
 };
 
 export function ExplorerToolbar({
   currentPath,
-  parentPath
+  parentPath,
+  canGoUp = true,
+  projectCode = ""
 }: ExplorerToolbarProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -111,12 +115,16 @@ export function ExplorerToolbar({
             {isUploading ? "Subiendo..." : "Subir archivo"}
           </button>
 
-          {parentPath ? (
+          {canGoUp && parentPath ? (
             <Link
               href={
                 parentPath === "/"
-                  ? "/documents"
-                  : `/documents?path=${encodeURIComponent(parentPath)}`
+                  ? projectCode
+                    ? `/documents?projectCode=${encodeURIComponent(projectCode)}`
+                    : "/documents"
+                  : `/documents?path=${encodeURIComponent(parentPath)}${
+                      projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
+                    }`
               }
               className="rounded-lg border px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >

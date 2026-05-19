@@ -26,7 +26,12 @@ function createMockWorkPackage(input: CreateWorkPackageInput): WorkPackage {
     status: "new",
     assigneeId: input.assigneeId,
     dueDate: input.dueDate,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    openProjectId: workPackagesStore.length + 100,
+    bcfTopicId: input.bcfTopicId,
+    snapshotUrl: input.snapshotUrl,
+    attachmentUrls: input.attachmentUrls,
+    viewpointInfo: input.viewpointInfo,
   };
 
   workPackagesStore.push(newWorkPackage);
@@ -51,8 +56,17 @@ export async function createWorkPackage(
     const exists = workPackagesStore.some((wp) => wp.id === realWorkPackage.id);
 
     if (!exists) {
-      workPackagesStore.push(realWorkPackage);
+      const enriched: WorkPackage = {
+        ...realWorkPackage,
+        openProjectId: realWorkPackage.id,
+        bcfTopicId: input.bcfTopicId,
+        snapshotUrl: input.snapshotUrl,
+        attachmentUrls: input.attachmentUrls,
+        viewpointInfo: input.viewpointInfo,
+      };
+      workPackagesStore.push(enriched);
       saveWorkPackages(workPackagesStore);
+      return enriched;
     }
 
     return realWorkPackage;
@@ -64,6 +78,31 @@ export async function createWorkPackage(
 
     return createMockWorkPackage(input);
   }
+}
+
+/**
+ * Crea un WorkPackage en OpenProject desde un BCF topic con toda la metadata.
+ */
+export async function createWorkPackageFromBcfTopic(
+  input: CreateWorkPackageInput
+): Promise<WorkPackage> {
+  const wp = await createWorkPackage(input);
+
+  // Vincular en la store local con la metadata del BCF
+  const store = readWorkPackages();
+  const idx = store.findIndex((s) => s.id === wp.id);
+  if (idx >= 0) {
+    store[idx] = {
+      ...store[idx],
+      bcfTopicId: input.bcfTopicId || store[idx].bcfTopicId,
+      snapshotUrl: input.snapshotUrl || store[idx].snapshotUrl,
+      attachmentUrls: input.attachmentUrls || store[idx].attachmentUrls,
+      viewpointInfo: input.viewpointInfo || store[idx].viewpointInfo,
+    };
+    saveWorkPackages(store);
+  }
+
+  return wp;
 }
 
 export function getWorkPackages(): WorkPackage[] {

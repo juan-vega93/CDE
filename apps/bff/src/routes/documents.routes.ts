@@ -353,6 +353,115 @@ router.put("/move", async (req, res) => {
   }
 });
 
+router.post("/bcf/:topicId/attachments", upload.single("file"), async (req, res) => {
+  try {
+    const { topicId } = req.params;
+    const file = req.file;
 
+    if (!file) {
+      return res.status(400).json({ success: false });
+    }
+
+    const path = `/_bcf/topics/${topicId}/attachments/${file.originalname}`;
+
+    const foldersToEnsure = [
+      "/_bcf",
+      `/_bcf/topics`,
+      `/_bcf/topics/${topicId}`,
+      `/_bcf/topics/${topicId}/attachments`
+    ];
+
+    for (const folderPath of foldersToEnsure) {
+      try {
+        await nextcloudAdapter.createFolder(folderPath);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        if (
+          message.includes("405") ||
+          message.includes("Method Not Allowed") ||
+          message.includes("409") ||
+          message.includes("Conflict")
+        ) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    await nextcloudAdapter.uploadFile(
+      path,
+      file.buffer,
+      file.mimetype
+    );
+
+    const publicBaseUrl = process.env.BFF_PUBLIC_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+    return res.json({
+      success: true,
+      data: {
+        name: file.originalname,
+        path,
+        url: `${publicBaseUrl}/api/documents/content?path=${encodeURIComponent(path)}`
+      }
+    });
+  } catch (error) {
+    console.error("BCF upload error:", error);
+    res.status(500).json({ success: false });
+  }
+});
+
+router.post("/bcf/:topicId/snapshot", upload.single("file"), async (req, res) => {
+  try {
+    const { topicId } = req.params;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ success: false });
+    }
+
+    const path = `/_bcf/topics/${topicId}/snapshot.png`;
+
+    const foldersToEnsure = [
+      "/_bcf",
+      "/_bcf/topics",
+      `/_bcf/topics/${topicId}`
+    ];
+
+    for (const folderPath of foldersToEnsure) {
+      try {
+        await nextcloudAdapter.createFolder(folderPath);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        if (
+          message.includes("405") ||
+          message.includes("409")
+        ) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    await nextcloudAdapter.uploadFile(
+      path,
+      file.buffer,
+      "image/png"
+    );
+
+    const publicBaseUrl = process.env.BFF_PUBLIC_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+    return res.json({
+      success: true,
+      data: {
+        url: `${publicBaseUrl}/api/documents/content?path=${encodeURIComponent(path)}`
+      }
+    });
+  } catch (error) {
+    console.error("Snapshot upload error:", error);
+    res.status(500).json({ success: false });
+  }
+});
 
 export default router;

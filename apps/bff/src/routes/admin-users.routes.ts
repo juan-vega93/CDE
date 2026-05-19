@@ -1,12 +1,8 @@
 import { Router } from "express";
-import { KeycloakAdminService } from "../services/keycloak-admin.service";
-import {OpenProjectMembersService} from "../services/openproject-members.service";
-import { NextcloudProvisioningService } from "../services/nextcloud-provisioning.service";
+import { IdentityProvisioningService } from "../services/identity-provisioning.service";
 
 const router = Router();
-const keycloakAdminService = new KeycloakAdminService();
-const openProjectMembersService = new OpenProjectMembersService();
-const nextcloudProvisioningService = new NextcloudProvisioningService();
+const identityProvisioningService = new IdentityProvisioningService();
 
 router.post("/provision", async (req, res) => {
   try {
@@ -17,58 +13,52 @@ router.post("/provision", async (req, res) => {
       username,
       password,
       groupName,
-      roleName
-    } = req.body;
+      roleName,
+      projectCode,
+      roleKey,
+      disciplineKey,
+      openProjectProjectId
+    } = req.body as {
+      email?: string;
+      firstName?: string;
+      lastName?: string;
+      username?: string;
+      password?: string;
+      groupName?: string;
+      roleName?: string;
+      projectCode?: string;
+      roleKey?: string;
+      disciplineKey?: string;
+      openProjectProjectId?: number;
+    };
 
-    if (!email || !firstName || !lastName || !username || !groupName || !roleName) {
+    const resolvedRole = roleKey || roleName;
+
+    if (!email || !firstName || !lastName || !username || !resolvedRole) {
       return res.status(400).json({
         success: false,
         message:
-          "email, firstName, lastName, username, groupName y roleName son obligatorios"
+          "email, firstName, lastName, username y roleKey/roleName son obligatorios"
       });
     }
 
-    const user = await keycloakAdminService.ensureUser({
+    const result = await identityProvisioningService.provisionUser({
       email,
       firstName,
       lastName,
       username,
-      password
-    });
-
-    const group = await keycloakAdminService.ensureGroup(groupName);
-
-    await keycloakAdminService.addUserToGroup(user.id, group.id);
-    await keycloakAdminService.assignRealmRoleToUser(user.id, roleName);
-
-    const openProjectSync = await openProjectMembersService.ensureProjectMember({
-      email,
-      firstName: firstName || "",
-      lastName: lastName || "",
-      login: email,
-      password: password || "Nc_Test_2026_X1!",
-      roleName
-    });
-
-    const nextcloudSync = await nextcloudProvisioningService.ensureUserInGroup({
-      username,
-      password: password || "Temporal123!",
-      email,
-      displayName: `${firstName} ${lastName}`.trim(),
-      groupName
+      password,
+      groupName,
+      roleName,
+      projectCode,
+      roleKey,
+      disciplineKey,
+      openProjectProjectId
     });
 
     return res.status(200).json({
       success: true,
-      data: {
-        userId: user.id,
-        email: user.email,
-        username: user.username,
-        groupName,
-        roleName,
-        openProjectSync,
-        nextcloudSync
-      }
+      data: result
     });
   } catch (error) {
     console.error("[admin-users.routes] POST /provision error:", error);

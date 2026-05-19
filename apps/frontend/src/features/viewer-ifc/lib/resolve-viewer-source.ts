@@ -87,18 +87,12 @@ export async function resolveViewerSource({
   }
 
   if (documentId) {
-    return {
-      kind: "ifc",
-      modelUrl: "/ifc/test.ifc",
-      documentPath,
-      documentName
-    };
-  }
+  throw new Error(
+    `No se pudo resolver la fuente del visor para documentId='${documentId}'.`
+  );
+}
 
-  return {
-    kind: "ifc",
-    modelUrl: "/ifc/test.ifc",
-    documentPath,
-    documentName
-  };
+throw new Error(
+  "No se pudo resolver la fuente del visor: falta documentPath, ifcUrl o documentId válido."
+);
 }

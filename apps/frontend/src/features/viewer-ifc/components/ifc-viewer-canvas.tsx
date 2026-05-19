@@ -28,11 +28,15 @@ import {
   saveViewpoints as persistViewpoints
 } from "@/services/viewpoints.service";
 import type { ViewerViewpoint } from "@/features/viewer-ifc/types/viewpoint";
+import { getBcfTopics, saveBcfTopics } from "@/services/bcf.service";
+import { createWorkPackageFromBcfTopic } from "@/services/work-packages.service";
+
 
 type IfcViewerCanvasProps = {
   sources: ViewerSource[];
   documentNames?: string[];
   documentPaths?: string[];
+  projectCode?: string;
 };
 
 type ViewerRuntime = ReturnType<typeof createWorld>;
@@ -50,14 +54,53 @@ type FederatedModelEntry = {
   modelId?: string;
 };
 type RightPanelTab = "properties" | "models" | "viewpoints" | "topics";
+type ClipperPlaneEntry = [
+  string,
+  {
+    normal?: {
+      x: number;
+      y: number;
+      z: number;
+    };
+    origin?: {
+      x: number;
+      y: number;
+      z: number;
+    };
+  }
+];
 
-function getParentFolderPath(documentPath?: string) {
-  if (!documentPath) return "/documents";
+function getParentFolderPath(documentPath?: string, projectCode?: string) {
+  const normalizedProjectCode = projectCode?.trim().toUpperCase();
+
+  if (!documentPath) {
+    return normalizedProjectCode
+      ? `/documents?projectCode=${encodeURIComponent(normalizedProjectCode)}`
+      : "/admin/project-cards";
+  }
+
   const clean = documentPath.trim();
+  const projectRootPath = normalizedProjectCode
+    ? `/${normalizedProjectCode}`
+    : "";
+
   const index = clean.lastIndexOf("/");
-  if (index <= 0) return "/documents";
-  const parent = clean.slice(0, index);
-  return `/documents?path=${encodeURIComponent(parent || "/")}`;
+
+  if (index <= 0) {
+    return normalizedProjectCode
+      ? `/documents?projectCode=${encodeURIComponent(normalizedProjectCode)}`
+      : "/documents";
+  }
+
+  const parent = clean.slice(0, index) || projectRootPath || "/";
+
+  if (normalizedProjectCode) {
+    return `/documents?projectCode=${encodeURIComponent(
+      normalizedProjectCode
+    )}&path=${encodeURIComponent(parent)}`;
+  }
+
+  return `/documents?path=${encodeURIComponent(parent)}`;
 }
 
 function cloneModelIdMap(modelIdMap: OBC.ModelIdMap): OBC.ModelIdMap {
@@ -98,7 +141,7 @@ function getDisplayNameFromSource(
 }
 
 function getSourceKey(source: ViewerSource) {
-  return source.documentPath ?? source.modelUrl;
+  return `${source.kind}:${source.documentPath ?? source.modelUrl}`.toLowerCase();
 }
 
 function ModelVisibilityButton({
@@ -284,7 +327,8 @@ function IfcModelsPanel({
 export function IfcViewerCanvas({
   sources,
   documentNames = [],
-  documentPaths = []
+  documentPaths = [],
+  projectCode = ""
 }: IfcViewerCanvasProps) {
   const { data: session } = useSession();
 
@@ -292,14 +336,34 @@ export function IfcViewerCanvas({
     session?.user?.name ||
     session?.user?.email ||
     "Usuario";   
+  
   const [newComment, setNewComment] = useState("");
+  const [pendingAnnotationText, setPendingAnnotationText] = useState<string | null>(null);
+  const [annotationInput, setAnnotationInput] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    text: string;
+    position: THREE.Vector3 | null;
+  }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    text: "",
+    position: null
+  });
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [topics, setTopics] = useState<BcfTopic[]>([]);
+  const [viewerAnnotations, setViewerAnnotations] = useState<BcfTopic["annotations"]>([]);
+  const [viewerMeasurements, setViewerMeasurements] = useState<BcfTopic["measurements"]>([]);
   const [isTopicDetailOpen, setIsTopicDetailOpen] = useState(false);
   const rendererRef = useRef<unknown>(null);
   const initialSourcesRef = useRef(sources);
   const initialDocumentNamesRef = useRef(documentNames);
   const loadedSourceKeysRef = useRef<Set<string>>(new Set());
+  const annotationModeRef = useRef(false);
+  const measurementModeRef = useRef(false);
+  const pendingAnnotationTextRef = useRef<string | null>(null);
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewerFrameRef = useRef<HTMLDivElement | null>(null);
@@ -310,6 +374,9 @@ export function IfcViewerCanvas({
   const propertiesCacheRef = useRef<Map<string, Record<string, unknown>[]>>(
     new Map()
   );
+  /** Índice estable customTopic.id <-> nativeTopic.guid */
+  const customToNativeTopicMapRef = useRef<Map<string, string>>(new Map());
+  const nativeToCustomTopicMapRef = useRef<Map<string, string>>(new Map());
   const loadedModelResultsRef = useRef<LoadedViewerModelResult[]>([]);
   const lastSectionBoxSelectionRef = useRef<OBC.ModelIdMap | null>(null);
   const lastColoredSelectionRef = useRef<OBC.ModelIdMap | null>(null);
@@ -337,14 +404,22 @@ export function IfcViewerCanvas({
   const [containmentLoading, setContainmentLoading] = useState(false);
   const [associationsLoading, setAssociationsLoading] = useState(false);
   const [models, setModels] = useState<FederatedModelEntry[]>([]);
+  const [openProjectProjectId, setOpenProjectProjectId] = useState(
+    () => process.env.NEXT_PUBLIC_OPENPROJECT_PROJECT_ID ?? "3"
+  );
 
   const primaryDocumentPath = documentPaths[0] ?? sources[0]?.documentPath;
   const primaryDocumentName = documentNames[0] ?? sources[0]?.documentName;
 
-  const backHref = useMemo(
-    () => getParentFolderPath(primaryDocumentPath),
-    [primaryDocumentPath]
-  );
+  const backHref = useMemo(() => {
+  if (primaryDocumentPath) {
+    return getParentFolderPath(primaryDocumentPath);
+  }
+
+  return projectCode
+    ? `/documents?projectCode=${encodeURIComponent(projectCode)}`
+    : "/admin/project-cards";
+}, [primaryDocumentPath, projectCode]);
 
   const titleText = useMemo(() => {
     if (documentNames.length === 1 && documentNames[0]?.trim()) {
@@ -424,8 +499,13 @@ export function IfcViewerCanvas({
     let workerUrls: string[] = [];
     let disposed = false;
     let viewport: HTMLElement | null = null;
-    let handleViewportDoubleClick: (() => void) | null = null;
+    let handleViewportDoubleClick:
+      | ((event: MouseEvent) => Promise<void>)
+      | null = null;
 
+    let handleMeasurementDelete:
+      | ((event: KeyboardEvent) => void)
+      | null = null;
     const currentSelectionTimeoutRef = selectionDataTimeoutRef;
     const currentPropertiesCacheRef = propertiesCacheRef;
     const currentLoadedModelResultsRef = loadedModelResultsRef;
@@ -486,8 +566,25 @@ export function IfcViewerCanvas({
           components,
           world
         });
+        
+        const raycaster = components.get(OBC.Raycasters).get(world);       
+                
 
         modulesRef.current = modules;
+        modules.bcfTopics.enabled = true;
+
+        await modules.bcfTopics.setup({
+          author: currentAuthor
+        });
+
+
+        handleMeasurementDelete = (event: KeyboardEvent) => {
+          if (event.code === "Delete" || event.code === "Backspace") {
+            modules.measurement?.deleteHovered();
+            requestViewerRefresh();
+          }
+        };
+        window.addEventListener("keydown", handleMeasurementDelete);
 
         modules.selection.highlighter.events.select.onHighlight.add(() => {
           const map = modules.selection.getSelectionModelIdMap();
@@ -549,13 +646,52 @@ export function IfcViewerCanvas({
           setContainmentLoading(false);
           setAssociationsLoading(false);
         });
+        
 
-        handleViewportDoubleClick = () => {
-          modules.clipper.create();
+        handleViewportDoubleClick = async (event: MouseEvent) => {
+          if (annotationModeRef.current) {
+
+            const raycaster = viewer.components.get(OBC.Raycasters).get(world);
+
+            const result = await raycaster.castRay();
+
+            const position = result?.point
+              ? result.point.clone()
+              : (() => {
+                  const target = new THREE.Vector3();
+                  camera.controls.getTarget(target);
+                  return target;
+                })();
+
+            const rect = viewport!.getBoundingClientRect();
+
+            setAnnotationInput({
+              visible: true,
+              x: event.clientX - rect.left,
+              y: event.clientY - rect.top,
+              text: "",
+              position
+            });
+
+            annotationModeRef.current = false;
+            setStatus("Escribe texto y presiona Enter");
+
+            return;
+          }
+
+          if (measurementModeRef.current) {
+            modules.measurement?.createLength();
+            requestViewerRefresh();
+            return;
+          }
+          await modules.clipper.create();
           requestViewerRefresh();
         };
 
-        viewport.addEventListener("dblclick", handleViewportDoubleClick);
+        viewport.addEventListener(
+          "dblclick",
+          handleViewportDoubleClick as unknown as EventListener
+        );
 
         if (!initialSources.length) {
           setStatus("No hay modelos para cargar");
@@ -658,6 +794,15 @@ export function IfcViewerCanvas({
 
     return () => {
       disposed = true;
+      try {
+        const modules = modulesRef.current;
+
+        if (modules?.clipper) {
+          modules.clipper.deleteAll();
+        }
+      } catch (error) {
+        console.warn("[viewer-ifc] Error limpiando clipping planes antes de dispose:", error);
+      }
       modulesRef.current = null;
       viewerRef.current = null;
       rendererRef.current = null;
@@ -689,7 +834,16 @@ export function IfcViewerCanvas({
       }
 
       if (viewport && handleViewportDoubleClick) {
-        viewport.removeEventListener("dblclick", handleViewportDoubleClick);
+        viewport.removeEventListener(
+          "dblclick",
+          handleViewportDoubleClick as unknown as EventListener
+        );
+      }
+      if (handleMeasurementDelete) {
+        window.removeEventListener(
+          "keydown",
+          handleMeasurementDelete as EventListener
+        );
       }
 
       hostElement.replaceChildren();
@@ -697,12 +851,53 @@ export function IfcViewerCanvas({
       for (const workerUrl of workerUrls) {
         URL.revokeObjectURL(workerUrl);
       }
+      
 
       if (components) {
-        components.dispose();
+        try {
+          components.dispose();
+        } catch (error) {
+          console.warn("[viewer-ifc] Error disposing components:", error);
+        }
       }
     };
   }, []);
+
+  useEffect(() => {
+    async function loadTopics() {
+      try {
+        const data = await getBcfTopics();
+        setTopics(data);
+      } catch (error) {
+        console.error("Error loading BCF topics:", error);
+      }
+    }
+
+    loadTopics();
+  }, []);
+
+  useEffect(() => {
+    if (!topics.length) return;
+
+    const timeout = setTimeout(() => {
+      const topicsForStorage = topics.map((topic) => ({
+        ...topic,
+        snapshot: null,
+        attachments: topic.attachments.map((attachment) => ({
+          ...attachment,
+          dataUrl: attachment.dataUrl.startsWith("data:")
+            ? ""
+            : attachment.dataUrl
+        }))
+      }));
+
+      saveBcfTopics(topicsForStorage).catch((error) => {
+        console.error("Error saving BCF topics:", error);
+      });
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [topics]);
 
   function requestViewerRefresh() {
     const viewer = viewerRef.current;
@@ -905,6 +1100,27 @@ async function handleIsolateModel(key: string) {
       setStatus(`${loadedEntries.length} modelo(s) agregados`);
       requestViewerRefresh();
     }
+  }
+
+  async function ensureViewpointModelsLoaded(viewpoint: ViewerViewpoint) {
+    const loadedModels = viewpoint.federated?.loadedModels ?? [];
+
+    const missing = loadedModels
+      .filter((model) => model.documentPath)
+      .filter((model) => {
+        const key = model.documentPath;
+        return key ? !loadedSourceKeysRef.current.has(key) : false;
+      })
+      .map((model) => ({
+        path: model.documentPath as string,
+        name: model.documentName ?? model.documentPath ?? "Modelo"
+      }));
+
+    if (!missing.length) return;
+
+    setStatus(`Cargando ${missing.length} modelo(s) del viewpoint...`);
+
+    await handleAddModelsIncrementally(missing);
   }
 
   async function handleApplyModelSelection(
@@ -1110,16 +1326,378 @@ async function handleIsolateModel(key: string) {
     setStatus("Vista guardada");
   }
 
+  /**
+   * Sincroniza el estado de topics[] custom con los nativeTopics del list nativo.
+   * - Crea nativeTopics para cada customTopic nuevo
+   * - Actualiza nativeTopics existentes con los datos del customTopic
+   * - Elimina nativeTopics huérfanos (que no están en topics[] custom)
+   * - Vincula el viewpoint nativo si el customTopic tiene snapshot/cámara/selección
+   * - Sincroniza comentarios sin duplicar
+   *
+   * NO inventa métodos delete/remove/clear. Si no hay método nativo para borrar,
+   * el fallback es exportar solo los nativeTopics vinculados a topics[] custom vivos.
+   */
+  function syncCustomTopicsToNative() {
+    const modules = modulesRef.current;
+    if (!modules?.bcfTopics) return;
+
+    const customIdToNativeGuid = customToNativeTopicMapRef.current;
+    const nativeGuidToCustomId = nativeToCustomTopicMapRef.current;
+    const orphanNativeGuids: string[] = [];
+    const deletedCustomIds: string[] = [];
+    const syncedFieldsLog: string[] = [];
+
+    // 1) Detectar customTopics vivos actuales
+    const aliveCustomIds = new Set(topics.map((t) => t.id));
+
+    // 2) Detectar huérfanos (nativeTopics sin custom vivo)
+    for (const [nativeGuid, customId] of nativeGuidToCustomId.entries()) {
+      if (!aliveCustomIds.has(customId)) {
+        orphanNativeGuids.push(nativeGuid);
+        deletedCustomIds.push(customId);
+      }
+    }
+
+    // 3) Limpiar índices de huérfanos (sin borrar del list nativo; lo haremos al exportar)
+    for (const nativeGuid of orphanNativeGuids) {
+      const customId = nativeGuidToCustomId.get(nativeGuid);
+      nativeGuidToCustomId.delete(nativeGuid);
+      if (customId) customIdToNativeGuid.delete(customId);
+    }
+
+    // 4) Crear o actualizar nativeTopics para cada customTopic vivo
+    for (const customTopic of topics) {
+      const existingNativeGuid = customIdToNativeGuid.get(customTopic.id);
+
+      if (existingNativeGuid) {
+        // UPDATE: sincronizar campos del custom -> native
+        const nativeTopic = modules.bcfTopics.list.get(existingNativeGuid);
+        if (nativeTopic && typeof nativeTopic.set === "function") {
+          try {
+            nativeTopic.set({
+              title: customTopic.title,
+              description: customTopic.description ?? "",
+              status: customTopic.status,
+              priority: customTopic.priority,
+              assignedTo: customTopic.assignedTo ?? "",
+              modifiedDate: new Date(customTopic.modifiedDate),
+              modifiedAuthor: currentAuthor,
+            } as Partial<OBC.BCFTopic>);
+            syncedFieldsLog.push(`updated:${customTopic.id}`);
+          } catch (e) {
+            console.warn("[syncCustomTopicsToNative] update failed:", e);
+          }
+
+          // Sincronizar comentarios nativos (sin duplicar)
+          try {
+            const nativeCommentIds = new Set<string>();
+            for (const [commentId] of nativeTopic.comments) {
+              nativeCommentIds.add(commentId);
+            }
+            for (const customComment of customTopic.comments) {
+              if (!nativeCommentIds.has(customComment.id)) {
+                nativeTopic.createComment(customComment.comment);
+                // Marcar como sincronizado para no duplicar en siguiente pasada
+                nativeCommentIds.add(customComment.id);
+              }
+            }
+          } catch (e) {
+            console.warn("[syncCustomTopicsToNative] comment sync failed:", e);
+          }
+        }
+      } else {
+        // CREATE: nuevo nativeTopic para este customTopic
+        try {
+          const nativeTopic = modules.bcfTopics.create({
+            guid: customTopic.id,
+            title: customTopic.title,
+            description: customTopic.description ?? "",
+            creationDate: new Date(customTopic.creationDate),
+            modifiedDate: new Date(customTopic.modifiedDate),
+            creationAuthor: customTopic.author ?? currentAuthor,
+            modifiedAuthor: currentAuthor,
+            priority: customTopic.priority,
+            status: customTopic.status,
+            assignedTo: customTopic.assignedTo ?? "",
+          } as OBC.BCFTopic);
+
+          // Guardar relación
+          customIdToNativeGuid.set(customTopic.id, nativeTopic.guid);
+          nativeGuidToCustomId.set(nativeTopic.guid, customTopic.id);
+          syncedFieldsLog.push(`created:${customTopic.id}`);
+
+          // Sincronizar comentarios iniciales
+          for (const customComment of customTopic.comments) {
+            try {
+              nativeTopic.createComment(customComment.comment);
+            } catch (e) {
+              console.warn("[syncCustomTopicsToNative] initial comment sync failed:", e);
+            }
+          }
+
+          // Vincular viewpoint nativo si existe
+          if (customTopic.nativeViewpointGuid && modules.viewpoints) {
+            const vp = modules.viewpoints.list.get(customTopic.nativeViewpointGuid);
+            if (vp) {
+              try {
+                nativeTopic.viewpoints.add(vp.guid);
+              } catch (e) {
+                console.warn("[syncCustomTopicsToNative] viewpoint link failed:", e);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[syncCustomTopicsToNative] create failed:", e);
+        }
+      }
+    }
+
+    // 5) Log de validación
+    console.log("[BCF sync validation]", {
+      customTopicsCount: topics.length,
+      nativeTopicsTotalCount: modules.bcfTopics.list.size,
+      nativeTopicsExportCount: topics.length, // solo los vivos
+      deletedCustomIds,
+      orphanNativeGuidsDetected: orphanNativeGuids,
+      syncedFields: syncedFieldsLog,
+    });
+  }
+
+  /**
+   * Exporta solo los nativeTopics vinculados a topics[] custom vivos.
+   * Este es el fallback obligatorio cuando no hay método nativo delete/remove.
+   */
+  function buildNativeTopicsToExport(): Iterable<OBC.Topic> {
+    const modules = modulesRef.current;
+    if (!modules?.bcfTopics) return [];
+
+    const aliveCustomIds = new Set(topics.map((t) => t.id));
+    const result: OBC.Topic[] = [];
+
+    for (const [nativeGuid, topic] of modules.bcfTopics.list) {
+      const customId = nativeToCustomTopicMapRef.current.get(nativeGuid);
+      if (customId && aliveCustomIds.has(customId)) {
+        result.push(topic);
+      }
+    }
+
+    return result;
+  }
+
+  async function handleNativeBcfExport() {
+    const modules = modulesRef.current;
+
+    if (!modules?.bcfTopics) return;
+
+    try {
+      // 1) Sincronizar antes de exportar
+      syncCustomTopicsToNative();
+
+      // 2) Construir subset: solo nativeTopics vinculados a topics[] custom vivos
+      const nativeTopicsToExport = buildNativeTopicsToExport();
+      const exportArray = Array.isArray(nativeTopicsToExport)
+        ? nativeTopicsToExport
+        : Array.from(nativeTopicsToExport);
+
+      console.log("[BCF export]", {
+        customTopicsCount: topics.length,
+        nativeTotalCount: modules.bcfTopics.list.size,
+        exportCount: exportArray.length,
+      });
+
+      // 3) Exportar solo el subset (no el list entero)
+      const exported = exportArray.length > 0
+        ? await modules.bcfTopics.export(exportArray)
+        : await modules.bcfTopics.export(); // fallback: si no hay vivos, exporta vacío
+
+      console.log("[BCF native export result]", exported);
+
+      const blob =
+        exported instanceof Blob
+          ? exported
+          : new Blob([exported as BlobPart], {
+              type: "application/octet-stream"
+            });
+
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "topics.bcfzip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      URL.revokeObjectURL(url);
+
+      setStatus("BCF exportado (sincronizado con panel custom)");
+    } catch (error) {
+      console.error("[BCF export]", error);
+      setStatus("Error exportando BCF");
+    }
+  }
+
+  function handleCreateViewerAnnotation() {
+    annotationModeRef.current = true;
+    pendingAnnotationTextRef.current = "__PENDING__";
+    setPendingAnnotationText("__PENDING__");
+    setStatus("Modo anotación activo. Haz doble clic donde quieres colocarla.");
+  }
+
+  function createAnnotationMarker(text: string, position: THREE.Vector3) {
+    const viewer = viewerRef.current;
+    const modules = modulesRef.current;
+
+    if (!viewer || !modules) return;
+
+    const element = document.createElement("div");
+    element.textContent = `📌 ${text}`;
+    element.style.background = "#1e293b";
+    element.style.color = "white";
+    element.style.padding = "4px 8px";
+    element.style.borderRadius = "6px";
+    element.style.fontSize = "12px";
+    element.style.border = "1px solid #64748b";
+    element.style.whiteSpace = "nowrap";
+
+    modules.marker.create(viewer.world, element, position);
+
+    setViewerAnnotations((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        type: "pin3d",
+        text,
+        color: selectedColor,
+        position: [position.x, position.y, position.z],
+        createdAt: new Date().toISOString(),
+        author: currentAuthor
+      }
+    ]);
+
+    setStatus("Anotación 3D agregada");
+    requestViewerRefresh();
+  }
+
+  function handleClearAnnotations() {
+    const modules = modulesRef.current;
+
+    if (!modules) return;
+
+    modules.marker.dispose();
+    setViewerAnnotations([]);
+
+    setStatus("Anotaciones eliminadas");
+    requestViewerRefresh();
+  }
   async function handleCreateTopicFromCurrentView() {
     const viewer = viewerRef.current;
     const modules = modulesRef.current;
 
     if (!viewer || !modules) return;
 
+    let nativeViewpointGuid: string | undefined;
+    let serializedPlanes: {
+      normal: [number, number, number];
+      origin: [number, number, number];
+    }[] = [];
+
+    try {
+      const nativeViewpoint = modules.viewpoints.create({
+        world: viewer.world
+      } as never);
+
+      nativeViewpointGuid = nativeViewpoint.guid;
+
+      try {
+        (nativeViewpoint as { world?: unknown }).world = viewer.world;
+      } catch {
+        // Algunas versiones no permiten asignar world directamente
+      }
+
+      if (
+        "updateCamera" in nativeViewpoint &&
+        typeof nativeViewpoint.updateCamera === "function"
+      ) {
+        await nativeViewpoint.updateCamera(true);
+      }
+
+      if (
+        "updateClippingPlanes" in nativeViewpoint &&
+        typeof nativeViewpoint.updateClippingPlanes === "function"
+      ) {
+        nativeViewpoint.updateClippingPlanes();
+
+        const rawPlanes = Array.from(modules.clipper.debugPlanes());
+
+        serializedPlanes = (rawPlanes as ClipperPlaneEntry[]).map(([, plane]) => {
+          const normal = plane.normal ?? { x: 0, y: 0, z: 1 };
+          const origin = plane.origin ?? { x: 0, y: 0, z: 0 };
+
+          return {
+            normal: [normal.x, normal.y, normal.z] as [number, number, number],
+            origin: [origin.x, origin.y, origin.z] as [number, number, number]
+          };
+        });
+
+        console.log("[BCF serialized planes]", serializedPlanes);
+        console.log("[BCF native clipping planes raw]", nativeViewpoint.clippingPlanes);
+        console.log(
+          "[BCF native clipping planes entries]",
+          Array.from(nativeViewpoint.clippingPlanes ?? [])
+        );
+      }
+
+      console.log("[BCF native viewpoint]", nativeViewpoint);
+
+      const selectionMap = modules.selection.getSelectionModelIdMap();
+
+      if (
+        Object.keys(selectionMap).length > 0 &&
+        "addComponentsFromMap" in nativeViewpoint &&
+        typeof nativeViewpoint.addComponentsFromMap === "function"
+      ) {
+        await nativeViewpoint.addComponentsFromMap(selectionMap);
+      }
+
+      if (
+        "takeSnapshot" in nativeViewpoint &&
+        typeof nativeViewpoint.takeSnapshot === "function"
+      ) {
+        await nativeViewpoint.takeSnapshot();
+      }
+    } catch (error) {
+      console.warn("[BCF] No se pudo crear viewpoint nativo:", error);
+    }
+
     const canvas = viewer.renderer?.three?.domElement ?? null;
     const snapshot = canvas
       ? await captureViewerSnapshot(canvas, requestViewerRefresh)
       : null;
+
+    const topicId = crypto.randomUUID();
+    let snapshotUrl: string | null = null;
+
+    if (snapshot) {
+      const blob = await (await fetch(snapshot)).blob();
+
+      const formData = new FormData();
+      formData.append("file", blob, "snapshot.png");
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BFF_URL}/api/documents/bcf/${topicId}/snapshot`,
+        {
+          method: "POST",
+          body: formData
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.success) {
+        snapshotUrl = result.data.url;
+      }
+    }
 
     const viewpoint = await captureViewpoint(viewer, modules, {
       loadedModels: models.map((model) => ({
@@ -1134,19 +1712,17 @@ async function handleIsolateModel(key: string) {
       sectionBoxPadding,
       snapshot,
       coloredSelection: lastColoredSelectionRef.current
-        ? Object.entries(lastColoredSelectionRef.current).map(
-            ([modelId, ids]) => ({
-              modelId,
-              expressIds: Array.from(ids)
-            })
-          )
+        ? Object.entries(lastColoredSelectionRef.current).map(([modelId, ids]) => ({
+            modelId,
+            expressIds: Array.from(ids)
+          }))
         : []
     });
 
     if (!viewpoint) return;
 
     const topic: BcfTopic = {
-      id: crypto.randomUUID(),
+      id: topicId,
       title: `Incidencia ${topics.length + 1}`,
       description: "",
       status: "open",
@@ -1156,17 +1732,77 @@ async function handleIsolateModel(key: string) {
       creationDate: new Date().toISOString(),
       modifiedDate: new Date().toISOString(),
       viewpointId: viewpoint.id,
-      snapshot: viewpoint.snapshot ?? null,
-      comments: [],      
-      attachments: []
+      nativeViewpointGuid,
+      clippingPlanes: serializedPlanes,
+      snapshot: snapshotUrl,
+      comments: [],
+      attachments: [],
+      annotations: viewerAnnotations,
+      measurements: viewerMeasurements
     };
+    try {
+      const nativeTopic = modules.bcfTopics.create({
+        guid: topic.id,
+        title: topic.title,
+        description: topic.description ?? "",
+        creationDate: new Date(topic.creationDate),
+        modifiedDate: new Date(topic.modifiedDate),
+        creationAuthor: topic.author ?? currentAuthor,
+        modifiedAuthor: currentAuthor,
+        priority: topic.priority,
+        status: topic.status
+      } as never);
+
+      console.log("[BCF native topic created]", nativeTopic);
+      console.log("[BCF native topics count]", modules.bcfTopics.list.size);
+    } catch (error) {
+      console.warn("[BCF] No se pudo crear topic nativo:", error);
+    }
 
     setViewpoints((prev) => [...prev, viewpoint]);
     setTopics((prev) => [...prev, topic]);
     setSelectedTopicId(topic.id);
     setRightPanelTab("topics");
-    console.log(topic.snapshot?.slice(0, 30));
     setStatus(`Topic creado: ${topic.title}`);
+
+    // Auto-crear WorkPackage en OpenProject con toda la data
+    try {
+      const wp = await createWorkPackageFromBcfTopic(topic);
+      setTopics((prev) =>
+        prev.map((t) =>
+          t.id === topicId
+            ? {
+                ...t,
+                openProject: {
+                  projectId: openProjectProjectId,
+                  workPackageId: wp.openProjectId,
+                  href: `/work_packages/${wp.openProjectId}`,
+                  lastSyncedAt: new Date().toISOString(),
+                  syncStatus: "synced" as const,
+                  lastError: undefined,
+                },
+              }
+            : t,
+        ),
+      );
+      setStatus(`Incidencia creada y enviada a OpenProject (WP #${wp.openProjectId})`);
+    } catch (pushError) {
+      const msg = pushError instanceof Error ? pushError.message : "Error desconocido";
+      console.warn("[WP] sync failed after create (non-blocking):", msg);
+      setTopics((prev) =>
+        prev.map((t) =>
+          t.id === topicId
+            ? {
+                ...t,
+                openProject: {
+                  syncStatus: "error" as const,
+                  lastError: msg,
+                },
+              }
+            : t,
+        ),
+      );
+    }
   }
 
   function handleDeleteTopic(topicId: string) {
@@ -1178,6 +1814,66 @@ async function handleIsolateModel(key: string) {
     }
 
     setStatus("Incidencia eliminada");
+  }
+
+  async function handlePushTopicToOpenProject(topicId: string) {
+    const topic = topics.find((t) => t.id === topicId);
+    if (!topic) return;
+
+    setStatus("Enviando a OpenProject...");
+
+    try {
+      const wp = await createWorkPackageFromBcfTopic(topic);
+
+      if (!wp.openProjectId) {
+        throw new Error("OpenProject no devolvió un ID de Work Package");
+      }
+
+      const workPackageId = String(wp.openProjectId);
+
+      setTopics((prev) =>
+        prev.map((t) =>
+          t.id === topicId
+            ? {
+                ...t,
+                modifiedDate: new Date().toISOString(),
+                openProject: {
+                  ...t.openProject,
+                  projectId: openProjectProjectId,
+                  workPackageId,
+                  href: `/work_packages/${workPackageId}`,
+                  lastSyncedAt: new Date().toISOString(),
+                  syncStatus: "synced",
+                  lastError: undefined
+                }
+              }
+            : t
+        )
+      );
+
+      setStatus(`Incidencia enviada a OpenProject (WP #${workPackageId})`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error desconocido";
+
+      console.error("[OpenProject] Error enviando topic:", message);
+
+      setTopics((prev) =>
+        prev.map((t) =>
+          t.id === topicId
+            ? {
+                ...t,
+                openProject: {
+                  ...t.openProject,
+                  syncStatus: "error",
+                  lastError: message
+                }
+              }
+            : t
+        )
+      );
+
+      setStatus(`Error enviando a OpenProject: ${message}`);
+    }
   }
 
   function handleUpdateTopic(
@@ -1224,13 +1920,26 @@ async function handleIsolateModel(key: string) {
       )
     );
   }
-  function handleAddTopicAttachment(topicId: string, file: File) {
-    const reader = new FileReader();
+  async function handleAddTopicAttachment(topicId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
 
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BFF_URL}/api/documents/bcf/${topicId}/attachments`,
+        {
+          method: "POST",
+          body: formData
+        }
+      );
 
-      if (!dataUrl) return;
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error("Upload failed");
+      }
+
+      const attachment = result.data;
 
       setTopics((prev) =>
         prev.map((topic) =>
@@ -1241,10 +1950,10 @@ async function handleIsolateModel(key: string) {
                   ...topic.attachments,
                   {
                     id: crypto.randomUUID(),
-                    name: file.name,
-                    type: file.type || "application/octet-stream",
+                    name: attachment.name,
+                    type: file.type,
                     size: file.size,
-                    dataUrl,
+                    dataUrl: attachment.url, // 🔥 ahora URL real
                     createdAt: new Date().toISOString()
                   }
                 ],
@@ -1253,24 +1962,121 @@ async function handleIsolateModel(key: string) {
             : topic
         )
       );
-    };
-
-    reader.readAsDataURL(file);
+    } catch (error) {
+      console.error("Error uploading attachment:", error);
+    }
   }
+  function handleAddTopicAnnotation(topicId: string, text: string) {
+    if (!text.trim()) return;
 
+    const viewer = viewerRef.current;
+    const controls = viewer?.camera.controls;
+
+    const target = new THREE.Vector3();
+
+    if (controls) {
+      controls.getTarget(target);
+    }
+
+    setTopics((prev) =>
+      prev.map((topic) =>
+        topic.id === topicId
+          ? {
+              ...topic,
+              annotations: [
+                ...topic.annotations,
+                {
+                  id: crypto.randomUUID(),
+                  type: "pin3d",
+                  text: text.trim(),
+                  color: selectedColor,
+                  position: [target.x, target.y, target.z],
+                  createdAt: new Date().toISOString(),
+                  author: currentAuthor
+                }
+              ],
+              modifiedDate: new Date().toISOString()
+            }
+          : topic
+      )
+    );
+  }
   async function handleApplyViewpoint(viewpoint: ViewerViewpoint) {
     const viewer = viewerRef.current;
     const modules = modulesRef.current;
 
     if (!viewer || !modules) return;
-    //  LIMPIAR ESTADOS VISUALES PREVIOS
-    // limpiar estados visuales previos antes de aplicar el viewpoint
+
+    await ensureViewpointModelsLoaded(viewpoint);
+    const linkedTopicForClipping = topics.find(
+      (topic) => topic.viewpointId === viewpoint.id
+    );
+
+    if (linkedTopicForClipping?.clippingPlanes?.length && modules.clipper) {
+      modules.clipper.deleteAll();
+
+      for (const planeState of linkedTopicForClipping.clippingPlanes) {
+        await modules.clipper.createFromState(planeState);
+      }
+    }
+
+    // 1) Intentar aplicar viewpoint nativo ThatOpen
+    const linkedTopic = topics.find((topic) => topic.viewpointId === viewpoint.id);
+
+    if (linkedTopic?.nativeViewpointGuid && modules.viewpoints) {
+      try {
+        const nativeVp = modules.viewpoints.list.get(linkedTopic.nativeViewpointGuid);
+        try {
+          (nativeVp as { world?: unknown }).world = viewer.world;
+        } catch {
+          // Algunas versiones no permiten asignar world directamente
+        }
+
+        if (nativeVp && typeof nativeVp.go === "function") {
+          try {
+            if ("setClippingState" in nativeVp && typeof nativeVp.setClippingState === "function") {
+              nativeVp.setClippingState(true);
+            }
+
+            if ("setClippingVisibility" in nativeVp && typeof nativeVp.setClippingVisibility === "function") {
+              nativeVp.setClippingVisibility(true);
+            }
+          } catch (error) {
+            console.warn("[BCF] error enabling native clipping:", error);
+          }
+
+          await nativeVp.go({
+            transition: true,
+            applyClippings: false,
+            clippingsVisibility: true,
+            applyVisibility: true
+          });
+
+          if (viewpoint.display?.selectedColor) {
+            setSelectedColor(viewpoint.display.selectedColor);
+          }
+
+          if (typeof viewpoint.display?.sectionBoxPadding === "number") {
+            setSectionBoxPadding(viewpoint.display.sectionBoxPadding);
+          }
+
+          setStatus(`Viewpoint aplicado: ${viewpoint.name}`);
+          requestViewerRefresh();
+          return;
+        }
+      } catch (error) {
+        console.warn("[BCF] error applying native viewpoint:", error);
+      }
+    }
+
+    // 2) Fallback: aplicar nuestro viewpoint custom
     await modules.visibility.showAll();
     await modules.selection.clearSelection();
 
     if (modules.coloring) {
       await modules.coloring.restoreAllColors();
     }
+
     await applyViewpoint(viewer, modules, viewpoint, {
       applyModelsState: async (modelsState) => {
         setModels((prev) =>
@@ -1282,9 +2088,7 @@ async function handleIsolateModel(key: string) {
                 item.documentPath === model.source.documentPath
             );
 
-            if (!match) {
-              return model;
-            }
+            if (!match) return model;
 
             model.object.visible = match.visible;
 
@@ -1299,7 +2103,7 @@ async function handleIsolateModel(key: string) {
         requestViewerRefresh();
       }
     });
-    // reaplicar color guardado
+
     if (viewpoint.coloring?.selection && viewpoint.coloring.color && modules.coloring) {
       const coloredSelectionMap: OBC.ModelIdMap = {};
 
@@ -1320,6 +2124,7 @@ async function handleIsolateModel(key: string) {
     if (typeof viewpoint.display?.sectionBoxPadding === "number") {
       setSectionBoxPadding(viewpoint.display.sectionBoxPadding);
     }
+
     setStatus(`Viewpoint aplicado: ${viewpoint.name}`);
     requestViewerRefresh();
   }
@@ -1502,6 +2307,20 @@ async function handleIsolateModel(key: string) {
     }
   }
 
+  function handleClearMeasurements() {
+    const modules = modulesRef.current;
+
+    if (!modules?.measurement) return;
+    modules.measurement.cancel();
+    measurementModeRef.current = false;
+    modules.measurement.deleteAll();
+
+    setViewerMeasurements([]);
+
+    setStatus("Mediciones eliminadas");
+    requestViewerRefresh();
+  }
+
   async function handleSectionBoxPaddingChange(value: number) {
     setSectionBoxPadding(value);
 
@@ -1550,7 +2369,7 @@ async function handleIsolateModel(key: string) {
       </div>
 
       <div className="shrink-0">
-        <IfcViewerToolbar
+        <IfcViewerToolbar        
           onIsolateSelection={handleIsolateSelection}
           onToggleSelection={handleToggleSelection}
           onShowAll={handleShowAll}
@@ -1558,6 +2377,26 @@ async function handleIsolateModel(key: string) {
           onFocusSelection={handleFocusSelection}
           onResetView={handleResetView}
           onSaveViewpoint={handleSaveViewpoint}
+          onCreateAnnotation={handleCreateViewerAnnotation}
+          onClearAnnotations={handleClearAnnotations}
+
+          onCreateMeasurement={async () => {
+            const modules = modulesRef.current;
+
+            if (!modules?.measurement) return;
+
+            modules.measurement.cancel();
+            modules.measurement.startLength();
+            measurementModeRef.current = true;
+
+            setStatus("Modo medición activo");
+            requestViewerRefresh();
+          }}
+          onClearMeasurements={handleClearMeasurements}
+
+          onCreateRevisionCloud={() => {
+            console.log("[coordination] create revision cloud");
+          }}
           onToggleClipper={handleToggleClipper}
           onDeleteClippingPlanes={handleDeleteClippingPlanes}
           onCreateSelectionSectionBox={handleCreateSelectionSectionBox}
@@ -1580,6 +2419,13 @@ async function handleIsolateModel(key: string) {
         >
           Crear incidencia
         </button>
+        <button
+          type="button"
+          onClick={handleNativeBcfExport}
+          className="h-9 border border-zinc-300 bg-white px-3 text-sm text-zinc-700 hover:bg-zinc-50"
+        >
+          Exportar BCF Native
+        </button>
       </div>
 
       <div className="flex min-h-0 flex-1 items-stretch gap-1 overflow-hidden px-1 pb-1">
@@ -1590,6 +2436,63 @@ async function handleIsolateModel(key: string) {
               className="h-full w-full overflow-hidden bg-gray-950"
               style={{ position: "relative", zIndex: 0 }}
             />
+            {annotationInput.visible && (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: annotationInput.x,
+                    top: annotationInput.y,
+                    zIndex: 50,
+                    transform: "translate(-50%, -120%)"
+                  }}
+                >
+                  <input
+                    autoFocus
+                    value={annotationInput.text}
+                    onChange={(e) =>
+                      setAnnotationInput((prev) => ({
+                        ...prev,
+                        text: e.target.value
+                      }))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        if (
+                          annotationInput.text.trim() &&
+                          annotationInput.position
+                        ) {
+                          createAnnotationMarker(
+                            annotationInput.text.trim(),
+                            annotationInput.position
+                          );
+                        }
+
+                        setAnnotationInput({
+                          visible: false,
+                          x: 0,
+                          y: 0,
+                          text: "",
+                          position: null
+                        });
+                      }
+
+                      if (e.key === "Escape") {
+                        setAnnotationInput({
+                          visible: false,
+                          x: 0,
+                          y: 0,
+                          text: "",
+                          position: null
+                        });
+
+                        setStatus("Anotación cancelada");
+                      }
+                    }}
+                    placeholder="Escribe anotación..."
+                    className="h-10 w-64 rounded-lg border border-slate-600 bg-slate-950 px-3 text-sm text-white shadow-2xl outline-none"
+                  />
+                </div>
+              )}              
           </div>
         </div>
 
@@ -1747,6 +2650,18 @@ async function handleIsolateModel(key: string) {
 
                   if (!selectedTopic) return null;
 
+                  function getAttachmentIcon(name: string) {
+                    const ext = name.toLowerCase();
+
+                    if (ext.endsWith(".pdf")) return "📄";
+                    if (ext.endsWith(".doc") || ext.endsWith(".docx")) return "📝";
+                    if (ext.endsWith(".xls") || ext.endsWith(".xlsx")) return "📊";
+                    if (ext.match(/\.(png|jpg|jpeg|webp)$/)) return "🖼️";
+                    if (ext.match(/\.(zip|rar)$/)) return "🗜️";
+
+                    return "📎";
+                  }
+
                   return (
                     <div className="border-t border-zinc-300 bg-zinc-50 px-3 py-3">
                       <button
@@ -1778,6 +2693,12 @@ async function handleIsolateModel(key: string) {
                         <span className="font-medium">Autor:</span>{" "}
                         {selectedTopic.author || "Sin autor"}
                       </div>
+                      {selectedTopic.nativeViewpointGuid ? (
+                        <div className="mb-2 text-xs text-zinc-500">
+                          <span className="font-medium">Viewpoint BCF:</span>{" "}
+                          {selectedTopic.nativeViewpointGuid}
+                        </div>
+                      ) : null}
 
                       <label className="mb-2 block text-xs font-medium text-zinc-600">
                         Asignado a
@@ -1841,6 +2762,46 @@ async function handleIsolateModel(key: string) {
                           className="mt-1 min-h-24 w-full border border-zinc-300 px-2 py-2 text-sm"
                         />
                       </label>
+
+                      <div className="mt-2 border-t border-zinc-200 pt-2">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="text-xs font-medium text-zinc-600">
+                            OpenProject:
+                          </span>
+                          {selectedTopic.openProject?.syncStatus === "synced" ? (
+                            <span className="text-xs text-green-600 font-medium">
+                              ✓ Sincronizado
+                            </span>
+                          ) : selectedTopic.openProject?.syncStatus === "error" ? (
+                            <span className="text-xs text-red-600">
+                              ✗ Error: {selectedTopic.openProject.lastError ?? "Desconocido"}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-zinc-500">
+                              No sincronizado
+                            </span>
+                          )}
+                        </div>
+                        {selectedTopic.openProject?.workPackageId && (
+                          <div className="mb-2 text-xs text-zinc-500">
+                            <span className="font-medium">Work Package:</span>{" "}
+                            #{selectedTopic.openProject.workPackageId}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handlePushTopicToOpenProject(selectedTopic.id);
+                          }}
+                          className="h-8 border border-blue-300 bg-white px-3 text-xs text-blue-700 hover:bg-blue-50"
+                        >
+                          {selectedTopic.openProject?.workPackageId
+                            ? "Actualizar en OpenProject"
+                            : "Enviar a OpenProject"}
+                        </button>
+                      </div>
+
                       <div className="mt-4">
                         <h5 className="mb-2 text-xs font-semibold text-zinc-700">
                           Comentarios
@@ -1883,6 +2844,49 @@ async function handleIsolateModel(key: string) {
                         >
                           Agregar comentario
                         </button>
+                      </div>
+                      <div className="mt-4">
+                        <h5 className="mb-2 text-xs font-semibold text-zinc-700">
+                          Adjuntos
+                        </h5>
+
+                        {selectedTopic.attachments.length === 0 ? (
+                          <div className="mb-2 text-xs text-zinc-500">
+                            No hay adjuntos.
+                          </div>
+                        ) : (
+                          <div className="mb-2 flex flex-col gap-2">
+                            {selectedTopic.attachments.map((attachment) => (
+                              <a
+                                key={attachment.id}
+                                href={attachment.dataUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="rounded border border-zinc-300 bg-white p-2 text-xs hover:bg-zinc-50"
+                              >
+                                <span className="flex items-center gap-2">
+                                  <span>{getAttachmentIcon(attachment.name)}</span>
+                                  <span>{attachment.name}</span>
+                                </span>
+                              </a>
+                            ))}
+                          </div>
+                        )}
+
+                        <label className="inline-flex h-8 cursor-pointer items-center border border-zinc-300 bg-white px-3 text-xs hover:bg-zinc-50">
+                          Adjuntar archivo
+                          <input
+                            type="file"
+                            className="hidden"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (!file) return;
+
+                              handleAddTopicAttachment(selectedTopic.id, file);
+                              event.target.value = "";
+                            }}
+                          />
+                        </label>
                       </div>
                     </div>
                   );
@@ -1941,6 +2945,7 @@ async function handleIsolateModel(key: string) {
       <IfcModelSelector
         isOpen={isModelSelectorOpen}
         initialSelectedPaths={documentPaths}
+        projectCode={projectCode}
         onClose={handleCloseModelSelector}
         onApply={handleApplyModelSelection}
       />

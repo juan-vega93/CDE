@@ -1,0 +1,257 @@
+[
+  {
+    "id": "member_1778796140712_6c3e9b8d2a1a2",
+    "projectCode": "TESTCDE01",
+    "email": "test.viewer.testcde01@typsa.es",
+    "username": "test.viewer.testcde01",
+    "firstName": "Test",
+    "lastName": "Viewer TESTCDE01",
+    "roleKey": "viewer",
+    "disciplineKey": "ARQ",
+    "status": "inactive",
+    "sync": {
+      "keycloak": {
+        "synced": true,
+        "groupName": "TESTCDE01_VIEWER",
+        "realmRole": "viewer"
+      },
+      "nextcloud": {
+        "synced": true,
+        "groupNames": [
+          "TESTCDE01_VIEWER",
+          "TESTCDE01_ARQ"
+        ]
+      },
+      "openProject": {
+        "synced": true,
+        "projectId": 3,
+        "roleKey": "viewer",
+        "createdUser": false
+      },
+      "cleanup": {
+        "keycloakRemovedGroups": [
+          "TESTCDE01_BIM_MANAGER",
+          "TESTCDE01_BIM_COORDINATOR",
+          "TESTCDE01_DISCIPLINE_LEAD",
+          "TESTCDE01_DOC_CONTROLLER",
+          "TESTCDE01_VIEWER",
+          "TESTCDE01_ARQ"
+        ],
+        "nextcloudRemovedGroups": [
+          "TESTCDE01_BIM_MANAGER",
+          "TESTCDE01_BIM_COORDINATOR",
+          "TESTCDE01_DISCIPLINE_LEAD",
+          "TESTCDE01_DOC_CONTROLLER",
+          "TESTCDE01_VIEWER",
+          "TESTCDE01_ARQ"
+        ]
+      },
+      "lastSyncedAt": "2026-05-14T23:04:01.211Z"
+    },
+    "createdAt": "2026-05-14T22:02:20.711Z",
+    "updatedAt": "2026-05-14T23:04:01.211Z"
+  },
+  {
+    "id": "member_1778801604771_6e67f9b73330a",
+    "projectCode": "TESTCDE01",
+    "email": "test.deleteop2.testcde01@typsa.es",
+    "username": "test.deleteop2.testcde01",
+    "firstName": "Test",
+    "lastName": "Delete OP2",
+    "roleKey": "viewer",
+    "disciplineKey": "ARQ",
+    "status": "inactive",
+    "sync": {
+      "keycloak": {
+        "synced": true,
+        "groupName": "TESTCDE01_VIEWER",
+        "realmRole": "viewer"
+      },
+      "nextcloud": {
+        "synced": true,
+        "groupNames": [
+          "TESTCDE01_VIEWER",
+          "TESTCDE01_ARQ"
+        ]
+      },
+      "openProject": {
+        "synced": true,
+        "projectId": 3,
+        "removed": true,
+        "membershipId": 21,
+        "userId": 24
+      },
+      "lastSyncedAt": "2026-05-14T23:36:35.854Z",
+      "cleanup": {
+        "keycloakRemovedGroups": [
+          "TESTCDE01_BIM_MANAGER",
+          "TESTCDE01_BIM_COORDINATOR",
+          "TESTCDE01_DISCIPLINE_LEAD",
+          "TESTCDE01_DOC_CONTROLLER",
+          "TESTCDE01_VIEWER",
+          "TESTCDE01_ARQ"
+        ],
+        "nextcloudRemovedGroups": [
+          "TESTCDE01_BIM_MANAGER",
+          "TESTCDE01_BIM_COORDINATOR",
+          "TESTCDE01_DISCIPLINE_LEAD",
+          "TESTCDE01_DOC_CONTROLLER",
+          "TESTCDE01_VIEWER",
+          "TESTCDE01_ARQ"
+        ]
+      }
+    },
+    "createdAt": "2026-05-14T23:33:24.769Z",
+    "updatedAt": "2026-05-14T23:36:35.854Z"
+  },
+  {
+    "id": "member_1778864488314_f58339dbd833b",
+    "projectCode": "AR3173",
+    "email": "jjvegam@uni.pe",
+    "username": "jjvegam",
+    "firstName": "JUAN JESUS",
+    "lastName": "VEGA MORE",
+    "roleKey": "viewer",
+    "disciplineKey": "ARQ",
+    "status": "active",
+    "sync": {
+      "keycloak": {
+        "synced": true,
+        "groupName": "AR3173_VIEWER",
+        "realmRole": "viewer"
+      },
+      "nextcloud": {
+        "synced": true,
+        "groupNames": [
+          "AR3173_VIEWER",
+          "AR3173_ARQ"
+        ]
+      },
+      "openProject": {
+        "synced": true,
+        "projectId": 3,
+        "roleKey": "viewer",
+        "createdUser": false
+      },
+      "lastSyncedAt": "2026-05-15T17:01:28.312Z"
+    },
+    "createdAt": "2026-05-15T17:01:28.312Z",
+    "updatedAt": "2026-05-15T17:01:28.312Z"
+  },
+  {
+    "id": "member_1778865897064_ed4f8e3adda38",
+    "projectCode": "AR3173",
+    "email": "jjvm13nsg@gmail.com",
+    "username": "jvega",
+    "firstName": "juan",
+    "lastName": "vega",
+    "roleKey": "bim-coordinator",
+    "disciplineKey": "EST",
+    "status": "active",
+    "sync": {
+      "keycloak": {
+        "synced": true,
+        "groupName": "AR3173_BIM_COORDINATOR",
+        "realmRole": "bim-coordinator"
+      },
+      "nextcloud": {
+        "synced": true,
+        "groupNames": [
+          "AR3173_BIM_COORDINATOR",
+          "AR3173_EST"
+        ]
+      },
+      "openProject": {
+        "synced": true,
+        "projectId": 3,
+        "roleKey": "bim-coordinator",
+        "createdUser": false
+      },
+      "cleanup": {
+        "keycloakRemovedGroups": [
+          "AR3173_BIM_MANAGER",
+          "AR3173_DISCIPLINE_LEAD",
+          "AR3173_DOC_CONTROLLER",
+          "AR3173_VIEWER"
+        ],
+        "nextcloudRemovedGroups": [
+          "AR3173_BIM_MANAGER",
+          "AR3173_DISCIPLINE_LEAD",
+          "AR3173_DOC_CONTROLLER",
+          "AR3173_VIEWER"
+        ]
+      },
+      "lastSyncedAt": "2026-05-15T17:28:14.587Z"
+    },
+    "createdAt": "2026-05-15T17:24:57.062Z",
+    "updatedAt": "2026-05-15T17:28:14.587Z"
+  },
+  {
+    "id": "member_1778873764183_aab36d64ffadb",
+    "projectCode": "AR3173",
+    "email": "vega.72916mbim@uprit.edu.pe",
+    "username": "veg",
+    "firstName": "JUAN JESUS",
+    "lastName": "VEGA MORE",
+    "roleKey": "viewer",
+    "disciplineKey": "ARQ",
+    "status": "active",
+    "sync": {
+      "keycloak": {
+        "synced": true,
+        "groupName": "AR3173_VIEWER",
+        "realmRole": "viewer"
+      },
+      "nextcloud": {
+        "synced": true,
+        "groupNames": [
+          "AR3173_VIEWER",
+          "AR3173_ARQ"
+        ]
+      },
+      "openProject": {
+        "synced": true,
+        "projectId": 3,
+        "roleKey": "viewer",
+        "createdUser": true
+      },
+      "lastSyncedAt": "2026-05-15T19:36:04.182Z"
+    },
+    "createdAt": "2026-05-15T19:36:04.182Z",
+    "updatedAt": "2026-05-15T19:36:04.182Z"
+  },
+  {
+    "id": "member_1779125287404_24c3555f57fda",
+    "projectCode": "HY9578",
+    "email": "jjvegam@uni.pe",
+    "username": "jjvegam",
+    "firstName": "juan",
+    "lastName": "VEGA MORE",
+    "roleKey": "bim-manager",
+    "disciplineKey": "ARQ",
+    "status": "active",
+    "sync": {
+      "keycloak": {
+        "synced": true,
+        "groupName": "HY9578_BIM_MANAGER",
+        "realmRole": "bim-manager"
+      },
+      "nextcloud": {
+        "synced": true,
+        "groupNames": [
+          "HY9578_BIM_MANAGER",
+          "HY9578_ARQ"
+        ]
+      },
+      "openProject": {
+        "synced": true,
+        "projectId": 13,
+        "roleKey": "bim-manager",
+        "createdUser": true
+      },
+      "lastSyncedAt": "2026-05-18T17:28:07.403Z"
+    },
+    "createdAt": "2026-05-18T17:28:07.403Z",
+    "updatedAt": "2026-05-18T17:28:07.403Z"
+  }
+]

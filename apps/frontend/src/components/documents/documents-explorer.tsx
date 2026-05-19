@@ -15,6 +15,7 @@ import type { ExplorerRow, DocumentUiStatus } from "@/types/documents";
 type DocumentsExplorerProps = {
   rows: ExplorerRow[];
   currentPath: string;
+  projectCode?: string;
 };
 
 function formatBytes(bytes?: number): string {
@@ -106,7 +107,8 @@ function getRowIcon(kind: ExplorerRow["kind"], extension?: string): string {
 
 export function DocumentsExplorer({
   rows,
-  currentPath
+  currentPath,
+  projectCode = ""
 }: DocumentsExplorerProps) {
   const router = useRouter();
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
@@ -330,7 +332,9 @@ export function DocumentsExplorer({
                     <td className="border-b px-4 py-3">
                       <div className="flex items-center justify-between gap-3">
                         <Link
-                          href={`/documents?path=${encodeURIComponent(row.path)}`}
+                          href={`/documents?path=${encodeURIComponent(row.path)}${
+                            projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
+                          }`}
                           className="flex items-center gap-2 font-medium text-blue-700 hover:underline"
                         >
                           <span>{getRowIcon("folder")}</span>
@@ -380,9 +384,9 @@ export function DocumentsExplorer({
                   <td className="border-b px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <Link
-                        href={`/documents/${row.id}?path=${encodeURIComponent(
-                          currentPath
-                        )}`}
+                        href={`/documents/${row.id}?path=${encodeURIComponent(currentPath)}${
+                          projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
+                        }`}
                         className="flex items-center gap-2 font-medium text-blue-700 hover:underline"
                       >
                         <span>{getRowIcon("document", row.extension)}</span>

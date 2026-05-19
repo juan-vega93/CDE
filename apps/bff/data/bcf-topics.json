@@ -1,0 +1,28 @@
+[
+  {
+    "id": "a305694d-6f31-41a9-a4cb-8a65983e25c5",
+    "title": "Incidencia 1",
+    "description": "",
+    "status": "open",
+    "priority": "medium",
+    "author": "Juan Vega More",
+    "assignedTo": "",
+    "creationDate": "2026-05-18T21:08:56.031Z",
+    "modifiedDate": "2026-05-18T21:08:56.031Z",
+    "viewpointId": "8217926e-500f-46ee-88ad-dd1ad864bf45",
+    "nativeViewpointGuid": "7d7ce5b4-5d58-439b-9a78-a77b98f61d95",
+    "clippingPlanes": [],
+    "snapshot": null,
+    "comments": [],
+    "attachments": [],
+    "annotations": [],
+    "measurements": [],
+    "openProject": {
+      "projectId": "3",
+      "workPackageId": 113,
+      "href": "/work_packages/113",
+      "lastSyncedAt": "2026-05-18T21:08:56.124Z",
+      "syncStatus": "synced"
+    }
+  }
+]

@@ -98,16 +98,41 @@ export class OpenProjectAdapter {
       `${input.subject} ${input.description}`
     );
 
-    const body = {
+    // Construir descripción enriquecida con toda la data
+    let descriptionRaw = input.description || "";
+
+    // Agregar metadata del BCF topic
+    const metaLines: string[] = [];
+    if (input.status) metaLines.push(`Estado BCF: ${input.status}`);
+    if (input.priority) metaLines.push(`Prioridad BCF: ${input.priority}`);
+    if (input.author) metaLines.push(`Autor: ${input.author}`);
+    if (input.assignedTo) metaLines.push(`Asignado a: ${input.assignedTo}`);
+    if (input.bcfTopicId) metaLines.push(`ID Topic BCF: ${input.bcfTopicId}`);
+
+    // Agregar enlaces a documentos adjuntos
+    const attachmentLines: string[] = [];
+    if (input.snapshotUrl) attachmentLines.push(`Snapshot: ${input.snapshotUrl}`);
+    if (input.viewpointInfo) attachmentLines.push(`Viewpoint: ${input.viewpointInfo}`);
+    for (const url of input.attachmentUrls ?? []) {
+      attachmentLines.push(`Adjunto: ${url}`);
+    }
+
+    if (metaLines.length > 0) {
+      descriptionRaw += `\n\n--- Datos de la incidencia ---\n${metaLines.join("\n")}`;
+    }
+    if (attachmentLines.length > 0) {
+      descriptionRaw += `\n\n--- Documentos vinculados ---\n${attachmentLines.join("\n")}`;
+    }
+
+    const body: Record<string, unknown> = {
       subject: input.subject,
       description: {
-        raw: input.description
+        raw: descriptionRaw
       },
       dueDate: input.dueDate,
 
-      // Campos obligatorios detectados en el schema
-      customField2: "N/A", // Nivel
-      customField3: "N/A", // Zona
+      customField2: "N/A",
+      customField3: "N/A",
 
       _links: {
         project: {
@@ -120,10 +145,15 @@ export class OpenProjectAdapter {
           href: disciplineHref
         },
         customField4: {
-          href: "/api/v3/custom_options/15" // Coordination issue
+          href: "/api/v3/custom_options/15"
         }
       }
     };
+
+    // Incluir info de prioridad como custom field si existe
+    if (input.priority) {
+      body["customField5"] = input.priority;
+    }
 
     const response = await fetch(url, {
       method: "POST",

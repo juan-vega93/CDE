@@ -3,10 +3,12 @@
   "private": true,
   "workspaces": [
     "apps/frontend",
+    "apps/frontend-toc",
     "apps/bff"
   ],
   "scripts": {
     "dev:frontend": "npm run dev -w frontend",
+    "dev:frontend-toc": "npm run dev -w frontend-toc",
     "dev:bff": "npm run dev -w bff"
   },
   "dependencies": {

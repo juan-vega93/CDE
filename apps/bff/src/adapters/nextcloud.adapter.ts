@@ -359,28 +359,32 @@ export class NextcloudAdapter {
   }
   }
   async deletePath(targetPath: string): Promise<void> {
-  const cleanPath = targetPath.startsWith("/") ? targetPath : `/${targetPath}`;
-  const url = this.buildWebDavUrl(cleanPath).replace(/\/$/, "");
+    const cleanPath = targetPath.startsWith("/") ? targetPath : `/${targetPath}`;
+    const url = this.buildWebDavUrl(cleanPath).replace(/\/$/, "");
 
-  console.log("[NextcloudAdapter] DELETE", {
-    targetPath: cleanPath,
-    url
-  });
+    console.log("[NextcloudAdapter] DELETE", {
+      targetPath: cleanPath,
+      url
+    });
 
-  const response = await fetch(url, {
-    method: "DELETE",
-    headers: {
-      Authorization: this.getAuthHeader()
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: this.getAuthHeader()
+      }
+    });
+
+    const text = await response.text();
+
+    if (response.status === 404) {
+      return;
     }
-  });
 
-  const text = await response.text();
-
-  if (!response.ok) {
-    throw new Error(
-      `Nextcloud DELETE failed: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
-    );
-  }
+    if (!response.ok && response.status !== 204) {
+      throw new Error(
+        `Nextcloud DELETE failed: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
+      );
+    }
   }
 
   async renamePath(oldPath: string, newName: string): Promise<void> {
@@ -514,6 +518,7 @@ export class NextcloudAdapter {
       }
     }
   }
+  
 
   async downloadFile(filePath: string): Promise<{
     buffer: Buffer;

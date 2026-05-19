@@ -15,6 +15,7 @@ type KeycloakUser = {
 type KeycloakGroup = {
   id: string;
   name: string;
+  path?: string;
 };
 
 type CreateUserInput = {
@@ -295,4 +296,91 @@ export class KeycloakAdminService {
       );
     }
   }
+  async listUserGroups(userId: string): Promise<KeycloakGroup[]> {
+  const headers = await this.getAuthHeaders();
+
+  const response = await fetch(
+    `${this.baseUrl}/admin/realms/${this.realm}/users/${userId}/groups`,
+    {
+      method: "GET",
+      headers
+    }
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `No se pudo listar grupos del usuario en Keycloak: ${response.status} ${response.statusText} - ${text.slice(
+        0,
+        500
+      )}`
+    );
+  }
+
+  return (await response.json()) as KeycloakGroup[];
+  }
+
+  async removeUserFromGroup(userId: string, groupId: string): Promise<void> {
+  const headers = await this.getAuthHeaders();
+
+  const response = await fetch(
+    `${this.baseUrl}/admin/realms/${this.realm}/users/${userId}/groups/${groupId}`,
+    {
+      method: "DELETE",
+      headers
+    }
+  );
+
+  if (!response.ok && response.status !== 204) {
+    const text = await response.text();
+    throw new Error(
+      `No se pudo quitar usuario de grupo en Keycloak: ${response.status} ${response.statusText} - ${text.slice(
+        0,
+        500
+      )}`
+    );
+  }
+  }
+
+    async removeUserFromGroupByName(userId: string, groupName: string): Promise<void> {
+    const userGroups = await this.listUserGroups(userId);
+    const group = userGroups.find((item) => item.name === groupName);
+
+    if (!group) {
+      return;
+    }
+
+    await this.removeUserFromGroup(userId, group.id);
+  }
+
+  async deleteGroupByName(groupName: string): Promise<void> {
+    const group = await this.findGroupByName(groupName);
+
+    if (!group) {
+      return;
+    }
+
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(
+      `${this.baseUrl}/admin/realms/${this.realm}/groups/${group.id}`,
+      {
+        method: "DELETE",
+        headers
+      }
+    );
+
+    if (!response.ok && response.status !== 204) {
+      const text = await response.text();
+
+      throw new Error(
+        `No se pudo eliminar grupo Keycloak '${groupName}': ${response.status} ${response.statusText} - ${text.slice(
+          0,
+          500
+        )}`
+      );
+    }
+  }
+
+  
 }

@@ -1,6 +1,8 @@
 import { Router } from "express";
+import { OpenProjectProjectsService } from "../services/openproject-projects.service";
 
 const router = Router();
+const openProjectProjectsService = new OpenProjectProjectsService();
 
 router.get("/roles", async (_req, res) => {
   try {
@@ -99,6 +101,46 @@ router.get("/users-test", async (req, res) => {
     return res.status(500).json({
       success: false,
       message
+    });
+  }
+});
+router.post("/projects", async (req, res) => {
+  try {
+    const { code, name, description } = req.body as {
+      code?: string;
+      name?: string;
+      description?: string;
+    };
+
+    if (!code || !name) {
+      return res.status(400).json({
+        success: false,
+        message: "code y name son obligatorios"
+      });
+    }
+
+    const result = await openProjectProjectsService.createOrGetProject({
+      code,
+      name,
+      description
+    });
+
+    return res.status(result.created ? 201 : 200).json({
+      success: true,
+      data: {
+        created: result.created,
+        project: result.project
+      }
+    });
+  } catch (error) {
+    console.error("[openproject-admin.routes] POST /projects error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "No se pudo crear o recuperar el proyecto OpenProject"
     });
   }
 });

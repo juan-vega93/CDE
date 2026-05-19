@@ -15,6 +15,7 @@ import { enrichDocumentsWithLinks } from "@/lib/enrich-documents-with-links";
 type DocumentsPageProps = {
   searchParams: Promise<{
     path?: string | string[];
+    projectCode?: string | string[];
   }>;
 };
 
@@ -22,15 +23,62 @@ export default async function DocumentsPage({
   searchParams
 }: DocumentsPageProps) {
   const resolvedSearchParams = await searchParams;
+
   const rawPath = resolvedSearchParams?.path;
+  const rawProjectCode = resolvedSearchParams?.projectCode;
 
-  const currentPath =
-    typeof rawPath === "string"
-      ? rawPath
-      : Array.isArray(rawPath)
+  const projectCode =
+    typeof rawProjectCode === "string"
+      ? rawProjectCode.trim().toUpperCase()
+      : Array.isArray(rawProjectCode)
+      ? rawProjectCode[0]?.trim().toUpperCase()
+      : "";
+
+  const requestedPath =
+  typeof rawPath === "string"
+    ? rawPath
+    : Array.isArray(rawPath)
       ? rawPath[0]
-      : "/";
+      : "";
+  const projectRootPath = projectCode ? `/${projectCode}` : "/";
+  const normalizedRequestedPath = requestedPath
+  ? requestedPath.startsWith("/")
+    ? requestedPath
+    : `/${requestedPath}`
+  : "";
 
+const currentPath = projectCode
+  ? normalizedRequestedPath &&
+    (normalizedRequestedPath === projectRootPath ||
+      normalizedRequestedPath.startsWith(`${projectRootPath}/`))
+    ? normalizedRequestedPath
+    : projectRootPath
+  : normalizedRequestedPath || "/";
+
+  const isProjectScoped = Boolean(projectCode);
+
+  const canGoUp = isProjectScoped
+    ? currentPath !== projectRootPath
+    : currentPath !== "/";
+
+  function getParentPath(path: string) {
+    const cleanPath = path.replace(/\/+$/g, "");
+
+    if (!cleanPath || cleanPath === "/") {
+      return "/";
+    }
+
+    const parts = cleanPath.split("/").filter(Boolean);
+    parts.pop();
+
+    const parent = `/${parts.join("/")}`;
+
+    if (isProjectScoped) {
+      return parent.length < projectRootPath.length ? projectRootPath : parent;
+    }
+
+    return parent || "/";
+  }
   const [documentsResponse, foldersResponse, workPackageLinks] =
     await Promise.all([
       getDocuments(currentPath),
@@ -66,16 +114,42 @@ export default async function DocumentsPage({
   const rows = enrichDocumentsWithLinks(baseRows, workPackageLinks);
 
   return (
-    <PortalShell>
-      <div className="mx-auto max-w-6xl">
-        <Breadcrumbs items={breadcrumbItems} />
+  <PortalShell>
+    <div className="space-y-5">
+      <a
+        href="/admin/project-cards"
+        className="inline-flex rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+      >
+        ← Volver a proyectos
+      </a>
 
-        <h1 className="mt-4 text-2xl font-semibold">Documentos</h1>
-
-        <ExplorerToolbar currentPath={currentPath} parentPath={parentPath} />
-
-        <DocumentsExplorerPanel rows={rows} currentPath={currentPath} />
+      <div className="text-sm text-slate-500">
+        <span>Proyectos</span>
+        <span className="mx-2">/</span>
+        <span>Documentos</span>
+        {projectCode && (
+          <>
+            <span className="mx-2">/</span>
+            <span className="font-semibold text-slate-800">{projectCode}</span>
+          </>
+        )}
       </div>
-    </PortalShell>
-  );
+
+      <h1 className="text-2xl font-semibold">Documentos</h1>
+
+      <ExplorerToolbar
+        currentPath={currentPath}
+        parentPath={parentPath}
+        canGoUp={canGoUp}
+        projectCode={projectCode}
+      />
+
+      <DocumentsExplorerPanel
+        rows={rows}
+        currentPath={currentPath}
+        projectCode={projectCode}
+      />
+    </div>
+  </PortalShell>
+);
 }

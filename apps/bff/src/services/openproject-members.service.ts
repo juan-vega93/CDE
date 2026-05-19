@@ -34,13 +34,45 @@ type EnsureOpenProjectMemberInput = {
   projectId?: number;
 };
 
-const OPENPROJECT_ROLE_MAP: Record<string, number> = {
-  viewer: 16,
-  "doc-controller": 13,
-  "discipline-lead": 15,
-  "bim-coordinator": 14,
-  "bim-manager": 12
-};
+function getRequiredEnvNumber(name: string): number {
+  const rawValue = process.env[name];
+
+  if (!rawValue) {
+    throw new Error(`Falta variable de entorno requerida: ${name}`);
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isFinite(value)) {
+    throw new Error(`La variable de entorno ${name} debe ser numérica`);
+  }
+
+  return value;
+}
+
+function getOpenProjectRoleId(roleName: string): number {
+  const normalizedRoleName = roleName.trim().toLowerCase();
+
+  const envKeyByRole: Record<string, string> = {
+    viewer: "OPENPROJECT_ROLE_VIEWER_ID",
+    "doc-controller": "OPENPROJECT_ROLE_DOC_CONTROLLER_ID",
+    "discipline-lead": "OPENPROJECT_ROLE_DISCIPLINE_LEAD_ID",
+    "bim-coordinator": "OPENPROJECT_ROLE_BIM_COORDINATOR_ID",
+    "bim-manager": "OPENPROJECT_ROLE_BIM_MANAGER_ID"
+  };
+
+  const envKey = envKeyByRole[normalizedRoleName];
+
+  if (!envKey) {
+    throw new Error(
+      `No hay mapeo de rol OpenProject para '${roleName}'. Roles válidos: ${Object.keys(
+        envKeyByRole
+      ).join(", ")}`
+    );
+  }
+
+  return getRequiredEnvNumber(envKey);
+}
 
 function getAuthHeader(apiKey: string) {
   return `Basic ${Buffer.from(`apikey:${apiKey}`).toString("base64")}`;
@@ -266,47 +298,103 @@ export class OpenProjectMembersService {
       );
     }
   }
+  async deleteProjectMembership(membershipId: number): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v3/memberships/${membershipId}`,
+      {
+        method: "DELETE",
+        headers: this.getHeaders()
+      }
+    );
 
-async ensureProjectMember(input: EnsureOpenProjectMemberInput): Promise<{
-  synced: boolean;
-  createdUser?: boolean;
-  reason?: string;
-}> {
-  const user = await this.ensureUser({
-    email: input.email,
-    firstName: input.firstName,
-    lastName: input.lastName,
-    login: input.login,
-    password: input.password
-  });
-
-  const roleId = OPENPROJECT_ROLE_MAP[input.roleName];
-
-  if (!roleId) {
-    return {
-      synced: false,
-      reason: `No hay mapeo de rol OpenProject para ${input.roleName}`
-    };
+    if (!response.ok && response.status !== 204) {
+      const text = await response.text();
+      throw new Error(
+        `No se pudo eliminar membership en OpenProject: ${response.status} ${response.statusText} - ${text.slice(
+          0,
+          500
+        )}`
+      );
+    }
   }
 
-  const existingMembership = await this.findProjectMembershipByUserId(
-    user.id,
-    input.projectId
-  );
+  async removeProjectMemberByEmail(params: {
+    email: string;
+    projectId?: number;
+  }): Promise<{
+    synced: boolean;
+    removed: boolean;
+    membershipId?: number;
+    userId?: number;
+    reason?: string;
+  }> {
+    const user = await this.findUserByEmail(params.email);
 
-  if (!existingMembership) {
-    await this.createProjectMembership(user.id, roleId, input.projectId);
+    if (!user) {
+      return {
+        synced: true,
+        removed: false,
+        reason: "El usuario no existe en OpenProject"
+      };
+    }
+
+    const membership = await this.findProjectMembershipByUserId(
+      user.id,
+      params.projectId
+    );
+
+    if (!membership) {
+      return {
+        synced: true,
+        removed: false,
+        userId: user.id,
+        reason: "El usuario no era miembro del proyecto en OpenProject"
+      };
+    }
+
+    await this.deleteProjectMembership(membership.id);
+
     return {
       synced: true,
-      createdUser: true
+      removed: true,
+      membershipId: membership.id,
+      userId: user.id
+    };
+  }  
+
+  async ensureProjectMember(input: EnsureOpenProjectMemberInput): Promise<{
+    synced: boolean;
+    createdUser?: boolean;
+    reason?: string;
+  }> {
+    const user = await this.ensureUser({
+      email: input.email,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      login: input.login,
+      password: input.password
+    });
+
+    const roleId = getOpenProjectRoleId(input.roleName);
+
+    const existingMembership = await this.findProjectMembershipByUserId(
+      user.id,
+      input.projectId
+    );
+
+    if (!existingMembership) {
+      await this.createProjectMembership(user.id, roleId, input.projectId);
+      return {
+        synced: true,
+        createdUser: true
+      };
+    }
+
+    await this.updateProjectMembership(existingMembership.id, user.id, roleId);
+
+    return {
+      synced: true,
+      createdUser: false
     };
   }
-
-  await this.updateProjectMembership(existingMembership.id, user.id, roleId);
-
-  return {
-    synced: true,
-    createdUser: false
-  };
-}
 }

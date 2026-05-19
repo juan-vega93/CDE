@@ -105,5 +105,30 @@
     "dueDate": "2026-04-06",
     "assigneeId": 23,
     "createdAt": "2026-03-31T10:03:19.440Z"
+  },
+  {
+    "id": 48,
+    "subject": "Incidencia 1",
+    "description": "Creado desde el visor BCF del CDE Portal\n\n--- Datos de la incidencia ---\nEstado BCF: open\nPrioridad BCF: medium\nAutor: Juan Vega More\nID Topic BCF: 15398256-0077-4886-bab5-2274baea94be\n\n--- Documentos vinculados ---\nSnapshot: http://172.20.50.70:4000/api/documents/content?path=%2F_bcf%2Ftopics%2F15398256-0077-4886-bab5-2274baea94be%2Fsnapshot.png\nViewpoint: guid:f8383301-a847-4bef-8a1c-30e9ca661756",
+    "status": "new",
+    "dueDate": null,
+    "createdAt": "2026-05-14T16:10:25.721Z",
+    "openProjectId": 48,
+    "bcfTopicId": "15398256-0077-4886-bab5-2274baea94be",
+    "snapshotUrl": "http://172.20.50.70:4000/api/documents/content?path=%2F_bcf%2Ftopics%2F15398256-0077-4886-bab5-2274baea94be%2Fsnapshot.png",
+    "attachmentUrls": [],
+    "viewpointInfo": "guid:f8383301-a847-4bef-8a1c-30e9ca661756"
+  },
+  {
+    "id": 14,
+    "subject": "Incidencia 1",
+    "description": "Creado desde el visor BCF del CDE Portal",
+    "status": "new",
+    "createdAt": "2026-05-18T21:08:56.116Z",
+    "openProjectId": 113,
+    "bcfTopicId": "a305694d-6f31-41a9-a4cb-8a65983e25c5",
+    "snapshotUrl": "http://172.20.50.70:4000/api/documents/content?path=%2F_bcf%2Ftopics%2Fa305694d-6f31-41a9-a4cb-8a65983e25c5%2Fsnapshot.png",
+    "attachmentUrls": [],
+    "viewpointInfo": "guid:7d7ce5b4-5d58-439b-9a78-a77b98f61d95"
   }
 ]

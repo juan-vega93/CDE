@@ -8,14 +8,17 @@ type PortalShellProps = {
 
 export function PortalShell({ children }: PortalShellProps) {
   return (
-    <div className="h-screen overflow-hidden bg-gray-50">
-      <div className="flex h-full min-h-0">
+    <div className="h-screen overflow-hidden bg-slate-100 text-slate-900">
+      <Topbar />
+
+      <div className="flex h-[calc(100vh-4rem)] min-h-0">
         <Sidebar />
 
-        <div className="flex min-h-0 flex-1 flex-col">
-          <Topbar />
-          <main className="flex-1 min-h-0 overflow-hidden p-3">{children}</main>
-        </div>
+        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="mx-auto w-full max-w-[1500px] px-8 py-7">
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   );
