@@ -1,4 +1,8 @@
 import type { BcfTopic } from "@/features/viewer-ifc/types/bcf-topic";
+type BcfTopicOpenProjectPayload = BcfTopic & {
+  projectCode?: string;
+  openProjectProjectId?: number;
+};
 
 const BFF_URL = process.env.NEXT_PUBLIC_BFF_URL;
 
@@ -29,29 +33,43 @@ type ApiResponse<T> = {
  * Crea un WorkPackage en OpenProject desde un BCF topic.
  * Envia toda la metadata: titulo, descripcion, snapshot, adjuntos, estado, prioridad.
  */
+function toBffAbsoluteUrl(value?: string | null) {
+  if (!value) return "";
+
+  if (value.startsWith("http") || value.startsWith("data:")) {
+    return value;
+  }
+
+  const baseUrl = process.env.NEXT_PUBLIC_BFF_URL ?? "";
+
+  return `${baseUrl}${value.startsWith("/") ? value : `/${value}`}`;
+}
 export async function createWorkPackageFromBcfTopic(
-  topic: BcfTopic,
+  topic: BcfTopicOpenProjectPayload,
   snapshotUrl?: string | null,
   attachmentUrls?: string[]
 ): Promise<WorkPackageResult> {
   const payload = {
-    subject: topic.title,
-    description: topic.description || "",
-    bcfTopicId: topic.id,
-    status: topic.status,
-    priority: topic.priority,
-    assignedTo: topic.assignedTo || "",
-    author: topic.author || "",
-    snapshotUrl: snapshotUrl || topic.snapshot || undefined,
-    attachmentUrls:
-        attachmentUrls ||
-        topic.attachments?.map((a) => a.dataUrl).filter(Boolean) ||
-        [],
-    viewpointInfo: topic.nativeViewpointGuid
-      ? `guid:${topic.nativeViewpointGuid}`
-      : undefined,
-  };
-
+  subject: topic.title,
+  description: topic.description || "",
+  bcfTopicId: topic.id,
+  projectCode: topic.projectCode,
+  openProjectProjectId: topic.openProjectProjectId,
+  status: topic.status,
+  priority: topic.priority,
+  assignedTo: topic.assignedTo || "",
+  author: topic.author || "",
+  snapshotUrl: toBffAbsoluteUrl(snapshotUrl || topic.snapshot),
+  attachmentUrls:
+    attachmentUrls?.map((url) => toBffAbsoluteUrl(url)).filter(Boolean) ||
+    topic.attachments
+      ?.map((a) => toBffAbsoluteUrl(a.dataUrl))
+      .filter(Boolean) ||
+    [],
+  viewpointInfo: topic.nativeViewpointGuid
+    ? `guid:${topic.nativeViewpointGuid}`
+    : undefined
+};
   console.log("[WP Service] creating work package from BCF topic", {
     subject: payload.subject,
     bcfTopicId: payload.bcfTopicId,

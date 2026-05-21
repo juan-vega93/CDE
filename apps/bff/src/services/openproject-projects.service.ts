@@ -48,12 +48,18 @@ function toOpenProjectIdentifier(code: string): string {
   const normalized = code
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "-")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9-]/g, "-")
     .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replace(/^-+|-+$/g, "");
 
   if (!normalized) {
     throw new Error("No se pudo generar un identifier válido para OpenProject");
+  }
+
+  if (/^[0-9]/.test(normalized)) {
+    return `p-${normalized}`;
   }
 
   return normalized;

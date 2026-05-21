@@ -10,6 +10,8 @@ export type WorkPackage = {
   createdAt: string;
   openProjectId?: number;
   bcfTopicId?: string;
+  projectCode?: string;
+  openProjectProjectId?: number;
   snapshotUrl?: string;
   attachmentUrls?: string[];
   viewpointInfo?: string;
@@ -36,4 +38,9 @@ export type CreateWorkPackageInput = {
   assignedTo?: string;
   /** Autor del topic */
   author?: string;
+  /** Código del proyecto CDE asociado */
+  projectCode?: string;
+
+  /** ID real del proyecto OpenProject asociado a la tarjeta del proyecto */
+  openProjectProjectId?: number;
 };

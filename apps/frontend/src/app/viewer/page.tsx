@@ -85,56 +85,7 @@ export default async function ViewerPage({ searchParams }: ViewerPageProps) {
       )
     : [];
 
-  if (!hasViewerSource) {
-    return (
-      <div className="flex h-screen min-h-0 flex-col bg-slate-100">
-        <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-5 shadow-sm">
-          <div>
-            <div className="text-sm font-semibold text-slate-900">
-              Visor BIM {projectCode ? `- ${projectCode}` : ""}
-            </div>
-            <div className="text-xs text-slate-500">
-              Selecciona un modelo desde documentos para abrirlo en el visor.
-            </div>
-          </div>
-
-          <Link
-            href={
-              projectCode
-                ? `/documents?projectCode=${encodeURIComponent(projectCode)}`
-                : "/admin/project-cards"
-            }
-            className="rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            ← Volver
-          </Link>
-        </header>
-
-        <main className="flex flex-1 items-center justify-center p-8">
-          <div className="max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-            <h1 className="text-lg font-semibold text-slate-900">
-              No hay modelo seleccionado
-            </h1>
-
-            <p className="mt-2 text-sm text-slate-500">
-              Abre un archivo IFC o FRAG desde Documentos para visualizarlo aquí.
-            </p>
-
-            <Link
-              href={
-                projectCode
-                  ? `/documents?projectCode=${encodeURIComponent(projectCode)}`
-                  : "/admin/project-cards"
-              }
-              className="mt-5 inline-flex rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800"
-            >
-              Ir a documentos
-            </Link>
-          </div>
-        </main>
-      </div>
-    );
-  }
+ 
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-slate-100">    

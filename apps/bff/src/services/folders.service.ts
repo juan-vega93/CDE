@@ -2,6 +2,57 @@ import type { FoldersResponse } from "../types/folder.types";
 import { NextcloudAdapter } from "../adapters/nextcloud.adapter";
 
 const nextcloudAdapter = new NextcloudAdapter();
+const TECHNICAL_FOLDER_NAMES = new Set([
+  "_derived",
+  "_bcf",
+  "_meta",
+  ".viewer",
+  "_viewer"
+]);
+
+function normalizePortalPath(value: string): string {
+  const clean = value.trim();
+
+  if (!clean) return "/";
+  return clean.startsWith("/") ? clean.replace(/\/$/, "") || "/" : `/${clean.replace(/\/$/, "")}`;
+}
+
+function getPathSegments(portalPath: string): string[] {
+  return normalizePortalPath(portalPath)
+    .split("/")
+    .filter(Boolean);
+}
+
+function isTechnicalPath(portalPath: string): boolean {
+  return getPathSegments(portalPath).some((segment) =>
+    TECHNICAL_FOLDER_NAMES.has(segment.trim().toLowerCase())
+  );
+}
+
+function assertWritableFolderPath(folderPath: string): string {
+  const cleanPath = normalizePortalPath(folderPath);
+  const segments = getPathSegments(cleanPath);
+
+  if (segments.length <= 1) {
+    throw new Error("No se puede modificar la carpeta raíz del proyecto");
+  }
+
+  if (isTechnicalPath(cleanPath)) {
+    throw new Error("No se puede modificar una carpeta técnica del sistema");
+  }
+
+  return cleanPath;
+}
+
+function assertWritableDestinationPath(destinationPath: string): string {
+  const cleanPath = normalizePortalPath(destinationPath);
+
+  if (isTechnicalPath(cleanPath)) {
+    throw new Error("No se puede usar una carpeta técnica como destino");
+  }
+
+  return cleanPath;
+}
 
 function getMockFolders(path: string): FoldersResponse {
   if (path === "/" || path === "") {
@@ -90,25 +141,23 @@ export async function createFolder(folderPath: string): Promise<void> {
     return;
   }
 
-  await nextcloudAdapter.createFolder(folderPath);
+  const cleanFolderPath = assertWritableDestinationPath(folderPath);
+  await nextcloudAdapter.createFolder(cleanFolderPath);
 }
 
 export async function deleteFolder(folderPath: string): Promise<void> {
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
-    console.log("[folders.service] Mock delete folder:", { folderPath });
+    console.log("[folders.service] Mock delete folder recursively:", {
+      folderPath
+    });
     return;
   }
 
-  const folders = await nextcloudAdapter.listFolders(folderPath);
-  const documents = await nextcloudAdapter.listDocuments(folderPath);
+  const cleanFolderPath = assertWritableFolderPath(folderPath);
 
-  if (folders.length > 0 || documents.length > 0) {
-    throw new Error("La carpeta no está vacía");
-  }
-
-  await nextcloudAdapter.deletePath(folderPath);
+  await nextcloudAdapter.deletePath(cleanFolderPath);
 }
 export async function moveFolder(
   folderPath: string,
@@ -124,13 +173,9 @@ export async function moveFolder(
     return;
   }
 
-  const cleanFolderPath = folderPath.startsWith("/")
-    ? folderPath
-    : `/${folderPath}`;
-
-  const cleanDestinationFolderPath = destinationFolderPath.startsWith("/")
-    ? destinationFolderPath
-    : `/${destinationFolderPath}`;
+  const cleanFolderPath = assertWritableFolderPath(folderPath);
+  const cleanDestinationFolderPath =
+  assertWritableDestinationPath(destinationFolderPath);
 
   const folderName = cleanFolderPath.split("/").pop();
 
@@ -143,5 +188,34 @@ export async function moveFolder(
 
   const destinationPath = `${normalizedDestinationFolderPath}/${folderName}`;
 
+  if (cleanDestinationFolderPath.startsWith(`${cleanFolderPath}/`)) {
+    throw new Error("No se puede mover una carpeta dentro de sí misma");
+  }
   await nextcloudAdapter.movePath(cleanFolderPath, destinationPath);
+}
+export async function renameFolder(
+  folderPath: string,
+  newName: string
+): Promise<void> {
+  const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
+
+  if (useMock) {
+    console.log("[folders.service] Mock rename folder:", {
+      folderPath,
+      newName
+    });
+    return;
+  }
+
+  const cleanFolderPath = folderPath.startsWith("/")
+    ? folderPath
+    : `/${folderPath}`;
+
+  const cleanNewName = newName.trim();
+
+  if (!cleanNewName) {
+    throw new Error("El nuevo nombre de la carpeta es obligatorio");
+  }
+
+  await nextcloudAdapter.renamePath(cleanFolderPath, cleanNewName);
 }

@@ -19,8 +19,8 @@ export async function getDocuments(
   path = "/SHARED/ARQ"
 ): Promise<DocumentsApiResponse> {
   const res = await fetch(`${BFF_URL}/api/documents?path=${encodeURIComponent(path)}`, {
-    cache: "no-store"
-  });
+  cache: "no-store"
+});
 
   if (!res.ok) {
     throw new Error("No se pudo obtener la lista de documentos");
@@ -33,8 +33,8 @@ export async function getFolders(
   path = "/"
 ): Promise<FoldersApiResponse> {
   const res = await fetch(`${BFF_URL}/api/folders?path=${encodeURIComponent(path)}`, {
-    cache: "no-store"
-  });
+  cache: "no-store"
+});
 
   if (!res.ok) {
     throw new Error("No se pudo obtener la lista de carpetas");
@@ -48,11 +48,11 @@ export async function getDocumentById(
   path = "/SHARED/ARQ"
 ): Promise<DocumentItem> {
   const res = await fetch(
-    `${BFF_URL}/api/documents/${id}?path=${encodeURIComponent(path)}`,
-    {
-      cache: "no-store"
-    }
-  );
+  `${BFF_URL}/api/documents/${id}?path=${encodeURIComponent(path)}`,
+  {
+    cache: "no-store"
+  }
+);
 
   if (!res.ok) {
     throw new Error("No se pudo obtener el documento");
@@ -83,11 +83,11 @@ export async function getWorkPackageLinkByDocumentId(
   documentId: string
 ) {
   const res = await fetch(
-    `${BFF_URL}/api/work-package-links/document/${documentId}`,
-    {
-      cache: "no-store"
-    }
-  );
+  `${BFF_URL}/api/work-package-links/document/${documentId}`,
+  {
+    cache: "no-store"
+  }
+);
 
   if (res.status === 404) {
     return null;
@@ -104,8 +104,8 @@ export async function getWorkPackageById(
   id: number
 ): Promise<WorkPackage> {
   const res = await fetch(`${BFF_URL}/api/work-packages/${id}`, {
-    cache: "no-store"
-  });
+  cache: "no-store"
+});
 
   if (!res.ok) {
     throw new Error("No se pudo obtener el workflow");
@@ -117,8 +117,8 @@ export async function getWorkPackageById(
 
 export async function getWorkPackageLinks() {
   const res = await fetch(`${BFF_URL}/api/work-package-links`, {
-    cache: "no-store"
-  });
+  cache: "no-store"
+});
 
   if (!res.ok) {
     throw new Error("No se pudo obtener la lista de vínculos");
@@ -162,15 +162,15 @@ export async function createFolder(
   folderName: string
 ) {
   const res = await fetch(`${BFF_URL}/api/folders`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      parentPath,
-      folderName
-    })
-  });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    parentPath,
+    folderName
+  })
+});
 
   if (!res.ok) {
     let errorMessage = "No se pudo crear la carpeta";
@@ -200,33 +200,26 @@ export async function deleteDocument(documentPath: string) {
     })
   });
 
-  if (!res.ok) {
-    let errorMessage = "No se pudo eliminar el archivo";
+  const payload = await res.json();
 
-    try {
-      const errorJson = await res.json();
-      if (errorJson?.message) {
-        errorMessage = errorJson.message;
-      }
-    } catch {
-      // mantener mensaje genérico
-    }
-
-    throw new Error(errorMessage);
+  if (!res.ok || !payload.success) {
+    throw new Error(
+      payload.message || payload.error || "No se pudo eliminar el archivo"
+    );
   }
 
-  return res.json();
+  return payload.data;
 }
 export async function deleteFolder(folderPath: string) {
   const res = await fetch(`${BFF_URL}/api/folders`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      folderPath
-    })
-  });
+  method: "DELETE",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    folderPath
+  })
+});
 
   if (!res.ok) {
     let errorMessage = "No se pudo eliminar la carpeta";
@@ -250,15 +243,15 @@ export async function renameDocument(
   newName: string
 ) {
   const res = await fetch(`${BFF_URL}/api/documents/rename`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      documentPath,
-      newName
-    })
-  });
+  method: "PUT",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    documentPath,
+    newName
+  })
+});
 
   if (!res.ok) {
     let errorMessage = "No se pudo renombrar el documento";
@@ -283,18 +276,18 @@ export async function moveDocument(
   destinationFolderPath: string
 ): Promise<void> {
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_BFF_URL}/api/documents/move`,
-    {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        documentPath,
-        destinationFolderPath
-      })
-    }
-  );
+  `${process.env.NEXT_PUBLIC_BFF_URL}/api/documents/move`,
+  {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      documentPath,
+      destinationFolderPath
+    })
+  }
+);
 
   const data = await response.json();
 
@@ -307,22 +300,46 @@ export async function moveFolder(
   destinationFolderPath: string
 ): Promise<void> {
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_BFF_URL}/api/folders/move`,
-    {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        folderPath,
-        destinationFolderPath
-      })
-    }
-  );
-
+  `${process.env.NEXT_PUBLIC_BFF_URL}/api/folders/move`,
+  {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      folderPath,
+      destinationFolderPath
+    })
+  }
+);
   const data = await response.json();
 
   if (!response.ok) {
     throw new Error(data.message || "No se pudo mover la carpeta");
   }
+}
+export async function renameFolder(folderPath: string, newName: string) {
+  const response = await fetch(
+  `${process.env.NEXT_PUBLIC_BFF_URL}/api/folders/rename`,
+  {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      folderPath,
+      newName
+    })
+  }
+);
+
+  const payload = await response.json();
+
+  if (!response.ok || !payload.success) {
+    throw new Error(
+      payload.message || payload.error || "No se pudo renombrar la carpeta"
+    );
+  }
+
+  return payload.data;
 }

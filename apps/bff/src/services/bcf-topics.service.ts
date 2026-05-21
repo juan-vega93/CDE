@@ -63,6 +63,7 @@ export type BcfTopicOpenProjectInfo = {
 
 export type BcfTopic = {
   id: string;
+  projectCode?: string;
   title: string;
   description?: string;
   status: BcfTopicStatus;
@@ -98,14 +99,18 @@ async function ensureDataFile() {
   }
 }
 
-export async function getBcfTopics(): Promise<BcfTopic[]> {
+function normalizeProjectCode(projectCode?: string): string {
+  return projectCode?.trim().toUpperCase() || "";
+}
+
+async function readAllBcfTopics(): Promise<BcfTopic[]> {
   await ensureDataFile();
 
   const raw = await fs.readFile(TOPICS_FILE, "utf-8");
   return JSON.parse(raw) as BcfTopic[];
 }
 
-export async function saveBcfTopics(topics: BcfTopic[]): Promise<void> {
+async function writeAllBcfTopics(topics: BcfTopic[]): Promise<void> {
   await ensureDataFile();
 
   await fs.writeFile(
@@ -113,4 +118,44 @@ export async function saveBcfTopics(topics: BcfTopic[]): Promise<void> {
     JSON.stringify(topics, null, 2),
     "utf-8"
   );
+}
+
+export async function getBcfTopics(projectCode?: string): Promise<BcfTopic[]> {
+  const allTopics = await readAllBcfTopics();
+  const normalizedProjectCode = normalizeProjectCode(projectCode);
+
+  if (!normalizedProjectCode) {
+    return allTopics;
+  }
+
+  return allTopics.filter(
+    (topic) =>
+      normalizeProjectCode(topic.projectCode) === normalizedProjectCode
+  );
+}
+
+export async function saveBcfTopics(
+  topics: BcfTopic[],
+  projectCode?: string
+): Promise<void> {
+  const normalizedProjectCode = normalizeProjectCode(projectCode);
+
+  if (!normalizedProjectCode) {
+    await writeAllBcfTopics(topics);
+    return;
+  }
+
+  const allTopics = await readAllBcfTopics();
+
+  const otherProjectTopics = allTopics.filter(
+    (topic) =>
+      normalizeProjectCode(topic.projectCode) !== normalizedProjectCode
+  );
+
+  const topicsForProject = topics.map((topic) => ({
+    ...topic,
+    projectCode: normalizedProjectCode
+  }));
+
+  await writeAllBcfTopics([...otherProjectTopics, ...topicsForProject]);
 }

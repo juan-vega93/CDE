@@ -2,8 +2,6 @@ import { DocumentsExplorerPanel } from "@/components/documents/documents-explore
 import { ExplorerToolbar } from "@/components/documents/explorer-toolbar";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
-import { getParentPath } from "@/lib/get-parent-path";
-import { pathToBreadcrumbs } from "@/lib/path-to-breadcrumbs";
 import {
   getDocuments,
   getFolders,
@@ -55,10 +53,21 @@ const currentPath = projectCode
     : projectRootPath
   : normalizedRequestedPath || "/";
 
-  const isProjectScoped = Boolean(projectCode);
+  const projectCodeFromPath =
+    currentPath
+      .split("/")
+      .filter(Boolean)[0]
+      ?.trim()
+      .toUpperCase() || "";
+
+  const effectiveProjectCode = projectCode || projectCodeFromPath;
+  const isProjectScoped = Boolean(effectiveProjectCode);
+  const effectiveProjectRootPath = effectiveProjectCode
+    ? `/${effectiveProjectCode}`
+    : "/";
 
   const canGoUp = isProjectScoped
-    ? currentPath !== projectRootPath
+    ? currentPath !== effectiveProjectRootPath
     : currentPath !== "/";
 
   function getParentPath(path: string) {
@@ -74,7 +83,9 @@ const currentPath = projectCode
     const parent = `/${parts.join("/")}`;
 
     if (isProjectScoped) {
-      return parent.length < projectRootPath.length ? projectRootPath : parent;
+      return parent.length < effectiveProjectRootPath.length
+        ? effectiveProjectRootPath
+        : parent;
     }
 
     return parent || "/";
@@ -88,7 +99,41 @@ const currentPath = projectCode
 
   const documents = documentsResponse.data.items;
   const folders = foldersResponse.data.items;
-  const breadcrumbItems = pathToBreadcrumbs(currentPath);
+  const relativeBreadcrumbParts =
+    effectiveProjectCode && currentPath.startsWith(`/${effectiveProjectCode}`)
+      ? currentPath
+          .replace(`/${effectiveProjectCode}`, "")
+          .split("/")
+          .filter(Boolean)
+      : currentPath.split("/").filter(Boolean);
+  const breadcrumbItems = [
+    {
+      label: "Proyectos",
+      href: "/admin/project-cards"
+    },
+    {
+      label: "Documentos",
+      href: effectiveProjectCode
+        ? `/documents?projectCode=${encodeURIComponent(effectiveProjectCode)}`
+        : "/documents"
+    },
+    ...relativeBreadcrumbParts.map((part, index) => {
+      const partialPath = effectiveProjectCode
+        ? `/${effectiveProjectCode}/${relativeBreadcrumbParts
+            .slice(0, index + 1)
+            .join("/")}`
+        : `/${relativeBreadcrumbParts.slice(0, index + 1).join("/")}`;
+
+      return {
+        label: part,
+        href: `/documents?path=${encodeURIComponent(partialPath)}${
+          effectiveProjectCode
+            ? `&projectCode=${encodeURIComponent(effectiveProjectCode)}`
+            : ""
+        }`
+      };
+    })
+  ];
   const parentPath = getParentPath(currentPath);
 
   const baseRows: ExplorerRow[] = [
@@ -123,17 +168,7 @@ const currentPath = projectCode
         ← Volver a proyectos
       </a>
 
-      <div className="text-sm text-slate-500">
-        <span>Proyectos</span>
-        <span className="mx-2">/</span>
-        <span>Documentos</span>
-        {projectCode && (
-          <>
-            <span className="mx-2">/</span>
-            <span className="font-semibold text-slate-800">{projectCode}</span>
-          </>
-        )}
-      </div>
+      <Breadcrumbs items={breadcrumbItems} />
 
       <h1 className="text-2xl font-semibold">Documentos</h1>
 
@@ -141,13 +176,13 @@ const currentPath = projectCode
         currentPath={currentPath}
         parentPath={parentPath}
         canGoUp={canGoUp}
-        projectCode={projectCode}
+        projectCode={effectiveProjectCode}
       />
 
       <DocumentsExplorerPanel
         rows={rows}
         currentPath={currentPath}
-        projectCode={projectCode}
+        projectCode={effectiveProjectCode}
       />
     </div>
   </PortalShell>

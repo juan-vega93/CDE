@@ -70,6 +70,48 @@ type ClipperPlaneEntry = [
   }
 ];
 
+function safelyDisposeComponents(components: OBC.Components) {
+  try {
+    const disposeResult = components.dispose();
+
+    void Promise.resolve(disposeResult).catch((error) => {
+      const message =
+        error instanceof Error ? error.message : String(error);
+
+      if (message.includes("FragmentsManager not initialized")) {
+        console.warn(
+          "[viewer-ifc] Dispose parcial omitido: FragmentsManager no inicializado."
+        );
+        return;
+      }
+
+      console.warn("[viewer-ifc] Error async disposing components:", error);
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : String(error);
+
+    if (message.includes("FragmentsManager not initialized")) {
+      console.warn(
+        "[viewer-ifc] Dispose parcial omitido: FragmentsManager no inicializado."
+      );
+      return;
+    }
+
+    console.warn("[viewer-ifc] Error disposing components:", error);
+  }
+}
+function getBffAssetUrl(value?: string | null) {
+  if (!value) return "";
+
+  if (value.startsWith("http") || value.startsWith("data:")) {
+    return value;
+  }
+
+  const baseUrl = process.env.NEXT_PUBLIC_BFF_URL ?? "";
+
+  return `${baseUrl}${value.startsWith("/") ? value : `/${value}`}`;
+}
 function getParentFolderPath(documentPath?: string, projectCode?: string) {
   const normalizedProjectCode = projectCode?.trim().toUpperCase();
 
@@ -338,6 +380,11 @@ export function IfcViewerCanvas({
     "Usuario";   
   
   const [newComment, setNewComment] = useState("");
+  const [pendingTopicCommentText, setPendingTopicCommentText] = useState("");
+  const [pendingTopicDraft, setPendingTopicDraft] = useState<{
+    topic: BcfTopic;
+    viewpoint: ViewerViewpoint;
+  } | null>(null);
   const [pendingAnnotationText, setPendingAnnotationText] = useState<string | null>(null);
   const [annotationInput, setAnnotationInput] = useState<{
     visible: boolean;
@@ -361,6 +408,7 @@ export function IfcViewerCanvas({
   const initialSourcesRef = useRef(sources);
   const initialDocumentNamesRef = useRef(documentNames);
   const loadedSourceKeysRef = useRef<Set<string>>(new Set());
+  const hasLoadedAnyModelRef = useRef(false);
   const annotationModeRef = useRef(false);
   const measurementModeRef = useRef(false);
   const pendingAnnotationTextRef = useRef<string | null>(null);
@@ -404,9 +452,7 @@ export function IfcViewerCanvas({
   const [containmentLoading, setContainmentLoading] = useState(false);
   const [associationsLoading, setAssociationsLoading] = useState(false);
   const [models, setModels] = useState<FederatedModelEntry[]>([]);
-  const [openProjectProjectId, setOpenProjectProjectId] = useState(
-    () => process.env.NEXT_PUBLIC_OPENPROJECT_PROJECT_ID ?? "3"
-  );
+  const [openProjectProjectId, setOpenProjectProjectId] = useState<string>("");
 
   const primaryDocumentPath = documentPaths[0] ?? sources[0]?.documentPath;
   const primaryDocumentName = documentNames[0] ?? sources[0]?.documentName;
@@ -441,6 +487,48 @@ export function IfcViewerCanvas({
     return "Visor federado";
   }, [documentNames, models, primaryDocumentName]);
 
+  useEffect(() => {
+  if (!projectCode) {
+    setOpenProjectProjectId("");
+    return;
+  }
+
+  let cancelled = false;
+
+  async function loadOpenProjectProjectId() {
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BFF_URL}/api/project-cards/${encodeURIComponent(
+          projectCode
+        )}`,
+        {
+          cache: "no-store"
+        }
+      );
+
+      const result = await response.json();
+      const projectId = result?.data?.openProject?.projectId;
+
+      if (!cancelled) {
+        setOpenProjectProjectId(
+          projectId !== undefined && projectId !== null ? String(projectId) : ""
+        );
+      }
+    } catch (error) {
+      console.error("[BCF/OpenProject] No se pudo obtener projectId:", error);
+
+      if (!cancelled) {
+        setOpenProjectProjectId("");
+      }
+    }
+  }
+
+  void loadOpenProjectProjectId();
+
+  return () => {
+    cancelled = true;
+  };
+}, [projectCode]);
   useEffect(() => {
     let cancelled = false;
 
@@ -762,6 +850,7 @@ export function IfcViewerCanvas({
         setModels(loadedEntries);
 
         if (loadedEntries.length > 0) {
+          hasLoadedAnyModelRef.current = true;
           await fitObjectInView(viewer, modelsGroup);
         }
 
@@ -846,58 +935,84 @@ export function IfcViewerCanvas({
         );
       }
 
-      hostElement.replaceChildren();
+      if (components && hasLoadedAnyModelRef.current) {
+        safelyDisposeComponents(components);
+      } else if (components) {
+        console.warn(
+          "[viewer-ifc] Dispose completo omitido: visor sin modelos cargados."
+        );
+      }
+      
 
       for (const workerUrl of workerUrls) {
         URL.revokeObjectURL(workerUrl);
       }
-      
+      hostElement.replaceChildren();
 
-      if (components) {
-        try {
-          components.dispose();
-        } catch (error) {
-          console.warn("[viewer-ifc] Error disposing components:", error);
-        }
-      }
+      
     };
   }, []);
 
   useEffect(() => {
-    async function loadTopics() {
-      try {
-        const data = await getBcfTopics();
+  if (!projectCode) {
+    setTopics([]);
+    return;
+  }
+
+  let cancelled = false;
+
+  async function loadTopics() {
+    try {
+      const data = await getBcfTopics(projectCode);
+
+      if (!cancelled) {
         setTopics(data);
-      } catch (error) {
-        console.error("Error loading BCF topics:", error);
+      }
+    } catch (error) {
+      console.error("Error loading BCF topics:", error);
+
+      if (!cancelled) {
+        setTopics([]);
       }
     }
+  }
 
-    loadTopics();
-  }, []);
+  void loadTopics();
+
+  return () => {
+    cancelled = true;
+  };
+}, [projectCode]);
 
   useEffect(() => {
-    if (!topics.length) return;
+  if (!projectCode) return;
+  if (!topics.length) return;
 
-    const timeout = setTimeout(() => {
-      const topicsForStorage = topics.map((topic) => ({
-        ...topic,
-        snapshot: null,
-        attachments: topic.attachments.map((attachment) => ({
-          ...attachment,
-          dataUrl: attachment.dataUrl.startsWith("data:")
-            ? ""
-            : attachment.dataUrl
-        }))
-      }));
+  const normalizedProjectCode = projectCode.trim().toUpperCase();
 
-      saveBcfTopics(topicsForStorage).catch((error) => {
-        console.error("Error saving BCF topics:", error);
-      });
-    }, 500);
+  const timeout = setTimeout(() => {
+    const topicsForStorage = topics.map((topic) => ({
+      ...topic,
+      projectCode: projectCode.trim().toUpperCase(),
+      snapshot:
+        topic.snapshot && topic.snapshot.startsWith("data:")
+          ? null
+          : topic.snapshot ?? null,
+      attachments: topic.attachments.map((attachment) => ({
+        ...attachment,
+        dataUrl: attachment.dataUrl.startsWith("data:")
+          ? ""
+          : attachment.dataUrl
+      }))
+    }));
 
-    return () => clearTimeout(timeout);
-  }, [topics]);
+    saveBcfTopics(topicsForStorage, normalizedProjectCode).catch((error) => {
+      console.error("Error saving BCF topics:", error);
+    });
+  }, 500);
+
+  return () => clearTimeout(timeout);
+}, [topics, projectCode]);
 
   function requestViewerRefresh() {
     const viewer = viewerRef.current;
@@ -1096,6 +1211,7 @@ async function handleIsolateModel(key: string) {
     }
 
     if (loadedEntries.length) {
+      hasLoadedAnyModelRef.current = true;
       setModels((prev) => [...prev, ...loadedEntries]);
       setStatus(`${loadedEntries.length} modelo(s) agregados`);
       requestViewerRefresh();
@@ -1685,7 +1801,9 @@ async function handleIsolateModel(key: string) {
       formData.append("file", blob, "snapshot.png");
 
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BFF_URL}/api/documents/bcf/${topicId}/snapshot`,
+        `${process.env.NEXT_PUBLIC_BFF_URL}/api/documents/bcf/${topicId}/snapshot?projectCode=${encodeURIComponent(
+          projectCode.trim().toUpperCase()
+        )}`,
         {
           method: "POST",
           body: formData
@@ -1721,9 +1839,21 @@ async function handleIsolateModel(key: string) {
 
     if (!viewpoint) return;
 
+    const normalizedProjectCode = projectCode.trim().toUpperCase();
+
+    const existingNumbers = topics
+      .map((topic) => {
+        const match = topic.title.match(/^Incidencia\s+(\d+)$/i);
+        return match ? Number(match[1]) : 0;
+      })
+      .filter((value) => Number.isFinite(value));
+
+    const nextTopicNumber =
+      existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
     const topic: BcfTopic = {
       id: topicId,
-      title: `Incidencia ${topics.length + 1}`,
+      projectCode: normalizedProjectCode,
+      title: `Incidencia ${nextTopicNumber}`,
       description: "",
       status: "open",
       priority: "medium",
@@ -1740,17 +1870,58 @@ async function handleIsolateModel(key: string) {
       annotations: viewerAnnotations,
       measurements: viewerMeasurements
     };
+    setPendingTopicDraft({
+      topic,
+      viewpoint
+    });
+
+    setSelectedTopicId(null);
+    setRightPanelTab("topics");
+    setStatus("Completa el formulario de incidencia.");
+  }
+  async function handleConfirmCreateTopic() {
+    const modules = modulesRef.current;
+
+    if (!pendingTopicDraft || !modules) return;
+
+    if (!openProjectProjectId) {
+      setStatus(
+        "Este proyecto no tiene un proyecto OpenProject vinculado. No se puede crear la incidencia."
+      );
+      return;
+    }
+
+    const { topic, viewpoint } = pendingTopicDraft;
+
+    const topicToCreate: BcfTopic = {
+      ...topic,
+      comments: pendingTopicCommentText.trim()
+        ? [
+            ...topic.comments,
+            {
+              id: crypto.randomUUID(),
+              author: currentAuthor,
+              date: new Date().toISOString(),
+              comment: pendingTopicCommentText.trim()
+            }
+          ]
+        : topic.comments,
+      modifiedDate: new Date().toISOString()
+    };
+
+    setStatus("Creando incidencia y enviando a OpenProject...");
+
     try {
       const nativeTopic = modules.bcfTopics.create({
-        guid: topic.id,
-        title: topic.title,
-        description: topic.description ?? "",
-        creationDate: new Date(topic.creationDate),
-        modifiedDate: new Date(topic.modifiedDate),
-        creationAuthor: topic.author ?? currentAuthor,
+        guid: topicToCreate.id,
+        title: topicToCreate.title,
+        description: topicToCreate.description ?? "",
+        creationDate: new Date(topicToCreate.creationDate),
+        modifiedDate: new Date(topicToCreate.modifiedDate),
+        creationAuthor: topicToCreate.author ?? currentAuthor,
         modifiedAuthor: currentAuthor,
-        priority: topic.priority,
-        status: topic.status
+        priority: topicToCreate.priority,
+        status: topicToCreate.status
       } as never);
 
       console.log("[BCF native topic created]", nativeTopic);
@@ -1759,50 +1930,114 @@ async function handleIsolateModel(key: string) {
       console.warn("[BCF] No se pudo crear topic nativo:", error);
     }
 
-    setViewpoints((prev) => [...prev, viewpoint]);
-    setTopics((prev) => [...prev, topic]);
-    setSelectedTopicId(topic.id);
-    setRightPanelTab("topics");
-    setStatus(`Topic creado: ${topic.title}`);
-
-    // Auto-crear WorkPackage en OpenProject con toda la data
     try {
-      const wp = await createWorkPackageFromBcfTopic(topic);
-      setTopics((prev) =>
-        prev.map((t) =>
-          t.id === topicId
-            ? {
-                ...t,
-                openProject: {
-                  projectId: openProjectProjectId,
-                  workPackageId: wp.openProjectId,
-                  href: `/work_packages/${wp.openProjectId}`,
-                  lastSyncedAt: new Date().toISOString(),
-                  syncStatus: "synced" as const,
-                  lastError: undefined,
-                },
-              }
-            : t,
-        ),
-      );
-      setStatus(`Incidencia creada y enviada a OpenProject (WP #${wp.openProjectId})`);
-    } catch (pushError) {
-      const msg = pushError instanceof Error ? pushError.message : "Error desconocido";
-      console.warn("[WP] sync failed after create (non-blocking):", msg);
-      setTopics((prev) =>
-        prev.map((t) =>
-          t.id === topicId
-            ? {
-                ...t,
-                openProject: {
-                  syncStatus: "error" as const,
-                  lastError: msg,
-                },
-              }
-            : t,
-        ),
+      const normalizedProjectCode = projectCode.trim().toUpperCase();
+
+      const wp = await createWorkPackageFromBcfTopic({
+        ...topicToCreate,
+        projectCode: normalizedProjectCode,
+        openProjectProjectId: Number(openProjectProjectId)
+      });
+
+      if (!wp.openProjectId) {
+        throw new Error("OpenProject no devolvió un ID de Work Package");
+      }
+
+      const workPackageId = String(wp.openProjectId);
+
+      const topicWithOpenProject: BcfTopic = {
+        ...topicToCreate,
+        openProject: {
+          ...topicToCreate.openProject,
+          projectId: openProjectProjectId,
+          topicGuid: topicToCreate.id,
+          workPackageId,
+          href: `/work_packages/${workPackageId}`,
+          lastSyncedAt: new Date().toISOString(),
+          syncStatus: "synced",
+          lastError: undefined
+        }
+      };
+
+      setViewpoints((prev) => [...prev, viewpoint]);
+      setTopics((prev) => [...prev, topicWithOpenProject]);
+      setSelectedTopicId(topicWithOpenProject.id);
+      setPendingTopicDraft(null);
+      setPendingTopicCommentText("");
+      setIsTopicDetailOpen(true);
+      setRightPanelTab("topics");
+
+      setStatus(`Incidencia creada y enviada a OpenProject: #${workPackageId}`);
+    } catch (error) {
+      console.error("[BCF/OpenProject] Error creando incidencia:", error);
+
+      setStatus(
+        error instanceof Error
+          ? `Error creando incidencia: ${error.message}`
+          : "Error creando incidencia"
       );
     }
+  }
+  async function handleAddPendingTopicAttachment(file: File) {
+    if (!pendingTopicDraft) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BFF_URL}/api/documents/bcf/${pendingTopicDraft.topic.id}/attachments?projectCode=${encodeURIComponent(
+          projectCode.trim().toUpperCase()
+        )}`,
+        {
+          method: "POST",
+          body: formData
+        }
+      );
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error("No se pudo subir el adjunto");
+      }
+
+      const attachment = result.data;
+
+      setPendingTopicDraft((prev) =>
+        prev
+          ? {
+              ...prev,
+              topic: {
+                ...prev.topic,
+                attachments: [
+                  ...prev.topic.attachments,
+                  {
+                    id: crypto.randomUUID(),
+                    name: attachment.name,
+                    type: file.type,
+                    size: file.size,
+                    dataUrl: attachment.url,
+                    createdAt: new Date().toISOString()
+                  }
+                ],
+                modifiedDate: new Date().toISOString()
+              }
+            }
+          : prev
+      );
+    } catch (error) {
+      console.error("[BCF] Error subiendo adjunto del borrador:", error);
+      setStatus(
+        error instanceof Error
+          ? `Error subiendo adjunto: ${error.message}`
+          : "Error subiendo adjunto"
+      );
+    }
+  }
+  function handleCancelCreateTopic() {
+    setPendingTopicDraft(null);
+    setPendingTopicCommentText("");
+    setStatus("Creación de incidencia cancelada");
   }
 
   function handleDeleteTopic(topicId: string) {
@@ -1819,11 +2054,29 @@ async function handleIsolateModel(key: string) {
   async function handlePushTopicToOpenProject(topicId: string) {
     const topic = topics.find((t) => t.id === topicId);
     if (!topic) return;
+    if (topic.openProject?.workPackageId) {
+      setStatus(
+        `La incidencia ya está vinculada al Work Package #${topic.openProject.workPackageId}. La actualización automática se implementará en fase 2.`
+      );
+      return;
+    }
 
     setStatus("Enviando a OpenProject...");
 
     try {
-      const wp = await createWorkPackageFromBcfTopic(topic);
+      if (!openProjectProjectId) {
+        alert(
+          "Este proyecto no tiene un proyecto OpenProject vinculado. No se puede sincronizar la incidencia."
+        );
+        return;
+      }
+      const normalizedProjectCode = projectCode.trim().toUpperCase();
+
+    const wp = await createWorkPackageFromBcfTopic({
+      ...topic,
+      projectCode: normalizedProjectCode,
+      openProjectProjectId: Number(openProjectProjectId)
+    });
 
       if (!wp.openProjectId) {
         throw new Error("OpenProject no devolvió un ID de Work Package");
@@ -2417,7 +2670,7 @@ async function handleIsolateModel(key: string) {
           onClick={handleCreateTopicFromCurrentView}
           className="h-9 border border-zinc-300 bg-white px-3 text-sm text-zinc-700 hover:bg-zinc-50"
         >
-          Crear incidencia
+          Nueva incidencia
         </button>
         <button
           type="button"
@@ -2426,7 +2679,7 @@ async function handleIsolateModel(key: string) {
         >
           Exportar BCF Native
         </button>
-      </div>
+      </div>      
 
       <div className="flex min-h-0 flex-1 items-stretch gap-1 overflow-hidden px-1 pb-1">
         <div className="min-h-0 min-w-0 flex-1">
@@ -2565,7 +2818,223 @@ async function handleIsolateModel(key: string) {
             <div
               className="flex min-h-0 flex-1 flex-col overflow-y-auto"
               onWheel={(event) => event.stopPropagation()}
-            > {!isTopicDetailOpen && (
+            >
+              {pendingTopicDraft ? (
+                <div className="border-b border-zinc-300 bg-zinc-50 px-3 py-3">
+                  <h4 className="mb-1 text-sm font-semibold text-zinc-800">
+                    Nueva incidencia BCF
+                  </h4>
+
+                  <p className="mb-3 text-xs text-zinc-500">
+                    Completa los datos. Al presionar Crear se registrará en BCF y OpenProject.
+                  </p>
+
+                  {pendingTopicDraft.topic.snapshot ? (
+                    <div className="mb-3 overflow-hidden rounded border border-zinc-300 bg-black">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={getBffAssetUrl(pendingTopicDraft.topic.snapshot)}
+                        alt="Snapshot de incidencia"
+                        className="block w-full"
+                        style={{ maxHeight: 180, objectFit: "contain" }}
+                      />
+                    </div>
+                  ) : null}
+
+                  <label className="mb-2 block text-xs font-medium text-zinc-600">
+                    Título
+                    <input
+                      value={pendingTopicDraft.topic.title}
+                      onChange={(event) =>
+                        setPendingTopicDraft((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                topic: {
+                                  ...prev.topic,
+                                  title: event.target.value,
+                                  modifiedDate: new Date().toISOString()
+                                }
+                              }
+                            : prev
+                        )
+                      }
+                      className="mt-1 h-9 w-full border border-zinc-300 px-2 text-sm"
+                    />
+                  </label>
+
+                  <label className="mb-2 block text-xs font-medium text-zinc-600">
+                    Asignado a
+                    <input
+                      value={pendingTopicDraft.topic.assignedTo ?? ""}
+                      onChange={(event) =>
+                        setPendingTopicDraft((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                topic: {
+                                  ...prev.topic,
+                                  assignedTo: event.target.value,
+                                  modifiedDate: new Date().toISOString()
+                                }
+                              }
+                            : prev
+                        )
+                      }
+                      className="mt-1 h-9 w-full border border-zinc-300 px-2 text-sm"
+                      placeholder="Nombre o correo del responsable"
+                    />
+                  </label>
+
+                  <label className="mb-2 block text-xs font-medium text-zinc-600">
+                    Estado
+                    <select
+                      value={pendingTopicDraft.topic.status}
+                      onChange={(event) =>
+                        setPendingTopicDraft((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                topic: {
+                                  ...prev.topic,
+                                  status: event.target.value as BcfTopic["status"],
+                                  modifiedDate: new Date().toISOString()
+                                }
+                              }
+                            : prev
+                        )
+                      }
+                      className="mt-1 h-9 w-full border border-zinc-300 px-2 text-sm"
+                    >
+                      <option value="open">Open</option>
+                      <option value="in_progress">In progress</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </label>
+
+                  <label className="mb-2 block text-xs font-medium text-zinc-600">
+                    Prioridad
+                    <select
+                      value={pendingTopicDraft.topic.priority}
+                      onChange={(event) =>
+                        setPendingTopicDraft((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                topic: {
+                                  ...prev.topic,
+                                  priority: event.target.value as BcfTopic["priority"],
+                                  modifiedDate: new Date().toISOString()
+                                }
+                              }
+                            : prev
+                        )
+                      }
+                      className="mt-1 h-9 w-full border border-zinc-300 px-2 text-sm"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </label>
+
+                  <label className="mb-2 block text-xs font-medium text-zinc-600">
+                    Descripción
+                    <textarea
+                      value={pendingTopicDraft.topic.description ?? ""}
+                      onChange={(event) =>
+                        setPendingTopicDraft((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                topic: {
+                                  ...prev.topic,
+                                  description: event.target.value,
+                                  modifiedDate: new Date().toISOString()
+                                }
+                              }
+                            : prev
+                        )
+                      }
+                      className="mt-1 min-h-24 w-full border border-zinc-300 px-2 py-2 text-sm"
+                    />
+                  </label>
+
+                  <label className="mb-2 block text-xs font-medium text-zinc-600">
+                    Comentario inicial
+                    <textarea
+                      value={pendingTopicCommentText}
+                      onChange={(event) => setPendingTopicCommentText(event.target.value)}
+                      className="mt-1 min-h-16 w-full border border-zinc-300 px-2 py-2 text-sm"
+                      placeholder="Escribe un comentario inicial..."
+                    />
+                  </label>
+
+                  <div className="mt-3">
+                    <h5 className="mb-2 text-xs font-semibold text-zinc-700">
+                      Adjuntos
+                    </h5>
+
+                    {pendingTopicDraft.topic.attachments.length === 0 ? (
+                      <div className="mb-2 text-xs text-zinc-500">
+                        No hay adjuntos.
+                      </div>
+                    ) : (
+                      <div className="mb-2 flex flex-col gap-2">
+                        {pendingTopicDraft.topic.attachments.map((attachment) => (
+                          <a
+                            key={attachment.id}
+                            href={getBffAssetUrl(attachment.dataUrl)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded border border-zinc-300 bg-white p-2 text-xs hover:bg-zinc-50"
+                          >
+                            {attachment.name}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+
+                    <label className="inline-flex h-8 cursor-pointer items-center border border-zinc-300 bg-white px-3 text-xs hover:bg-zinc-50">
+                      Adjuntar archivo
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+
+                          void handleAddPendingTopicAttachment(file);
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCancelCreateTopic}
+                      className="h-8 border border-zinc-300 bg-white px-3 text-xs hover:bg-zinc-50"
+                    >
+                      Cancelar
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleConfirmCreateTopic()}
+                      disabled={!pendingTopicDraft.topic.title.trim()}
+                      className="h-8 bg-red-700 px-3 text-xs font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Crear
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {!pendingTopicDraft && !isTopicDetailOpen && (
                 <div className="border-b border-zinc-300 bg-white">
                 <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-100 px-3 py-2">
                   <h3 className="text-sm font-semibold text-zinc-800">Incidencias</h3>
@@ -2619,7 +3088,7 @@ async function handleIsolateModel(key: string) {
                             <div className="mt-2 w-full overflow-hidden rounded border border-zinc-300 bg-black">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={topic.snapshot}
+                                src={getBffAssetUrl(topic.snapshot)}
                                 alt={topic.title}
                                 className="block w-full"
                                 style={{ maxHeight: 180, objectFit: "contain" }}
@@ -2644,6 +3113,7 @@ async function handleIsolateModel(key: string) {
                 )}
                 </div>
               )}
+              
               {isTopicDetailOpen && selectedTopicId ? (
                 (() => {
                   const selectedTopic = topics.find((topic) => topic.id === selectedTopicId);
@@ -2790,15 +3260,16 @@ async function handleIsolateModel(key: string) {
                         )}
                         <button
                           type="button"
+                          disabled={Boolean(selectedTopic.openProject?.workPackageId)}
                           onClick={(event) => {
                             event.stopPropagation();
                             handlePushTopicToOpenProject(selectedTopic.id);
                           }}
-                          className="h-8 border border-blue-300 bg-white px-3 text-xs text-blue-700 hover:bg-blue-50"
+                          className="h-8 border border-blue-300 bg-white px-3 text-xs text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {selectedTopic.openProject?.workPackageId
-                            ? "Actualizar en OpenProject"
-                            : "Enviar a OpenProject"}
+                          ? "Ya vinculado a OpenProject"
+                          : "Enviar a OpenProject"}
                         </button>
                       </div>
 
@@ -2859,7 +3330,7 @@ async function handleIsolateModel(key: string) {
                             {selectedTopic.attachments.map((attachment) => (
                               <a
                                 key={attachment.id}
-                                href={attachment.dataUrl}
+                                href={getBffAssetUrl(attachment.dataUrl)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="rounded border border-zinc-300 bg-white p-2 text-xs hover:bg-zinc-50"
@@ -2892,8 +3363,10 @@ async function handleIsolateModel(key: string) {
                   );
                 })()
               ) : null}
+              
             </div>
           )}
+          
 
           {rightPanelTab === "properties" && (
             <div

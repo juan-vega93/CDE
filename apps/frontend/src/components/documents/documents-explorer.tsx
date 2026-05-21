@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteDocument,
   deleteFolder,
   renameDocument,
+  renameFolder,
   moveDocument,
   moveFolder
 } from "@/services/documents.service";
@@ -17,6 +18,27 @@ type DocumentsExplorerProps = {
   currentPath: string;
   projectCode?: string;
 };
+type RenameTarget = {
+  kind: "document" | "folder";
+  path: string;
+  currentName: string;
+} | null;
+type ActionsTarget = {
+  kind: "document" | "folder";
+  path: string;
+  name: string;
+  extension?: string;
+} | null;
+type MoveTarget = {
+  kind: "document" | "folder";
+  path: string;
+  name: string;
+} | null;
+type DeleteTarget = {
+  kind: "document" | "folder";
+  path: string;
+  name: string;
+} | null;
 
 function formatBytes(bytes?: number): string {
   if (!bytes) return "-";
@@ -24,6 +46,7 @@ function formatBytes(bytes?: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
 
 function formatUiStatus(status?: DocumentUiStatus): string {
   if (!status) return "-";
@@ -77,17 +100,47 @@ function StatusBadge({ status }: { status: DocumentUiStatus }) {
   );
 }
 
+
 function getFileTypeLabel(extension?: string): string {
   if (!extension) return "Carpeta";
   return extension.toUpperCase();
 }
 
-function formatDate(date?: string): string {
-  if (!date) return "-";
+function formatDate(value?: string | number | Date | null) {
+  if (!value) return "-";
 
-  return new Date(date).toLocaleString("es-PE", {
-    timeZone: "America/Lima"
-  });
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Lima",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+
+  const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  const day = Number(getPart("day"));
+  const month = Number(getPart("month"));
+  const year = getPart("year");
+
+  const hour24 = Number(getPart("hour"));
+  const minute = getPart("minute");
+  const second = getPart("second");
+
+  const period = hour24 >= 12 ? "p. m." : "a. m.";
+  const hour12 = hour24 % 12 || 12;
+
+  return `${day}/${month}/${year}, ${hour12}:${minute}:${second} ${period}`;
 }
 
 function getRowIcon(kind: ExplorerRow["kind"], extension?: string): string {
@@ -104,7 +157,46 @@ function getRowIcon(kind: ExplorerRow["kind"], extension?: string): string {
       return "📦";
   }
 }
+const TECHNICAL_FOLDER_NAMES = new Set([
+  "_bcf",
+  "_derived",
+  ".viewer",
+  "_viewer"
+]);
 
+function isTechnicalFolderRow(row: ExplorerRow): boolean {
+  if (row.kind !== "folder") return false;
+
+  const name = String(row.name || "").trim().toLowerCase();
+
+  if (TECHNICAL_FOLDER_NAMES.has(name)) {
+    return true;
+  }
+
+  const pathSegments = String(row.path || "")
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => segment.trim().toLowerCase());
+
+  return pathSegments.some((segment) => TECHNICAL_FOLDER_NAMES.has(segment));
+}
+function isBimViewerDocument(row: ExplorerRow): boolean {
+  if (row.kind !== "document") return false;
+
+  const extension = String(row.extension || "")
+    .replace(".", "")
+    .trim()
+    .toLowerCase();
+
+  const name = String(row.name || "").trim().toLowerCase();
+
+  return (
+    extension === "ifc" ||
+    extension === "frag" ||
+    name.endsWith(".ifc") ||
+    name.endsWith(".frag")
+  );
+}
 export function DocumentsExplorer({
   rows,
   currentPath,
@@ -112,185 +204,667 @@ export function DocumentsExplorer({
 }: DocumentsExplorerProps) {
   const router = useRouter();
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
-  const [movingFolderPath, setMovingFolderPath] = useState<string | null>(null);
-  const isEmpty = rows.length === 0;
+  const [actionsTarget, setActionsTarget] = useState<ActionsTarget>(null);
+  const [renameTarget, setRenameTarget] = useState<RenameTarget>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [moveTarget, setMoveTarget] = useState<MoveTarget>(null);
+  const [moveValue, setMoveValue] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
+  const [deleteConfirmationValue, setDeleteConfirmationValue] = useState("");
+  const [actionsMenuPosition, setActionsMenuPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
 
-  async function handleDeleteDocument(path: string) {
-    const confirmDelete = window.confirm("¿Eliminar este archivo?");
+  const visibleRows = rows.filter((row) => !isTechnicalFolderRow(row));
+  const isEmpty = visibleRows.length === 0;
 
-    if (!confirmDelete) {
+  useEffect(() => {
+  if (!actionsTarget) return;
+
+  function handleCloseMenu() {
+    setActionsTarget(null);
+    setActionsMenuPosition(null);
+  }
+
+  window.addEventListener("click", handleCloseMenu);
+  window.addEventListener("scroll", handleCloseMenu, true);
+
+  return () => {
+    window.removeEventListener("click", handleCloseMenu);
+    window.removeEventListener("scroll", handleCloseMenu, true);
+  };
+}, [actionsTarget]);
+
+  function handleDeleteDocument(path: string, name?: string) {
+    setActionError("");
+    setDeleteTarget({
+      kind: "document",
+      path,
+      name: name || path.split("/").filter(Boolean).at(-1) || "Archivo"
+    });
+    setDeleteConfirmationValue("");
+  }
+
+  function handleDeleteFolder(path: string, name?: string) {
+    setActionError("");
+    setDeleteTarget({
+      kind: "folder",
+      path,
+      name: name || path.split("/").filter(Boolean).at(-1) || "Carpeta"
+    });
+    setDeleteConfirmationValue("");
+  }
+  function closeActionsMenu() {
+    setActionsTarget(null);
+    setActionsMenuPosition(null);
+  }
+
+  function openActionsMenu(
+    event: React.MouseEvent<HTMLButtonElement>,
+    target: NonNullable<ActionsTarget>
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rect = event.currentTarget.getBoundingClientRect();
+
+    setActionsTarget(target);
+    setActionsMenuPosition({
+      top: rect.bottom + 8,
+      left: Math.max(16, rect.right - 192)
+    });
+  }
+
+  function handleRenameDocument(path: string, currentName: string) {
+    setActionError("");
+    setRenameTarget({
+      kind: "document",
+      path,
+      currentName
+    });
+    setRenameValue(currentName);
+  }
+  
+
+  function handleRenameFolder(path: string, currentName: string) {
+    setActionError("");
+    setRenameTarget({
+      kind: "folder",
+      path,
+      currentName
+    });
+    setRenameValue(currentName);
+  }
+  function closeRenameModal() {
+    if (deletingPath) return;
+
+    setRenameTarget(null);
+    setRenameValue("");
+    setActionError("");
+  }
+
+  async function submitRename() {
+    if (!renameTarget) return;
+
+    const nextName = renameValue.trim();
+
+    if (!nextName) {
+      setActionError("El nombre no puede estar vacío.");
+      return;
+    }
+
+    if (nextName === renameTarget.currentName) {
+      closeRenameModal();
       return;
     }
 
     try {
-      setDeletingPath(path);
-      await deleteDocument(path);
+      setActionError("");
+      setDeletingPath(renameTarget.path);
+
+      if (renameTarget.kind === "folder") {
+        await renameFolder(renameTarget.path, nextName);
+      } else {
+        await renameDocument(renameTarget.path, nextName);
+      }
+
+      setRenameTarget(null);
+      setRenameValue("");
       router.refresh();
     } catch (err) {
       const errorMessage =
-        err instanceof Error ? err.message : "No se pudo eliminar el archivo";
-      window.alert(errorMessage);
+        err instanceof Error
+          ? err.message
+          : renameTarget.kind === "folder"
+            ? "No se pudo renombrar la carpeta"
+            : "No se pudo renombrar el archivo";
+
+      setActionError(errorMessage);
     } finally {
       setDeletingPath(null);
     }
   }
+  function closeMoveModal() {
+  if (deletingPath) return;
 
-  async function handleDeleteFolder(path: string) {
-    const confirmDelete = window.confirm(
-      "¿Eliminar esta carpeta? Solo funcionará si está vacía."
-    );
-
-    if (!confirmDelete) {
-      return;
-    }
-
-    try {
-      setDeletingPath(path);
-      await deleteFolder(path);
-      router.refresh();
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "No se pudo eliminar la carpeta";
-      window.alert(errorMessage);
-    } finally {
-      setDeletingPath(null);
-    }
-  }
-
-  async function handleRenameDocument(path: string, currentName: string) {
-  const newName = window.prompt("Nuevo nombre del archivo:", currentName);
-
-  if (!newName || newName.trim() === "" || newName === currentName) {
-    return;
-  }
-
-  try {
-    setDeletingPath(path);
-    await renameDocument(path, newName.trim());
-    router.refresh();
-  } catch (err) {
-    const errorMessage =
-      err instanceof Error ? err.message : "No se pudo renombrar el archivo";
-    window.alert(errorMessage);
-  } finally {
-    setDeletingPath(null);
-  }
-  }
-
-  async function handleRenameFolder(path: string, currentName: string) {
-  const newName = window.prompt("Nuevo nombre de la carpeta:", currentName);
-
-  if (!newName || newName.trim() === "" || newName === currentName) {
-    return;
-  }
-
-  try {
-    setDeletingPath(path);
-    await renameDocument(path, newName.trim());
-    router.refresh();
-  } catch (err) {
-    const errorMessage =
-      err instanceof Error ? err.message : "No se pudo renombrar la carpeta";
-    window.alert(errorMessage);
-  } finally {
-    setDeletingPath(null);
-  }
- }
-
- async function handleMoveDocument(path: string) {
-  const destination = window.prompt(
-    "Ruta destino (ej: /03-WIP/ARQ/02_WORK/Subcarpeta):"
-  );
-
-  if (!destination || destination.trim() === "") {
-    return;
-  }
-
-  try {
-    setDeletingPath(path);
-    await moveDocument(path, destination.trim());
-    router.refresh();
-  } catch (err) {
-    const errorMessage =
-      err instanceof Error ? err.message : "No se pudo mover el archivo";
-    window.alert(errorMessage);
-  } finally {
-    setDeletingPath(null);
-  }
- }
- async function handleMoveFolder(path: string) {
-  const destination = window.prompt(
-    "Ruta destino de la carpeta (ej: /03-WIP/ARQ/02_WORK/Subcarpeta):"
-  );
-
-  if (!destination || destination.trim() === "") {
-    return;
-  }
-
-  try {
-    setDeletingPath(path);
-    await moveFolder(path, destination.trim());
-    router.refresh();
-  } catch (err) {
-    const errorMessage =
-      err instanceof Error ? err.message : "No se pudo mover la carpeta";
-    window.alert(errorMessage);
-  } finally {
-    setDeletingPath(null);
-  }
- }
- function handleMoveFolderInit(path: string) {
-  setMovingFolderPath(path);
+  setMoveTarget(null);
+  setMoveValue("");
+  setActionError("");
 }
 
+async function submitMove() {
+  if (!moveTarget) return;
+
+  const destinationPath = moveValue.trim();
+
+  if (!destinationPath) {
+    setActionError("Selecciona una carpeta destino.");
+    return;
+  }
+
+  if (destinationPath === moveTarget.path) {
+    setActionError("No puedes mover el elemento hacia sí mismo.");
+    return;
+  }
+
+  if (
+    moveTarget.kind === "folder" &&
+    destinationPath.startsWith(`${moveTarget.path}/`)
+  ) {
+    setActionError("No puedes mover una carpeta dentro de sí misma.");
+    return;
+  }
+
+  try {
+    setActionError("");
+    setDeletingPath(moveTarget.path);
+
+    if (moveTarget.kind === "folder") {
+      await moveFolder(moveTarget.path, destinationPath);
+    } else {
+      await moveDocument(moveTarget.path, destinationPath);
+    }
+
+    setMoveTarget(null);
+    setMoveValue("");
+    router.refresh();
+  } catch (err) {
+    const errorMessage =
+      err instanceof Error
+        ? err.message
+        : moveTarget.kind === "folder"
+          ? "No se pudo mover la carpeta"
+          : "No se pudo mover el archivo";
+
+    setActionError(errorMessage);
+  } finally {
+    setDeletingPath(null);
+  }
+}
+function closeDeleteModal() {
+  if (deletingPath) return;
+
+  setDeleteTarget(null);
+  setDeleteConfirmationValue("");
+  setActionError("");
+}
+
+async function submitDelete() {
+  if (!deleteTarget) return;
+
+  if (deleteTarget.kind === "folder") {
+    const expectedName = deleteTarget.name.trim();
+    const typedName = deleteConfirmationValue.trim();
+
+    if (typedName !== expectedName) {
+      setActionError(`Para confirmar, escribe exactamente: ${expectedName}`);
+      return;
+    }
+  }
+
+  try {
+    setActionError("");
+    setDeletingPath(deleteTarget.path);
+
+    if (deleteTarget.kind === "folder") {
+      await deleteFolder(deleteTarget.path);
+    } else {
+      await deleteDocument(deleteTarget.path);
+    }
+
+    setDeleteTarget(null);
+    setDeleteConfirmationValue("");
+    router.refresh();
+  } catch (err) {
+    const errorMessage =
+      err instanceof Error
+        ? err.message
+        : deleteTarget.kind === "folder"
+          ? "No se pudo eliminar la carpeta"
+          : "No se pudo eliminar el archivo";
+
+    setActionError(errorMessage);
+  } finally {
+    setDeletingPath(null);
+  }
+}
+
+ function handleMoveDocument(path: string, name?: string) {
+  setActionError("");
+  setMoveTarget({
+    kind: "document",
+    path,
+    name: name || path.split("/").filter(Boolean).at(-1) || "Archivo"
+  });
+  setMoveValue("");
+}
+
+ function handleMoveFolderInit(path: string, name?: string) {
+  setActionError("");
+  setMoveTarget({
+    kind: "folder",
+    path,
+    name: name || path.split("/").filter(Boolean).at(-1) || "Carpeta"
+  });
+  setMoveValue("");
+}
+function normalizeExplorerPath(pathValue: string) {
+  const clean = pathValue.trim();
+
+  if (!clean) return "/";
+  return clean.startsWith("/") ? clean : `/${clean}`;
+}
+
+function getParentFolder(pathValue: string) {
+  const normalized = normalizeExplorerPath(pathValue);
+  const parts = normalized.split("/").filter(Boolean);
+
+  if (parts.length <= 1) {
+    return normalized;
+  }
+
+  return `/${parts.slice(0, -1).join("/")}`;
+}
+
+function canUseMoveDestination(destinationPath: string, target: NonNullable<MoveTarget>) {
+  const normalizedDestination = normalizeExplorerPath(destinationPath);
+  const normalizedTarget = normalizeExplorerPath(target.path);
+
+  if (normalizedDestination === normalizedTarget) {
+    return false;
+  }
+
+  if (
+    target.kind === "folder" &&
+    normalizedDestination.startsWith(`${normalizedTarget}/`)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function getMoveDestinationOptions(target: NonNullable<MoveTarget>) {
+  const options: Array<{
+    label: string;
+    path: string;
+    description: string;
+  }> = [];
+
+  const seen = new Set<string>();
+
+  function addOption(label: string, pathValue: string, description: string) {
+    const normalizedPath = normalizeExplorerPath(pathValue);
+
+    if (seen.has(normalizedPath)) return;
+    if (!canUseMoveDestination(normalizedPath, target)) return;
+
+    seen.add(normalizedPath);
+
+    options.push({
+      label,
+      path: normalizedPath,
+      description
+    });
+  }
+
+  const normalizedCurrentPath = normalizeExplorerPath(currentPath);
+  const currentParts = normalizedCurrentPath.split("/").filter(Boolean);
+  const projectRoot = projectCode ? `/${projectCode}` : `/${currentParts[0] || ""}`;
+
+  const parentPath = getParentFolder(normalizedCurrentPath);
+
+  if (parentPath && parentPath !== normalizedCurrentPath) {
+    addOption("Carpeta superior", parentPath, "Subir un nivel");
+  }
+
+  const currentFolderName = currentParts.at(-1)?.toUpperCase() || "";
+  const parentOfCurrent = getParentFolder(normalizedCurrentPath);
+
+  const standardWorkflowFolders = ["01_INPUT", "02_WORK", "03_EXPORT"];
+
+  if (standardWorkflowFolders.includes(currentFolderName)) {
+    standardWorkflowFolders.forEach((folderName) => {
+      const siblingPath = `${parentOfCurrent}/${folderName}`;
+
+      if (siblingPath !== normalizedCurrentPath) {
+        addOption(folderName, siblingPath, "Carpeta hermana del flujo actual");
+      }
+    });
+  }
+
+  visibleRows
+    .filter((row) => row.kind === "folder")
+    .forEach((folder) => {
+      addOption(folder.name, folder.path, "Carpeta visible en esta ubicación");
+    });
+
+  if (projectRoot && projectRoot !== normalizedCurrentPath) {
+    addOption("Raíz del proyecto", projectRoot, "Volver al nivel principal del proyecto");
+  }
+
+  return options;
+}
+
+const moveDestinationOptions = moveTarget
+  ? getMoveDestinationOptions(moveTarget)
+  : [];
 
 
   return (
     <div className="mt-6 overflow-hidden rounded-xl border bg-white">
-      {movingFolderPath ? (
-        <div className="mb-4 rounded-lg border bg-gray-50 p-4">
-          <p className="mb-2 text-sm text-gray-700">
-            Selecciona carpeta destino para:
-            <span className="font-medium"> {movingFolderPath}</span>
-          </p>
+      {renameTarget ? (
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {renameTarget.kind === "folder"
+                  ? "Renombrar carpeta"
+                  : "Renombrar archivo"}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Actualiza el nombre sin cambiar la ubicación del elemento.
+              </p>
+            </div>
 
-          <div className="flex flex-wrap gap-2">
-            {rows
-              .filter((r) => r.kind === "folder" && r.path !== movingFolderPath)
-              .map((folder) => (
-                <button
-                  key={folder.path}
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      setDeletingPath(movingFolderPath);
-                      await moveFolder(movingFolderPath, folder.path);
-                      setMovingFolderPath(null);
-                      router.refresh();
-                    } catch (err) {
-                      const errorMessage =
-                        err instanceof Error
-                          ? err.message
-                          : "No se pudo mover la carpeta";
-                      window.alert(errorMessage);
-                    } finally {
-                      setDeletingPath(null);
+            <div className="space-y-4 px-5 py-5">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Nuevo nombre
+                </label>
+                <input
+                  value={renameValue}
+                  onChange={(event) => setRenameValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void submitRename();
+                    }
+
+                    if (event.key === "Escape") {
+                      closeRenameModal();
                     }
                   }}
-                  className="rounded border border-gray-200 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-100"
-                >
-                  📁 {folder.name}
-                </button>
-              ))}
-          </div>
+                  autoFocus
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+                />
+              </div>
 
-          <button
-            type="button"
-            onClick={() => setMovingFolderPath(null)}
-            className="mt-3 text-xs font-medium text-red-600 hover:underline"
-          >
-            Cancelar
-          </button>
+              {actionError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {actionError}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={closeRenameModal}
+                disabled={Boolean(deletingPath)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void submitRename()}
+                disabled={Boolean(deletingPath)}
+                className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deletingPath ? "Guardando..." : "Guardar cambios"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {moveTarget ? (
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/45 px-4">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {moveTarget.kind === "folder"
+                  ? "Mover carpeta"
+                  : "Mover archivo"}
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Indica la carpeta destino dentro del proyecto.
+              </p>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Elemento
+                </div>
+                <div className="mt-1 break-all text-sm font-semibold text-slate-900">
+                  {moveTarget.name}
+                </div>
+                <div className="mt-1 break-all text-xs text-slate-500">
+                  {moveTarget.path}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Carpeta destino
+                </label>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Destinos sugeridos
+                  </div>
+
+                  <div className="flex max-h-56 flex-col gap-2 overflow-y-auto">
+                    {moveDestinationOptions.length > 0 ? (
+                      moveDestinationOptions.map((destination) => {
+                        const isSelected = moveValue === destination.path;
+
+                        return (
+                          <button
+                            key={destination.path}
+                            type="button"
+                            onClick={() => setMoveValue(destination.path)}
+                            className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${
+                              isSelected
+                                ? "border-red-300 bg-red-50 text-red-800"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            <span>📁</span>
+                            <span>
+                              <span className="block font-medium">{destination.label}</span>
+                              <span className="block text-xs text-slate-500">
+                                {destination.description}
+                              </span>
+                              <span className="block break-all text-xs text-slate-500">
+                                {destination.path}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-4 text-sm text-slate-500">
+                        No hay destinos sugeridos para este elemento.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-slate-500">
+                    Ruta destino seleccionada
+                  </label>
+
+                  <input
+                    value={moveValue}
+                    onChange={(event) => setMoveValue(event.target.value)}
+                    placeholder="Selecciona una carpeta o pega una ruta"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+                  />
+                </div>
+
+                <p className="mt-2 text-xs text-slate-500">
+                  Puedes elegir un destino sugerido o pegar manualmente una ruta si necesitas mover a otra carpeta.
+                </p>
+              </div>
+
+              {actionError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {actionError}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={closeMoveModal}
+                disabled={Boolean(deletingPath)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void submitMove()}
+                disabled={Boolean(deletingPath)}
+                className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deletingPath ? "Moviendo..." : "Mover"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}    
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/45 px-4">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-red-100 bg-red-50 px-5 py-4">
+              <h2 className="text-lg font-semibold text-red-800">
+                {deleteTarget.kind === "folder"
+                  ? "Eliminar carpeta"
+                  : "Eliminar archivo"}
+              </h2>
+
+              <p className="mt-1 text-sm text-red-700">
+                {deleteTarget.kind === "folder"
+                  ? "Esta acción eliminará la carpeta y todo su contenido interno. Verifica antes de continuar."
+                  : "Esta acción eliminará el archivo seleccionado. Verifica antes de continuar."}
+              </p>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3">
+                <div className="text-xs font-medium uppercase tracking-wide text-red-700">
+                  Elemento
+                </div>
+
+                <div className="mt-1 break-all text-sm font-semibold text-slate-900">
+                  {deleteTarget.name}
+                </div>
+
+                <div className="mt-1 break-all text-xs text-slate-600">
+                  {deleteTarget.path}
+                </div>
+              </div>
+
+              {deleteTarget.kind === "folder" ? (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Para confirmar, escribe exactamente:
+                </label>
+
+                <div className="mb-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900">
+                  {deleteTarget.name}
+                </div>
+
+                <input
+                  value={deleteConfirmationValue}
+                  onChange={(event) =>
+                    setDeleteConfirmationValue(event.target.value)
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void submitDelete();
+                    }
+
+                    if (event.key === "Escape") {
+                      closeDeleteModal();
+                    }
+                  }}
+                  autoFocus
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+                />
+              </div>
+            ) : (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                Se eliminará este archivo. Esta acción no eliminará carpetas ni otros contenidos.
+              </div>
+            )}
+
+              {actionError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {actionError}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4">
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                disabled={Boolean(deletingPath)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void submitDelete()}
+                disabled={
+                  Boolean(deletingPath) ||
+                  (deleteTarget.kind === "folder" &&
+                    deleteConfirmationValue.trim() !== deleteTarget.name.trim())
+                }
+                className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deletingPath
+                  ? "Eliminando..."
+                  : deleteTarget.kind === "folder"
+                    ? "Eliminar carpeta y contenido"
+                    : "Eliminar archivo"}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
       <table className="min-w-full border-collapse">
@@ -302,13 +876,14 @@ export function DocumentsExplorer({
             <th className="border-b px-4 py-3">Última modificación</th>
             <th className="border-b px-4 py-3">Estado</th>
             <th className="border-b px-4 py-3">Workflow</th>
+            <th className="border-b px-4 py-3 text-right">Acciones</th>
           </tr>
         </thead>
 
         <tbody>
           {isEmpty ? (
             <tr>
-              <td colSpan={6} className="px-6 py-12 text-center">
+              <td colSpan={7} className="px-6 py-12 text-center">
                 <div className="mx-auto max-w-md">
                   <div className="text-4xl">📂</div>
                   <h3 className="mt-3 text-base font-semibold text-gray-900">
@@ -322,7 +897,7 @@ export function DocumentsExplorer({
               </td>
             </tr>
           ) : (
-            rows.map((row, index) => {
+            visibleRows.map((row, index) => {
               if (row.kind === "folder") {
                 return (
                   <tr
@@ -330,51 +905,39 @@ export function DocumentsExplorer({
                     className="text-sm hover:bg-gray-50"
                   >
                     <td className="border-b px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <Link
-                          href={`/documents?path=${encodeURIComponent(row.path)}${
-                            projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
-                          }`}
-                          className="flex items-center gap-2 font-medium text-blue-700 hover:underline"
-                        >
-                          <span>{getRowIcon("folder")}</span>
-                          <span>{row.name}</span>
-                        </Link>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleRenameFolder(row.path, row.name)}
-                            disabled={deletingPath === row.path}
-                            className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Renombrar
-                          </button>
-                          <button
-                              type="button"
-                              onClick={() => handleMoveFolderInit(row.path)}
-                              disabled={deletingPath === row.path}
-                              className="rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Mover
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteFolder(row.path)}
-                            disabled={deletingPath === row.path}
-                            className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {deletingPath === row.path ? "Procesando..." : "Eliminar"}
-                          </button>
-                        </div>
-                      </div>
+                      <Link
+                        href={`/documents?path=${encodeURIComponent(row.path)}${
+                          projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
+                        }`}
+                        className="flex items-center gap-2 font-medium text-blue-700 hover:underline"
+                      >
+                        <span>{getRowIcon("folder")}</span>
+                        <span>{row.name}</span>
+                      </Link>
                     </td>
+
                     <td className="border-b px-4 py-3">Carpeta</td>
                     <td className="border-b px-4 py-3">-</td>
                     <td className="border-b px-4 py-3">-</td>
                     <td className="border-b px-4 py-3">-</td>
                     <td className="border-b px-4 py-3">-</td>
+
+                    <td className="border-b px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={(event) =>
+                          openActionsMenu(event, {
+                            kind: "folder",
+                            path: row.path,
+                            name: row.name
+                          })
+                        }
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-lg leading-none text-slate-700 shadow-sm hover:bg-slate-50"
+                        aria-label={`Acciones de ${row.name}`}
+                      >
+                        ⋯
+                      </button>
+                    </td>
                   </tr>
                 );
               }
@@ -382,55 +945,29 @@ export function DocumentsExplorer({
               return (
                 <tr key={`doc-${row.id}`} className="text-sm hover:bg-gray-50">
                   <td className="border-b px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <Link
-                        href={`/documents/${row.id}?path=${encodeURIComponent(currentPath)}${
-                          projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
-                        }`}
-                        className="flex items-center gap-2 font-medium text-blue-700 hover:underline"
-                      >
-                        <span>{getRowIcon("document", row.extension)}</span>
-                        <span>{row.name}</span>
-                      </Link>
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleRenameDocument(row.path, row.name)}
-                          disabled={deletingPath === row.path}
-                          className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Renombrar
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handleMoveDocument(row.path)}
-                            disabled={deletingPath === row.path}
-                            className="rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Mover
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteDocument(row.path)}
-                          disabled={deletingPath === row.path}
-                          className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {deletingPath === row.path ? "Eliminando..." : "Eliminar"}
-                        </button>
-                      </div>
-                    </div>
+                    <Link
+                      href={`/documents/${row.id}?path=${encodeURIComponent(currentPath)}${
+                        projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
+                      }`}
+                      className="flex items-center gap-2 font-medium text-blue-700 hover:underline"
+                    >
+                      <span>{getRowIcon("document", row.extension)}</span>
+                      <span>{row.name}</span>
+                    </Link>
                   </td>
 
                   <td className="border-b px-4 py-3">
                     {getFileTypeLabel(row.extension)}
                   </td>
+
                   <td className="border-b px-4 py-3">
                     {formatBytes(row.size)}
                   </td>
+
                   <td className="border-b px-4 py-3">
                     {formatDate(row.modifiedAt)}
                   </td>
+
                   <td className="border-b px-4 py-3">
                     <StatusBadge status={row.uiStatus} />
                   </td>
@@ -448,12 +985,138 @@ export function DocumentsExplorer({
                       <span className="text-gray-500">Sin workflow</span>
                     )}
                   </td>
+
+                  <td className="border-b px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={(event) =>
+                        openActionsMenu(event, {
+                          kind: "document",
+                          path: row.path,
+                          name: row.name,
+                          extension: row.extension
+                        })
+                      }
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-lg leading-none text-slate-700 shadow-sm hover:bg-slate-50"
+                      aria-label={`Acciones de ${row.name}`}
+                    >
+                      ⋯
+                    </button>
+                  </td>
                 </tr>
               );
             })
           )}
         </tbody>
       </table>
+      {actionsTarget && actionsMenuPosition ? (
+        <div
+          className="fixed z-[100000] w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-2xl"
+          style={{
+            top: actionsMenuPosition.top,
+            left: actionsMenuPosition.left
+          }}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+        >
+          <button
+            type="button"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+
+              const target = actionsTarget;
+              closeActionsMenu();
+
+              if (target.kind === "folder") {
+                handleRenameFolder(target.path, target.name);
+              } else {
+                handleRenameDocument(target.path, target.name);
+              }
+            }}
+            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Renombrar
+          </button>
+
+          <button
+            type="button"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+
+              const target = actionsTarget;
+              closeActionsMenu();
+
+              if (target.kind === "folder") {
+                handleMoveFolderInit(target.path, target.name);
+              } else {
+                handleMoveDocument(target.path, target.name);
+              }
+            }}
+            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Mover
+          </button>
+
+          {actionsTarget.kind === "document" &&
+          (() => {
+            const extension = String(actionsTarget.extension || "")
+              .replace(".", "")
+              .trim()
+              .toLowerCase();
+
+            const name = String(actionsTarget.name || "")
+              .trim()
+              .toLowerCase();
+
+            return (
+              extension === "ifc" ||
+              extension === "frag" ||
+              name.endsWith(".ifc") ||
+              name.endsWith(".frag")
+            );
+          })() ? (
+            <Link
+              href={`/viewer?projectCode=${encodeURIComponent(
+                projectCode
+              )}&documentPath=${encodeURIComponent(
+                actionsTarget.path
+              )}&documentName=${encodeURIComponent(actionsTarget.name)}`}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              onClick={closeActionsMenu}
+            >
+              Abrir en visor BIM
+            </Link>
+          ) : null}
+
+          <button
+            type="button"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+
+              const target = actionsTarget;
+              closeActionsMenu();
+
+              if (target.kind === "folder") {
+                handleDeleteFolder(target.path, target.name);
+              } else {
+                handleDeleteDocument(target.path, target.name);
+              }
+            }}
+            className="block w-full px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
+          >
+            Eliminar
+          </button>
+        </div>
+      ) : null}
+
     </div>
   );
 }

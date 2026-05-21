@@ -13,22 +13,39 @@ export type StoredViewerViewpoint = {
     hidden: Record<string, number[]>;
   };
 };
+function normalizePortalPath(value: string): string {
+  const clean = value.trim();
 
-function getCurrentProjectKey() {
-  const rootPath = process.env.NEXTCLOUD_ROOT_PATH || "";
-  const clean = rootPath.replace(/^\/+|\/+$/g, "");
-  const segments = clean.split("/").filter(Boolean);
+  if (!clean) return "/";
+  return clean.startsWith("/") ? clean : `/${clean}`;
+}
 
-  return segments[segments.length - 1] || "default-project";
+function getProjectCodeFromDocumentPath(documentPath: string): string {
+  const cleanPath = normalizePortalPath(documentPath);
+  const segments = cleanPath.split("/").filter(Boolean);
+
+  const projectCode = segments[0]?.trim().toUpperCase();
+
+  if (!projectCode) {
+    throw new Error("No se pudo determinar el proyecto del documentPath");
+  }
+
+  return projectCode;
 }
-function buildViewpointsFolderPath() {
-  const projectKey = getCurrentProjectKey();
-  return `/_meta/${projectKey}/viewpoints`;
+
+function buildViewpointsFolderPath(documentPath: string) {
+  const projectCode = getProjectCodeFromDocumentPath(documentPath);
+  return `/${projectCode}/_viewer/viewpoints`;
 }
+
 function buildViewpointsFilePath(documentPath: string) {
-  const encoded = Buffer.from(documentPath, "utf8").toString("base64url");
-  return `${buildViewpointsFolderPath()}/${encoded}.json`;
+  const cleanDocumentPath = normalizePortalPath(documentPath);
+  const encoded = Buffer.from(cleanDocumentPath, "utf8").toString("base64url");
+
+  return `${buildViewpointsFolderPath(cleanDocumentPath)}/${encoded}.json`;
 }
+
+
 export async function getViewpoints(documentPath: string) {
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
@@ -69,10 +86,12 @@ export async function saveViewpoints(
     return;
   }
 
-  const folderPath = buildViewpointsFolderPath();
+  const projectCode = getProjectCodeFromDocumentPath(documentPath);
+  const viewerRootPath = `/${projectCode}/_viewer`;
+  const folderPath = buildViewpointsFolderPath(documentPath);
   const filePath = buildViewpointsFilePath(documentPath);
 
-  await nextcloudAdapter.ensureFolderExists("/.viewer");
+  await nextcloudAdapter.ensureFolderExists(viewerRootPath);
   await nextcloudAdapter.ensureFolderExists(folderPath);
 
   await nextcloudAdapter.uploadTextFile(

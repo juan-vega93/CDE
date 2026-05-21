@@ -29,6 +29,8 @@ function createMockWorkPackage(input: CreateWorkPackageInput): WorkPackage {
     createdAt: new Date().toISOString(),
     openProjectId: workPackagesStore.length + 100,
     bcfTopicId: input.bcfTopicId,
+    projectCode: input.projectCode,
+    openProjectProjectId: input.openProjectProjectId,
     snapshotUrl: input.snapshotUrl,
     attachmentUrls: input.attachmentUrls,
     viewpointInfo: input.viewpointInfo,
@@ -60,9 +62,11 @@ export async function createWorkPackage(
         ...realWorkPackage,
         openProjectId: realWorkPackage.id,
         bcfTopicId: input.bcfTopicId,
+        projectCode: input.projectCode,
+        openProjectProjectId: input.openProjectProjectId,
         snapshotUrl: input.snapshotUrl,
         attachmentUrls: input.attachmentUrls,
-        viewpointInfo: input.viewpointInfo,
+        viewpointInfo: input.viewpointInfo
       };
       workPackagesStore.push(enriched);
       saveWorkPackages(workPackagesStore);
@@ -70,13 +74,13 @@ export async function createWorkPackage(
     }
 
     return realWorkPackage;
-  } catch (error) {
+    } catch (error) {
     console.error(
-      "[work-packages.service] OpenProject real failed, using mock:",
+      "[work-packages.service] OpenProject real failed:",
       error
     );
 
-    return createMockWorkPackage(input);
+    throw error;
   }
 }
 
@@ -93,12 +97,15 @@ export async function createWorkPackageFromBcfTopic(
   const idx = store.findIndex((s) => s.id === wp.id);
   if (idx >= 0) {
     store[idx] = {
-      ...store[idx],
-      bcfTopicId: input.bcfTopicId || store[idx].bcfTopicId,
-      snapshotUrl: input.snapshotUrl || store[idx].snapshotUrl,
-      attachmentUrls: input.attachmentUrls || store[idx].attachmentUrls,
-      viewpointInfo: input.viewpointInfo || store[idx].viewpointInfo,
-    };
+    ...store[idx],
+    bcfTopicId: input.bcfTopicId || store[idx].bcfTopicId,
+    projectCode: input.projectCode || store[idx].projectCode,
+    openProjectProjectId:
+      input.openProjectProjectId || store[idx].openProjectProjectId,
+    snapshotUrl: input.snapshotUrl || store[idx].snapshotUrl,
+    attachmentUrls: input.attachmentUrls || store[idx].attachmentUrls,
+    viewpointInfo: input.viewpointInfo || store[idx].viewpointInfo
+  };
     saveWorkPackages(store);
   }
 

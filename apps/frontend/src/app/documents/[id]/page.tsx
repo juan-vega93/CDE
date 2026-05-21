@@ -70,6 +70,7 @@ type DocumentDetailPageProps = {
   }>;
   searchParams: Promise<{
     path?: string | string[];
+    projectCode?: string | string[];
   }>;
 };
 
@@ -80,6 +81,14 @@ export default async function DocumentDetailPage({
   const { id } = await params;
   const resolvedSearchParams = await searchParams;
   const rawPath = resolvedSearchParams?.path;
+  const rawProjectCode = resolvedSearchParams?.projectCode;
+
+  const projectCode =
+    typeof rawProjectCode === "string"
+      ? rawProjectCode.trim().toUpperCase()
+      : Array.isArray(rawProjectCode)
+      ? rawProjectCode[0]?.trim().toUpperCase()
+      : "";
 
   const currentPath =
     typeof rawPath === "string"
@@ -87,6 +96,9 @@ export default async function DocumentDetailPage({
       : Array.isArray(rawPath)
       ? rawPath[0]
       : "/";
+  const documentsHref = `/documents?path=${encodeURIComponent(currentPath)}${
+    projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
+  }`;
 
   const [document, workPackageLink] = await Promise.all([
     getDocumentById(id, currentPath),
@@ -98,12 +110,23 @@ export default async function DocumentDetailPage({
   return (
     <PortalShell>
       <div className="mx-auto max-w-5xl">
+        <Link
+          href={documentsHref}
+          className="inline-flex rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          ← Volver a documentos
+        </Link>
         <Breadcrumbs
           items={[
-            { label: "Inicio", href: "/" },
             {
               label: "Documentos",
-              href: `/documents?path=${encodeURIComponent(currentPath)}`
+              href: projectCode
+                ? `/documents?projectCode=${encodeURIComponent(projectCode)}`
+                : "/documents"
+            },
+            {
+              label: currentPath.replace(`/${projectCode}`, "") || "/",
+              href: documentsHref
             },
             { label: document.name }
           ]}
@@ -127,7 +150,9 @@ export default async function DocumentDetailPage({
 
             {isIfcDocument ? (
               <Link
-                href={`/viewer?documentId=${document.id}&documentName=${encodeURIComponent(
+                href={`/viewer?projectCode=${encodeURIComponent(
+                  projectCode
+                )}&documentId=${document.id}&documentName=${encodeURIComponent(
                   document.name
                 )}&documentPath=${encodeURIComponent(document.path)}`}
                 className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"

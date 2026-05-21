@@ -3,7 +3,8 @@ import {
   getFolders,
   createFolder,
   deleteFolder,
-  moveFolder
+  moveFolder,
+  renameFolder
 } from "../services/folders.service";
 import type { ApiResponse } from "../types/api.types";
 import type { FoldersResponse } from "../types/folder.types";
@@ -121,6 +122,43 @@ router.put("/move", async (req, res) => {
         : "No se pudo mover la carpeta";
 
     res.status(500).json({
+      success: false,
+      message
+    });
+  }
+});
+router.put("/rename", async (req, res) => {
+  try {
+    const { folderPath, newName } = req.body as {
+      folderPath?: string;
+      newName?: string;
+    };
+
+    if (!folderPath || !newName?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "folderPath y newName son obligatorios"
+      });
+    }
+
+    await renameFolder(folderPath, newName.trim());
+
+    return res.json({
+      success: true,
+      data: {
+        folderPath,
+        newName: newName.trim()
+      }
+    });
+  } catch (error) {
+    console.error("[folders.routes] PUT /rename error:", error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : "No se pudo renombrar la carpeta";
+
+    return res.status(500).json({
       success: false,
       message
     });

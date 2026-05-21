@@ -10,7 +10,10 @@ type NextcloudConfig = {
 
 const HIDDEN_PORTAL_FOLDERS = new Set([
   "_meta",
-  "_viewer"
+  "_viewer",
+  "_derived",
+  "_bcf",
+  ".viewer"
 ]);
 
 export class NextcloudAdapter {

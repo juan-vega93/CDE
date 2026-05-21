@@ -47,29 +47,29 @@ const NEXTCLOUD_PROJECT_SHARE_RULES: NextcloudShareRule[] = [
 
   // Líder de disciplina: escritura en WIP y lectura en coordinación/publicación
   {
-    relativePath: "03-WIP",
+    relativePath: "03-WIPR",
     roleSuffix: "DISCIPLINE_LEAD",
     permissions: NEXTCLOUD_PERMISSIONS.READ_WRITE
   },
   {
-    relativePath: "04-SHARED",
+    relativePath: "04-SHRD",
     roleSuffix: "DISCIPLINE_LEAD",
     permissions: NEXTCLOUD_PERMISSIONS.READ
   },
   {
-    relativePath: "05-PUBLISHED",
+    relativePath: "05-PUBL",
     roleSuffix: "DISCIPLINE_LEAD",
     permissions: NEXTCLOUD_PERMISSIONS.READ
   },
 
   // Viewer: solo lectura en información compartida/publicada
   {
-    relativePath: "04-SHARED",
+    relativePath: "04-SHRD",
     roleSuffix: "VIEWER",
     permissions: NEXTCLOUD_PERMISSIONS.READ
   },
   {
-    relativePath: "05-PUBLISHED",
+    relativePath: "05-PUBL",
     roleSuffix: "VIEWER",
     permissions: NEXTCLOUD_PERMISSIONS.READ
   }
@@ -444,12 +444,12 @@ export class ProjectCardsService {
 
     const foldersToEnsure = [
         projectRootPath,        
-        `${projectRootPath}/01-DATA`,
-        `${projectRootPath}/02-PLAN`,
-        `${projectRootPath}/03-WIP`,
-        `${projectRootPath}/04-SHARED`,
-        `${projectRootPath}/05-PUBLISHED`,
-        `${projectRootPath}/06-ARCHIVED`
+        `${projectRootPath}/1-DATA`,
+        `${projectRootPath}/2-PLAN`,
+        `${projectRootPath}/3-WIPR`,
+        `${projectRootPath}/4-SHRD`,
+        `${projectRootPath}/5-PUBL`,
+        `${projectRootPath}/6-JPRO`
     ].map((folderPath) => folderPath.replace(/\/+/g, "/"));
 
     for (const folderPath of foldersToEnsure) {

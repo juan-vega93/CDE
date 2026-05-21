@@ -58,6 +58,7 @@ export type BcfTopicOpenProjectInfo = {
 
 export type BcfTopic = {
   id: string;
+  projectCode?: string;
   title: string;
   description?: string;
   status: BcfTopicStatus;

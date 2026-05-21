@@ -5,6 +5,52 @@ import { generateFragFromDocument } from "./fragments.service";
 import path from "path";
 
 const nextcloudAdapter = new NextcloudAdapter();
+const TECHNICAL_FOLDER_NAMES = new Set([
+  "_derived",
+  "_bcf",
+  "_meta",
+  ".viewer",
+  "_viewer"
+]);
+
+function normalizePortalPath(value: string): string {
+  const clean = value.trim();
+
+  if (!clean) return "/";
+  return clean.startsWith("/") ? clean.replace(/\/$/, "") || "/" : `/${clean.replace(/\/$/, "")}`;
+}
+
+function getPathSegments(portalPath: string): string[] {
+  return normalizePortalPath(portalPath)
+    .split("/")
+    .filter(Boolean);
+}
+
+function isTechnicalPath(portalPath: string): boolean {
+  return getPathSegments(portalPath).some((segment) =>
+    TECHNICAL_FOLDER_NAMES.has(segment.trim().toLowerCase())
+  );
+}
+
+function assertWritableDocumentPath(documentPath: string): string {
+  const cleanPath = normalizePortalPath(documentPath);
+
+  if (isTechnicalPath(cleanPath)) {
+    throw new Error("No se puede modificar un archivo dentro de una carpeta técnica del sistema");
+  }
+
+  return cleanPath;
+}
+
+function assertWritableDestinationPath(destinationPath: string): string {
+  const cleanPath = normalizePortalPath(destinationPath);
+
+  if (isTechnicalPath(cleanPath)) {
+    throw new Error("No se puede usar una carpeta técnica como destino");
+  }
+
+  return cleanPath;
+}
 
 function buildMockDocuments(path: string): DocumentItem[] {
   if (path === "/WIP/ARQ") {
@@ -139,7 +185,8 @@ export async function uploadDocument(
     return;
   }
 
-  await nextcloudAdapter.uploadFile(targetPath, fileBuffer, contentType);
+  const cleanTargetPath = assertWritableDocumentPath(targetPath);
+  await nextcloudAdapter.uploadFile(cleanTargetPath, fileBuffer, contentType);
 }
 
 export async function deleteDocument(documentPath: string): Promise<void> {
@@ -150,9 +197,11 @@ export async function deleteDocument(documentPath: string): Promise<void> {
     return;
   }
 
-  await nextcloudAdapter.deletePath(documentPath);
+  const cleanDocumentPath = assertWritableDocumentPath(documentPath);
 
-  const fragPath = getDerivedFragPath(documentPath);
+  await nextcloudAdapter.deletePath(cleanDocumentPath);
+
+  const fragPath = getDerivedFragPath(cleanDocumentPath);
   try {
     await nextcloudAdapter.deletePath(fragPath);
   } catch (error) {
@@ -174,13 +223,12 @@ export async function renameDocument(
     return;
   }
 
-  const cleanDocumentPath = documentPath.startsWith("/")
-    ? documentPath
-    : `/${documentPath}`;
+  const cleanDocumentPath = assertWritableDocumentPath(documentPath);
 
   const parts = cleanDocumentPath.split("/");
   parts[parts.length - 1] = newName;
   const newDocumentPath = parts.join("/");
+  assertWritableDocumentPath(newDocumentPath);
 
   await nextcloudAdapter.renamePath(cleanDocumentPath, newName);
 
@@ -208,13 +256,9 @@ export async function moveDocument(
     return;
   }
 
-  const cleanDocumentPath = documentPath.startsWith("/")
-    ? documentPath
-    : `/${documentPath}`;
-
-  const cleanDestinationFolderPath = destinationFolderPath.startsWith("/")
-    ? destinationFolderPath
-    : `/${destinationFolderPath}`;
+  const cleanDocumentPath = assertWritableDocumentPath(documentPath);
+  const cleanDestinationFolderPath =
+    assertWritableDestinationPath(destinationFolderPath);
 
   const fileName = cleanDocumentPath.split("/").pop();
 

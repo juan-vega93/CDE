@@ -93,6 +93,11 @@ export class OpenProjectAdapter {
 
   async createWorkPackage(input: CreateWorkPackageInput): Promise<WorkPackage> {
     const url = this.buildApiUrl("/api/v3/work_packages");
+    if (!input.openProjectProjectId) {
+      throw new Error(
+        "openProjectProjectId es obligatorio para crear Work Package"
+      );
+    }
 
     const disciplineHref = this.resolveDisciplineOptionHref(
       `${input.subject} ${input.description}`
@@ -136,7 +141,7 @@ export class OpenProjectAdapter {
 
       _links: {
         project: {
-          href: `/api/v3/projects/${this.config.projectId}`
+          href: `/api/v3/projects/${input.openProjectProjectId}`
         },
         type: {
           href: `/api/v3/types/${this.config.typeId}`
@@ -181,7 +186,12 @@ export class OpenProjectAdapter {
       status: "new",
       dueDate: data.dueDate,
       assigneeId: input.assigneeId,
-      createdAt: data.createdAt || new Date().toISOString()
+      createdAt: data.createdAt || new Date().toISOString(),
+      openProjectId: data.id,
+      bcfTopicId: input.bcfTopicId,
+      projectCode: input.projectCode,
+      openProjectProjectId: input.openProjectProjectId
+      
     };
   }
 

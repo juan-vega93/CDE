@@ -14,9 +14,6 @@ type ExplorerToolbarProps = {
 
 export function ExplorerToolbar({
   currentPath,
-  parentPath,
-  canGoUp = true,
-  projectCode = ""
 }: ExplorerToolbarProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -114,23 +111,7 @@ export function ExplorerToolbar({
           >
             {isUploading ? "Subiendo..." : "Subir archivo"}
           </button>
-
-          {canGoUp && parentPath ? (
-            <Link
-              href={
-                parentPath === "/"
-                  ? projectCode
-                    ? `/documents?projectCode=${encodeURIComponent(projectCode)}`
-                    : "/documents"
-                  : `/documents?path=${encodeURIComponent(parentPath)}${
-                      projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
-                    }`
-              }
-              className="rounded-lg border px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              ← Subir nivel
-            </Link>
-          ) : null}
+          
         </div>
       </div>
      

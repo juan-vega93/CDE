@@ -257,31 +257,49 @@ router.post("/upload", upload.single("file"), async (req, res) => {
         message: "Tipo de archivo no permitido"
       });
     }
-    const safeFileName = Buffer.from(file.originalname, "latin1")
-      .toString("utf8")
-      .normalize("NFC");
+   const safeFileName = Buffer.from(file.originalname, "latin1")
+  .toString("utf8")
+  .normalize("NFC");
 
-    const targetPath = `${targetFolderPath}/${safeFileName}`;
+  const cleanTargetFolderPath = String(targetFolderPath).replace(/\/$/, "");
+  const targetPath = `${cleanTargetFolderPath}/${safeFileName}`;
 
-    await uploadDocument(targetPath, file.buffer, file.mimetype);
+  await uploadDocument(targetPath, file.buffer, file.mimetype);
 
-    if (safeFileName.toLowerCase().endsWith(".ifc")) {
-      void generateAndStoreFrag(targetPath).catch((fragError) => {
-        console.error("[UPLOAD FRAG ERROR]", {
-          targetPath,
-          error: fragError
-        });
+  let generatedFragPath: string | null = null;
+
+  if (safeFileName.toLowerCase().endsWith(".ifc")) {
+    try {
+      console.log("[UPLOAD FRAG START]", {
+        targetPath
+      });
+
+      const fragResult = await generateAndStoreFrag(targetPath);
+      generatedFragPath = fragResult.fragPath;
+
+      console.log("[UPLOAD FRAG OK]", {
+        targetPath,
+        fragPath: generatedFragPath
+      });
+    } catch (fragError) {
+      console.error("[UPLOAD FRAG ERROR]", {
+        targetPath,
+        error: fragError
       });
     }
+  }
 
-    return res.status(201).json({
-      success: true,
-      data: {
-        path: targetPath,
-        name: safeFileName
-      },
-      message: "Archivo subido correctamente"
-    });
+  return res.status(201).json({
+    success: true,
+    data: {
+      path: targetPath,
+      name: safeFileName,
+      fragPath: generatedFragPath
+    },
+    message: generatedFragPath
+      ? "Archivo subido y FRAG generado correctamente"
+      : "Archivo subido correctamente"
+  });
   } catch (error) {
     console.error("[UPLOAD ERROR]", error);
 
@@ -361,14 +379,27 @@ router.post("/bcf/:topicId/attachments", upload.single("file"), async (req, res)
     if (!file) {
       return res.status(400).json({ success: false });
     }
+    const projectCode =
+      typeof req.query.projectCode === "string"
+        ? req.query.projectCode.trim().toUpperCase()
+        : "";
 
-    const path = `/_bcf/topics/${topicId}/attachments/${file.originalname}`;
+    if (!projectCode) {
+      return res.status(400).json({
+        success: false,
+        message: "projectCode es obligatorio para guardar adjuntos BCF"
+      });
+    }
+
+  const safeFileName = file.originalname.replace(/[\\/:*?"<>|]/g, "_");
+
+    const path = `/${projectCode}/_bcf/topics/${topicId}/attachments/${safeFileName}`;
 
     const foldersToEnsure = [
-      "/_bcf",
-      `/_bcf/topics`,
-      `/_bcf/topics/${topicId}`,
-      `/_bcf/topics/${topicId}/attachments`
+      `/${projectCode}/_bcf`,
+      `/${projectCode}/_bcf/topics`,
+      `/${projectCode}/_bcf/topics/${topicId}`,
+      `/${projectCode}/_bcf/topics/${topicId}/attachments`
     ];
 
     for (const folderPath of foldersToEnsure) {
@@ -400,14 +431,17 @@ router.post("/bcf/:topicId/attachments", upload.single("file"), async (req, res)
     return res.json({
       success: true,
       data: {
-        name: file.originalname,
-        path,
-        url: `${publicBaseUrl}/api/documents/content?path=${encodeURIComponent(path)}`
+        name: safeFileName,
+        url: `/api/documents/content?path=${encodeURIComponent(path)}`
       }
     });
   } catch (error) {
-    console.error("BCF upload error:", error);
-    res.status(500).json({ success: false });
+    console.error("[documents.routes] Error uploading BCF attachment:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "No se pudo subir el adjunto BCF"
+    });
   }
 });
 
@@ -420,14 +454,24 @@ router.post("/bcf/:topicId/snapshot", upload.single("file"), async (req, res) =>
       return res.status(400).json({ success: false });
     }
 
-    const path = `/_bcf/topics/${topicId}/snapshot.png`;
+    const projectCode =
+      typeof req.query.projectCode === "string"
+        ? req.query.projectCode.trim().toUpperCase()
+        : "";
+
+    if (!projectCode) {
+      return res.status(400).json({
+        success: false,
+        message: "projectCode es obligatorio"
+      });
+    }
+    const path = `/${projectCode}/_bcf/topics/${topicId}/snapshot.png`;
 
     const foldersToEnsure = [
-      "/_bcf",
-      "/_bcf/topics",
-      `/_bcf/topics/${topicId}`
+      `/${projectCode}/_bcf`,
+      `/${projectCode}/_bcf/topics`,
+      `/${projectCode}/_bcf/topics/${topicId}`
     ];
-
     for (const folderPath of foldersToEnsure) {
       try {
         await nextcloudAdapter.createFolder(folderPath);
@@ -455,7 +499,7 @@ router.post("/bcf/:topicId/snapshot", upload.single("file"), async (req, res) =>
     return res.json({
       success: true,
       data: {
-        url: `${publicBaseUrl}/api/documents/content?path=${encodeURIComponent(path)}`
+        url: `/api/documents/content?path=${encodeURIComponent(path)}`
       }
     });
   } catch (error) {

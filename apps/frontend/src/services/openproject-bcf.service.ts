@@ -6,171 +6,59 @@ if (!BFF_URL) {
   throw new Error("Falta definir NEXT_PUBLIC_BFF_URL en .env.local");
 }
 
-export type OpenProjectBcfSyncResult = {
-  ok: boolean;
-  openProject?: {
-    projectId?: string;
-    topicGuid?: string;
-    href?: string;
-    lastSyncedAt?: string;
-    lastSyncedHash?: string;
-  };
-  warnings: string[];
-  errors: string[];
-};
-
-export type OpenProjectProject = {
-  project_id: string;
-  name: string;
-};
-
-export type OpenProjectRemoteTopic = {
-  guid: string;
-  topic_type?: string;
-  topic_status?: string;
-  priority?: string;
-  title: string;
-  description?: string;
-  creation_date?: string;
-  creation_author?: string;
-  modified_date?: string;
-  modified_author?: string;
-  assigned_to?: string;
-  labels?: string[];
-};
-
-type ApiResponse<T> = {
-  success: boolean;
-  data: T;
-  message?: string;
-};
-
-export async function checkOpenProjectBcfHealth(): Promise<{
-  baseUrl: string;
-  mode: string;
-  bcfApiReachable: boolean;
-  bcfApiStatus: number | null;
-}> {
-  const response = await fetch(`${BFF_URL}/api/openproject-bcf/health`);
-  const result: ApiResponse<{
-    baseUrl: string;
-    mode: string;
-    bcfApiReachable: boolean;
-    bcfApiStatus: number | null;
-  }> = await response.json();
-
-  if (!result.success) {
-    throw new Error(result.message ?? "OpenProject BCF health check failed");
-  }
-
-  return result.data;
+function normalizeProjectCode(projectCode?: string) {
+  return projectCode?.trim().toUpperCase() || "";
 }
 
-export async function getOpenProjectBcfProjects(): Promise<
-  OpenProjectProject[]
-> {
-  const response = await fetch(`${BFF_URL}/api/openproject-bcf/projects`);
-  const result: ApiResponse<OpenProjectProject[]> = await response.json();
+export async function getBcfTopics(projectCode?: string): Promise<BcfTopic[]> {
+  const normalizedProjectCode = normalizeProjectCode(projectCode);
 
-  if (!result.success) {
-    throw new Error(
-      result.message ?? "No se pudieron listar proyectos OpenProject BCF"
-    );
+  const query = normalizedProjectCode
+    ? `?projectCode=${encodeURIComponent(normalizedProjectCode)}`
+    : "";
+
+  const response = await fetch(`${BFF_URL}/api/bcf/topics${query}`, {
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error("No se pudieron cargar los topics BCF");
   }
 
-  return result.data;
+  const result = await response.json();
+
+  return Array.isArray(result.data) ? result.data : [];
 }
 
-export async function getOpenProjectBcfTopics(
-  projectId: string
-): Promise<OpenProjectRemoteTopic[]> {
+export async function saveBcfTopics(
+  topics: BcfTopic[],
+  projectCode?: string
+): Promise<void> {
+  const normalizedProjectCode = normalizeProjectCode(projectCode);
+
+  if (!normalizedProjectCode) {
+    throw new Error("projectCode es obligatorio para guardar topics BCF");
+  }
+
   const response = await fetch(
-    `${BFF_URL}/api/openproject-bcf/projects/${encodeURIComponent(projectId)}/topics`
+    `${BFF_URL}/api/bcf/topics?projectCode=${encodeURIComponent(
+      normalizedProjectCode
+    )}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(
+        topics.map((topic) => ({
+          ...topic,
+          projectCode: normalizedProjectCode
+        }))
+      )
+    }
   );
-  const result: ApiResponse<OpenProjectRemoteTopic[]> = await response.json();
 
-  if (!result.success) {
-    throw new Error(result.message ?? "No se pudieron listar topics de OpenProject");
+  if (!response.ok) {
+    throw new Error("No se pudieron guardar los topics BCF");
   }
-
-  return result.data;
-}
-
-export async function pushTopicToOpenProject(
-  projectId: string,
-  topic: BcfTopic
-): Promise<OpenProjectBcfSyncResult> {
-  console.log("[OP Sync] pushing topic", {
-    customId: topic.id,
-    title: topic.title,
-    projectId
-  });
-
-  const response = await fetch(`${BFF_URL}/api/openproject-bcf/topics/push`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId, topic })
-  });
-
-  const result: ApiResponse<OpenProjectBcfSyncResult> = await response.json();
-
-  console.log("[OP Sync] push result", result);
-
-  if (!result.success) {
-    throw new Error(result.message ?? "Error enviando topic a OpenProject");
-  }
-
-  return result.data;
-}
-
-export async function pullTopicFromOpenProject(
-  projectId: string,
-  topicGuid: string
-): Promise<OpenProjectBcfSyncResult> {
-  console.log("[OP Sync] pulling topic", { projectId, topicGuid });
-
-  const response = await fetch(`${BFF_URL}/api/openproject-bcf/topics/pull`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId, topicGuid })
-  });
-
-  const result: ApiResponse<OpenProjectBcfSyncResult> = await response.json();
-
-  console.log("[OP Sync] pull result", result);
-
-  if (!result.success) {
-    throw new Error(result.message ?? "Error trayendo topic de OpenProject");
-  }
-
-  return result.data;
-}
-
-export async function syncTopicWithOpenProject(
-  projectId: string,
-  topic: BcfTopic,
-  direction: "push" | "pull" | "both" = "push"
-): Promise<OpenProjectBcfSyncResult> {
-  console.log("[OP Sync] syncing topic", {
-    customId: topic.id,
-    title: topic.title,
-    projectId,
-    direction
-  });
-
-  const response = await fetch(`${BFF_URL}/api/openproject-bcf/topics/sync`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId, topic, direction })
-  });
-
-  const result: ApiResponse<OpenProjectBcfSyncResult> = await response.json();
-
-  console.log("[OP Sync] sync result", result);
-
-  if (!result.success) {
-    throw new Error(result.message ?? "Error sincronizando topic con OpenProject");
-  }
-
-  return result.data;
 }
