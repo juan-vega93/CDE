@@ -83,6 +83,29 @@ export async function sendToReview(
 
   return payload;
 }
+export async function updateWorkPackageStatus(
+  id: number,
+  status: string
+): Promise<WorkPackage> {
+  const res = await fetch(`${BFF_URL}/api/work-packages/${id}/status`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ status })
+  });
+
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(
+      payload.message || payload.error || "No se pudo actualizar el estado"
+    );
+  }
+
+  const json = await res.json();
+  return json.data;
+}
+
 export async function getWorkPackageLinkByDocumentId(
   documentId: string
 ) {

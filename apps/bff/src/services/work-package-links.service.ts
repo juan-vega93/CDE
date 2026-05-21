@@ -82,3 +82,28 @@ export async function syncWorkPackageStatusByDocumentId(
     return link; 
   }
 }
+
+/**
+ * Updates workPackageStatusName for ALL links that reference the given workPackageId.
+ * Called after a status change to keep the links store in sync.
+ */
+export function syncWorkPackageStatusForLinks(
+  workPackageId: number,
+  newStatus: string
+): void {
+  const links = readWorkPackageLinks();
+  let modified = false;
+
+  for (const link of links) {
+    if (link.workPackageId === workPackageId) {
+      link.workPackageStatusName = newStatus;
+      link.updatedAt = new Date().toISOString();
+      link.lastSyncedAt = new Date().toISOString();
+      modified = true;
+    }
+  }
+
+  if (modified) {
+    saveWorkPackageLinks(links);
+  }
+}

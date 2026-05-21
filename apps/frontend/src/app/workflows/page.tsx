@@ -117,6 +117,34 @@ function formatOriginLabel(origin: WorkflowRow["origin"]) {
   return "OpenProject";
 }
 
+const STATUS_BADGE_STYLES: Record<string, string> = {
+  new: "bg-slate-100 text-slate-700",
+  in_progress: "bg-blue-50 text-blue-700",
+  in_review: "bg-amber-50 text-amber-700",
+  approved: "bg-green-50 text-green-700",
+  rejected: "bg-red-50 text-red-700",
+  closed: "bg-purple-50 text-purple-700",
+  "En progreso": "bg-blue-50 text-blue-700",
+  "En revisión": "bg-amber-50 text-amber-700",
+  Aprobado: "bg-green-50 text-green-700",
+  Rechazado: "bg-red-50 text-red-700",
+  Cerrado: "bg-purple-50 text-purple-700",
+  Nuevo: "bg-slate-100 text-slate-700",
+  Asignado: "bg-sky-50 text-sky-700",
+  Respondido: "bg-indigo-50 text-indigo-700",
+  Resuelto: "bg-teal-50 text-teal-700"
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const colorClass = STATUS_BADGE_STYLES[status] ?? "bg-slate-100 text-slate-700";
+
+  return (
+    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${colorClass}`}>
+      {status}
+    </span>
+  );
+}
+
 type WorkflowsPageProps = {
   searchParams: Promise<{
     projectCode?: string | string[];
@@ -365,9 +393,7 @@ export default async function WorkflowsPage({
                         </td>
 
                         <td className="px-5 py-4">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                            {row.status}
-                          </span>
+                          <StatusBadge status={row.status} />
                         </td>
 
                         <td className="px-5 py-4 text-slate-700">
@@ -381,7 +407,7 @@ export default async function WorkflowsPage({
                         <td className="px-5 py-4 text-right">
                           <div className="flex justify-end gap-2">
                             <Link
-                              href={`/workflows/${row.id}`}
+                              href={`/workflows/${row.id}${projectCode ? `?projectCode=${encodeURIComponent(projectCode)}` : ""}`}
                               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
                             >
                               Ver detalle

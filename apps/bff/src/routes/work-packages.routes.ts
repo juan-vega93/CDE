@@ -2,11 +2,12 @@ import { Router } from "express";
 import {
   getWorkPackages,
   getWorkPackageById,
+  updateWorkPackageStatus,
   createWorkPackageFromBcfTopic
 } from "../services/work-packages.service";
 import { getBcfTopics, saveBcfTopics } from "../services/bcf-topics.service";
 import type { ApiResponse } from "../types/api.types";
-import type { WorkPackage, CreateWorkPackageInput } from "../types/work-package.types";
+import type { WorkPackage, WorkPackageStatus, CreateWorkPackageInput } from "../types/work-package.types";
 
 const router = Router();
 
@@ -77,6 +78,56 @@ router.post("/from-bcf-topic", async (req, res) => {
     res.status(500).json({
       success: false,
       message: `Error creando WorkPackage desde BCF topic: ${message.slice(0, 300)}`
+    });
+  }
+});
+
+router.patch("/:id/status", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "ID inválido"
+      });
+    }
+
+    const { status } = req.body as { status: WorkPackageStatus };
+    const validStatuses: WorkPackageStatus[] = [
+      "new", "in_progress", "in_review", "approved", "rejected", "closed"
+    ];
+
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Estado inválido. Valores permitidos: ${validStatuses.join(", ")}`
+      });
+    }
+
+    const updated = await updateWorkPackageStatus(id, status);
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Work package no encontrado"
+      });
+    }
+
+    const response: ApiResponse<WorkPackage> = {
+      success: true,
+      data: updated
+    };
+
+    res.json(response);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+
+    console.error("[work-packages] PATCH /:id/status error:", message);
+
+    res.status(500).json({
+      success: false,
+      message: `Error actualizando estado: ${message.slice(0, 300)}`
     });
   }
 });

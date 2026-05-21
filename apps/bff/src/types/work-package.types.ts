@@ -1,4 +1,4 @@
-export type WorkPackageStatus = "new" | "in_review" | "approved" | "rejected" | "closed";
+export type WorkPackageStatus = "new" | "in_progress" | "in_review" | "approved" | "rejected" | "closed";
 
 export type WorkPackage = {
   id: number;

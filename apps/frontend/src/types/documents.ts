@@ -87,6 +87,7 @@ export type SendToReviewInput = {
 
 export type WorkPackageStatus =
   | "new"
+  | "in_progress"
   | "in_review"
   | "approved"
   | "rejected"

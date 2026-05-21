@@ -1,9 +1,11 @@
 import type {
   WorkPackage,
+  WorkPackageStatus,
   CreateWorkPackageInput
 } from "../types/work-package.types";
 import { readJsonFile, writeJsonFile } from "../utils/json-store";
 import { OpenProjectAdapter } from "../adapters/openproject.adapter";
+import { syncWorkPackageStatusForLinks } from "./work-package-links.service";
 
 const WORK_PACKAGES_FILE = "data/work-packages.json";
 const openProjectAdapter = new OpenProjectAdapter();
@@ -116,23 +118,118 @@ export function getWorkPackages(): WorkPackage[] {
   return readWorkPackages();
 }
 
-export async function getWorkPackageById(id: number): Promise<WorkPackage | null> {
+export async function updateWorkPackageStatus(
+  id: number,
+  newStatus: WorkPackageStatus
+): Promise<WorkPackage | null> {
   const useMock = process.env.USE_OPENPROJECT_MOCK !== "false";
 
   if (useMock) {
     const workPackagesStore = readWorkPackages();
-    return workPackagesStore.find((wp) => wp.id === id) ?? null;
+    const index = workPackagesStore.findIndex((wp) => wp.id === id);
+
+    if (index === -1) return null;
+
+    workPackagesStore[index] = {
+      ...workPackagesStore[index],
+      status: newStatus
+    };
+    saveWorkPackages(workPackagesStore);
+
+    // Sync status into work-package-links store
+    syncWorkPackageStatusForLinks(id, newStatus);
+
+    return workPackagesStore[index];
   }
 
+  const workPackagesStore = readWorkPackages();
+  const localWp = workPackagesStore.find((wp) => wp.id === id);
+  const openProjectId = localWp?.openProjectId ?? id;
+
   try {
-    return await openProjectAdapter.getWorkPackageById(id);
+    const updated = await openProjectAdapter.updateWorkPackageStatus(openProjectId, newStatus);
+
+    const index = workPackagesStore.findIndex((wp) => wp.id === id);
+
+    if (index >= 0) {
+      workPackagesStore[index] = {
+        ...workPackagesStore[index],
+        status: updated.status
+      };
+      saveWorkPackages(workPackagesStore);
+    }
+
+    // Sync status into work-package-links store (use both portal ID and openProjectId)
+    syncWorkPackageStatusForLinks(openProjectId, newStatus);
+    syncWorkPackageStatusForLinks(id, newStatus);
+
+    return updated;
+  } catch (error) {
+    console.error(
+      "[work-packages.service] OpenProject update status failed, using local JSON:",
+      error
+    );
+
+    const catchIndex = workPackagesStore.findIndex((wp) => wp.id === id);
+
+    if (catchIndex === -1) return null;
+
+    workPackagesStore[catchIndex] = {
+      ...workPackagesStore[catchIndex],
+      status: newStatus
+    };
+    saveWorkPackages(workPackagesStore);
+
+    // Sync status into work-package-links store (use both portal ID and openProjectId)
+    syncWorkPackageStatusForLinks(openProjectId, newStatus);
+    syncWorkPackageStatusForLinks(id, newStatus);
+
+    return workPackagesStore[catchIndex];
+  }
+}
+
+export async function getWorkPackageById(id: number): Promise<WorkPackage | null> {
+  const useMock = process.env.USE_OPENPROJECT_MOCK !== "false";
+  const workPackagesStore = readWorkPackages();
+  const localWp = workPackagesStore.find((wp) => wp.id === id);
+
+  if (useMock) {
+    return localWp ?? null;
+  }
+
+  // Determine the real OpenProject ID to query
+  // Some WPs were created in mock mode with fake openProjectId values.
+  // The local store has the canonical mapping.
+  const openProjectId = localWp?.openProjectId ?? id;
+
+  try {
+    const opWp = await openProjectAdapter.getWorkPackageById(openProjectId);
+
+    // Update local store with latest data from OpenProject
+    if (localWp) {
+      const index = workPackagesStore.findIndex((wp) => wp.id === id);
+      if (index >= 0) {
+        workPackagesStore[index] = {
+          ...workPackagesStore[index],
+          status: opWp.status,
+          subject: opWp.subject,
+          description: opWp.description
+        };
+        saveWorkPackages(workPackagesStore);
+
+        // Also sync to work-package-links
+        syncWorkPackageStatusForLinks(openProjectId, opWp.status);
+      }
+      return workPackagesStore[index];
+    }
+
+    return opWp;
   } catch (error) {
     console.error(
       "[work-packages.service] OpenProject get by id failed, using local JSON:",
       error
     );
 
-    const workPackagesStore = readWorkPackages();
-    return workPackagesStore.find((wp) => wp.id === id) ?? null;
+    return localWp ?? null;
   }
 }

@@ -157,6 +157,8 @@
     "linkType": "review",
     "status": "active",
     "createdAt": "2026-05-21T15:54:54.301Z",
-    "updatedAt": "2026-05-21T15:54:54.301Z"
+    "updatedAt": "2026-05-21T18:16:04.439Z",
+    "workPackageStatusName": "in_progress",
+    "lastSyncedAt": "2026-05-21T18:16:04.439Z"
   }
 ]
