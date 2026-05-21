@@ -30,7 +30,12 @@ export function Sidebar() {
         ? `/documents?projectCode=${encodeURIComponent(projectCode)}`
         : "/documents"
     },
-    { label: "Workflows", href: "#" },
+    {
+      label: "Workflows",
+      href: projectCode
+        ? `/workflows?projectCode=${encodeURIComponent(projectCode)}`
+        : "/workflows"
+    },
     {
       label: "BIM",
       href: projectCode

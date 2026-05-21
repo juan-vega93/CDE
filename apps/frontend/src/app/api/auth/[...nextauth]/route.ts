@@ -41,8 +41,21 @@ const handler = NextAuth({
     async jwt({ token, account }) {
       if (account?.access_token) {
         token.accessToken = account.access_token;
+      }
 
-        const parsed = parseJwtPayload(account.access_token);
+      if (account?.id_token) {
+        token.idToken = account.id_token;
+      }
+
+      const accessToken =
+        typeof account?.access_token === "string"
+          ? account.access_token
+          : typeof token.accessToken === "string"
+            ? token.accessToken
+            : "";
+
+      if (accessToken) {
+        const parsed = parseJwtPayload(accessToken);
         const roles = Array.isArray(parsed?.realm_access?.roles)
           ? parsed!.realm_access!.roles!
           : [];
@@ -52,8 +65,10 @@ const handler = NextAuth({
 
       return token;
     },
+
     async session({ session, token }) {
       session.accessToken = token.accessToken;
+      session.idToken = token.idToken;
       session.roles = token.roles || [];
 
       return session;

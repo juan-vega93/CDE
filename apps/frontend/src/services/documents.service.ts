@@ -73,11 +73,15 @@ export async function sendToReview(
     body: JSON.stringify(input)
   });
 
-  if (!res.ok) {
-    throw new Error("No se pudo enviar el documento a revisión");
+  const payload = await res.json();
+
+  if (!res.ok || !payload.success) {
+    throw new Error(
+      payload.message || payload.error || "No se pudo enviar el documento a revisión"
+    );
   }
 
-  return res.json();
+  return payload;
 }
 export async function getWorkPackageLinkByDocumentId(
   documentId: string

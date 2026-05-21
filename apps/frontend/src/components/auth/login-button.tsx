@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { signIn, useSession } from "next-auth/react";
+import { signIn, signOut, useSession } from "next-auth/react";
 
 function getInitials(name?: string | null, email?: string | null) {
   const source = name?.trim() || email?.trim() || "U";
@@ -14,34 +14,47 @@ function getInitials(name?: string | null, email?: string | null) {
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
-type CsrfResponse = {
-  csrfToken?: string;
-};
 
 export function LoginButton() {
   const { data: session, status } = useSession();
-  const [csrfToken, setCsrfToken] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  async function handleLogout() {
+    setIsOpen(false);
 
-  useEffect(() => {
-    async function loadCsrfToken() {
-      try {
-        const response = await fetch("/api/auth/csrf", {
-          method: "GET",
-          credentials: "include"
-        });
+    const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
+    const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM;
+    const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID;
 
-        const data = (await response.json()) as CsrfResponse;
-        setCsrfToken(data.csrfToken || "");
-      } catch (error) {
-        console.error("[login-button] csrf load error:", error);
-      }
+    const idToken =
+      typeof session?.idToken === "string" ? session.idToken : "";
+
+    const redirectUrl = `${window.location.origin}/login`;
+
+    if (!keycloakUrl || !realm || !clientId || !idToken) {
+      await signOut({
+        callbackUrl: "/login"
+      });
+
+      return;
     }
 
-    void loadCsrfToken();
-  }, []);
+    const logoutUrl = new URL(
+      `${keycloakUrl}/realms/${realm}/protocol/openid-connect/logout`
+    );
+
+    logoutUrl.searchParams.set("id_token_hint", idToken);
+    logoutUrl.searchParams.set("post_logout_redirect_uri", redirectUrl);
+
+    await signOut({
+      redirect: false
+    });
+
+    window.location.href = logoutUrl.toString();
+  }
+
+ 
 
   useEffect(() => {
     function handleMouseDown(event: MouseEvent) {
@@ -146,16 +159,13 @@ export function LoginButton() {
             <div className="mx-4 border-t border-gray-100" />
 
             <div className="p-4">
-              <form method="POST" action="/api/auth/signout">
-                <input type="hidden" name="csrfToken" value={csrfToken} />
-                <input type="hidden" name="callbackUrl" value="/login" />
-                <button
-                  type="submit"
-                  className="w-full rounded-lg bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
-                >
-                  Cerrar sesión
-                </button>
-              </form>
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="w-full rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
+              >
+                Cerrar sesión
+              </button>
             </div>
           </div>
         </>

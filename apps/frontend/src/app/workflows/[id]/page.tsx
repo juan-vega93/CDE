@@ -51,11 +51,8 @@ export default async function WorkflowDetailPage({
             </p>
           </div>
 
-          <Link
-            href="/documents"
-            className="rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Volver a documentos
+          <Link href="/workflows">
+            Volver a workflows
           </Link>
         </div>
 

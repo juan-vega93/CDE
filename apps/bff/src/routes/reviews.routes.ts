@@ -1,66 +1,87 @@
 import { Router } from "express";
 import { createWorkPackage } from "../services/work-packages.service";
 import { createWorkPackageLink } from "../services/work-package-links.service";
+import { OpenProjectProjectsService } from "../services/openproject-projects.service";
 import type { ApiResponse } from "../types/api.types";
 import type { WorkPackage } from "../types/work-package.types";
 import type { WorkPackageLink } from "../types/work-package-link.types";
 
-type SendToReviewInput = {
-  documentId: string;
-  documentPath: string;
-  documentName: string;
-  projectId: number;
-  typeId: number;
-  subject: string;
-  description: string;
-  assigneeId?: number;
-  dueDate?: string;
-};
-
-type SendToReviewResponse = {
-  workPackage: WorkPackage;
-  link: WorkPackageLink;
-};
-
 const router = Router();
+
+const openProjectProjectsService = new OpenProjectProjectsService();
+
+function getProjectCodeFromDocumentPath(documentPath: string): string {
+  const projectCode = String(documentPath || "")
+    .split("/")
+    .filter(Boolean)[0]
+    ?.trim()
+    .toUpperCase();
+
+  if (!projectCode) {
+    throw new Error("No se pudo determinar el código del proyecto desde la ruta del documento");
+  }
+
+  return projectCode;
+}
 
 router.post("/send", async (req, res) => {
   try {
-    const body = req.body as SendToReviewInput;
+    const {
+      documentId,
+      documentPath,
+      documentName,
+      typeId,
+      subject,
+      description,
+      assigneeId,
+      dueDate
+    } = req.body;
 
-    if (
-      !body.documentId ||
-      !body.documentPath ||
-      !body.documentName ||
-      !body.projectId ||
-      !body.typeId ||
-      !body.subject ||
-      !body.description
-    ) {
+    if (!documentId || !documentPath || !documentName) {
       return res.status(400).json({
         success: false,
-        message: "Faltan campos obligatorios para enviar a revisión"
+        message: "documentId, documentPath y documentName son obligatorios"
       });
     }
 
+    const projectCode = getProjectCodeFromDocumentPath(documentPath);
+
+    const openProjectResult =
+      await openProjectProjectsService.createOrGetProject({
+        code: projectCode,
+        name: projectCode,
+        description: `Proyecto ${projectCode} vinculado desde CDE Portal`
+      });
+
+    const openProjectProjectId = openProjectResult.project.id;
+
     const workPackage = await createWorkPackage({
-      subject: body.subject,
-      description: body.description,
-      assigneeId: body.assigneeId,
-      dueDate: body.dueDate
+      subject: subject || `Revisión de ${documentName}`,
+      description:
+        description ||
+        `Enviar documento ${documentName} a revisión técnica.\n\nDocumento: ${documentPath}`,
+      assigneeId,
+      dueDate,
+      projectCode,
+      openProjectProjectId
     });
 
+    const workPackageId = workPackage.openProjectId ?? workPackage.id;
+
     const link = createWorkPackageLink({
-      documentId: body.documentId,
-      documentPath: body.documentPath,
-      documentName: body.documentName,
-      workPackageId: workPackage.id,
-      projectId: body.projectId,
-      typeId: body.typeId,
+      documentId,
+      documentPath,
+      documentName,
+      workPackageId,
+      projectId: openProjectProjectId,
+      typeId: Number(typeId || process.env.OPENPROJECT_TYPE_ID || 1),
       linkType: "review"
     });
 
-    const response: ApiResponse<SendToReviewResponse> = {
+    const response: ApiResponse<{
+      workPackage: WorkPackage;
+      link: WorkPackageLink;
+    }> = {
       success: true,
       data: {
         workPackage,
@@ -68,13 +89,18 @@ router.post("/send", async (req, res) => {
       }
     };
 
-    res.status(201).json(response);
+    return res.status(201).json(response);
   } catch (error) {
     console.error("[reviews.routes] POST /send error:", error);
 
-    res.status(500).json({
+    const message =
+      error instanceof Error
+        ? error.message
+        : "No se pudo enviar el documento a revisión";
+
+    return res.status(500).json({
       success: false,
-      message: "Error al enviar documento a revisión"
+      message
     });
   }
 });

@@ -99,6 +99,10 @@ export default function ProjectCardsAdminPage() {
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [message, setMessage] = useState<string>("");
   const [showUserMenu, setShowUserMenu] = useState(false);
+  function handleLogout() {
+    setShowUserMenu(false);
+    window.location.href = "/api/auth/logout";
+  }
 
   const selectedProject = useMemo(
     () =>
@@ -837,6 +841,7 @@ export default function ProjectCardsAdminPage() {
 
                 <button
                   type="button"
+                  onClick={handleLogout}
                   className="w-full rounded bg-red-700 px-3 py-2 text-left text-sm font-semibold text-white hover:bg-red-800"
                 >
                   Cerrar sesión
