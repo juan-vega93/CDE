@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   addProjectMember,
   createOrUpdateProjectCard,  
@@ -51,7 +51,7 @@ const initialMemberForm: MemberFormState = {
   disciplineKey: "ARQ"
 };
 
-export default function ProjectCardsAdminPage() {
+function ProjectCardsAdminPageContent() {
   const [projectToDelete, setProjectToDelete] = useState<ProjectCard | null>(
     null
   );
@@ -792,10 +792,10 @@ export default function ProjectCardsAdminPage() {
           />
           <div>
             <div className="text-lg font-semibold leading-tight">
-              CDE Portal
+              TYPSA Nexus
             </div>
             <div className="text-xs text-slate-500">
-              Gestión de proyectos y equipos
+              Integrated BIM Collaboration Platform
             </div>
           </div>
         </div>
@@ -1588,5 +1588,13 @@ export default function ProjectCardsAdminPage() {
     )}
 
     </main>
+  );
+}
+
+export default function ProjectCardsAdminPage() {
+  return (
+    <Suspense fallback={<main style={{ padding: 24 }}>Cargando administración de proyectos...</main>}>
+      <ProjectCardsAdminPageContent />
+    </Suspense>
   );
 }

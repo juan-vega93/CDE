@@ -16,10 +16,10 @@ export function Topbar() {
 
         <div>
           <div className="text-lg font-semibold leading-tight text-slate-900">
-            CDE Portal
+            TYPSA Nexus
           </div>
           <div className="text-xs text-slate-500">
-            Gestión de proyectos y equipos
+            Integrated BIM Collaboration Platform
           </div>
         </div>
       </div>

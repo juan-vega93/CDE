@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { IfcViewerCanvas } from "@/features/viewer-ifc/components/ifc-viewer-canvas";
+import { IfcViewerClient } from "./ifc-viewer-client";
 import {
   resolveViewerSource,
   type ViewerSource
@@ -89,7 +89,7 @@ export default async function ViewerPage({ searchParams }: ViewerPageProps) {
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-slate-100">    
-        <IfcViewerCanvas
+        <IfcViewerClient
           sources={sources}
           documentNames={documentNames}
           documentPaths={documentPaths}

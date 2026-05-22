@@ -1,0 +1,24 @@
+services:
+  cde-portal-bff:
+    build:
+      context: .
+      dockerfile: apps/bff/Dockerfile
+    container_name: cde-portal-bff
+    restart: unless-stopped
+    env_file:
+      - ./apps/bff/.env
+    ports:
+      - "4000:4000"
+
+  cde-portal-frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    container_name: cde-portal-frontend
+    restart: unless-stopped
+    env_file:
+      - ./apps/frontend/.env.local
+    ports:
+      - "3000:3000"
+    depends_on:
+      - cde-portal-bff

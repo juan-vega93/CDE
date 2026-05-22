@@ -16,7 +16,7 @@ export default function LoginPage() {
               Portal CDE
             </h1>
             <p className="text-sm text-slate-500">
-              Gestión de proyectos y equipos
+              Integrated BIM Collaboration Platform
             </p>
           </div>
         </div>
