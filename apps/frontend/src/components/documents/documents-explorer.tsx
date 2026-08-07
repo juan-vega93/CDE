@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   clearDocumentExplorerCache,
@@ -197,7 +196,7 @@ function formatBimDerivativeStatus(row: ExplorerRow) {
     case "pending":
       return "Generando visor 3D";
     case "failed":
-      return "Visor 3D falló";
+      return "Visor 3D fallÃ³";
     case "missing":
     default:
       return "Sin visor 3D";
@@ -258,7 +257,6 @@ export function DocumentsExplorer({
   currentPath,
   projectCode = ""
 }: DocumentsExplorerProps) {
-  const router = useRouter();
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(
     () => new Set(DEFAULT_VISIBLE_COLUMNS)
@@ -411,6 +409,16 @@ export function DocumentsExplorer({
       else next.add(path);
       return next;
     });
+  }
+
+  function buildFolderHref(path: string) {
+    return `/documents?path=${encodeURIComponent(path)}${
+      projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
+    }`;
+  }
+
+  function openFolder(path: string) {
+    window.location.assign(buildFolderHref(path));
   }
 
   function toggleAllVisible() {
@@ -1084,6 +1092,12 @@ export function DocumentsExplorer({
                 return (
                   <tr
                     key={row.path}
+                    onDoubleClick={(event) => {
+                      if (row.kind !== "folder") return;
+                      const target = event.target as HTMLElement;
+                      if (target.closest("button, a, input, select, textarea")) return;
+                      openFolder(row.path);
+                    }}
                     className={`text-sm hover:bg-slate-50 ${
                       checked ? "bg-red-50" : ""
                     }`}
@@ -1108,27 +1122,13 @@ export function DocumentsExplorer({
                             className="min-w-[320px] border-b border-slate-200 px-3 py-2"
                           >
                             {row.kind === "folder" ? (
-                              (() => {
-                                const href = `/documents?path=${encodeURIComponent(row.path)}${
-                                  projectCode
-                                    ? `&projectCode=${encodeURIComponent(projectCode)}`
-                                    : ""
-                                }`;
-
-                                return (
-                                  <Link
-                                    href={href}
-                                    prefetch={false}
-                                    onClick={(event) => {
-                                      event.preventDefault();
-                                      router.push(href);
-                                    }}
-                                    className="font-medium text-blue-700 hover:underline"
-                                  >
-                                    <span>{row.name}</span>
-                                  </Link>
-                                );
-                              })()
+                              <button
+                                type="button"
+                                onClick={() => openFolder(row.path)}
+                                className="font-medium text-blue-700 hover:underline"
+                              >
+                                <span>{row.name}</span>
+                              </button>
                             ) : (
                               <Link
                                 href={buildDocumentHref(row)}
@@ -1598,7 +1598,7 @@ export function DocumentsExplorer({
                             {version.label}
                           </div>
                           <div className="mt-1 text-xs text-slate-500">
-                            {version.modifiedAtLocal || "-"} ·{" "}
+                            {version.modifiedAtLocal || "-"} Â·{" "}
                             {version.size ? formatBytes(version.size) : "-"}
                           </div>
                         </div>
