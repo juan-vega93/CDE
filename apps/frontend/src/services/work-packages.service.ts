@@ -1,14 +1,9 @@
 import type { BcfTopic } from "@/features/viewer-ifc/types/bcf-topic";
+import { bffFetch, getBffUrl } from "./bff-client";
 type BcfTopicOpenProjectPayload = BcfTopic & {
   projectCode?: string;
   openProjectProjectId?: number;
 };
-
-const BFF_URL = process.env.NEXT_PUBLIC_BFF_URL;
-
-if (!BFF_URL) {
-  throw new Error("Falta definir NEXT_PUBLIC_BFF_URL en .env.local");
-}
 
 export type WorkPackageResult = {
   id: number;
@@ -40,18 +35,45 @@ function toBffAbsoluteUrl(value?: string | null) {
     return value;
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_BFF_URL ?? "";
-
-  return `${baseUrl}${value.startsWith("/") ? value : `/${value}`}`;
+  return getBffUrl(value.startsWith("/") ? value : `/${value}`);
 }
+
+function buildBimIssueDescription(topic: BcfTopicOpenProjectPayload) {
+  const lines = [topic.description || ""].filter(Boolean);
+  const metadata: string[] = [];
+
+  if (topic.issueType) metadata.push(`Tipo BIM: ${topic.issueType}`);
+  if (topic.discipline) metadata.push(`Disciplina: ${topic.discipline}`);
+  if (topic.dueDate) metadata.push(`Fecha limite: ${topic.dueDate}`);
+  if (topic.projectCode) metadata.push(`Proyecto CDE: ${topic.projectCode}`);
+  if (topic.source?.modelNames?.length) {
+    metadata.push(`Modelos: ${topic.source.modelNames.join(", ")}`);
+  }
+  if (topic.linkedSelection?.length) {
+    const totalElements = topic.linkedSelection.reduce(
+      (total, selection) => total + selection.expressIds.length,
+      0
+    );
+    metadata.push(`Elementos vinculados: ${totalElements}`);
+  }
+  if (topic.viewpointId) metadata.push(`Viewpoint CDE: ${topic.viewpointId}`);
+  if (topic.nativeViewpointGuid) metadata.push(`Viewpoint BCF: ${topic.nativeViewpointGuid}`);
+
+  if (metadata.length) {
+    lines.push(["--- Metadata BIM CDE ---", ...metadata].join("\n"));
+  }
+
+  return lines.join("\n\n") || "Creado desde el visor BIM del CDE Portal";
+}
+
 export async function createWorkPackageFromBcfTopic(
   topic: BcfTopicOpenProjectPayload,
   snapshotUrl?: string | null,
   attachmentUrls?: string[]
 ): Promise<WorkPackageResult> {
-  const payload = {
+const payload = {
   subject: topic.title,
-  description: topic.description || "",
+  description: buildBimIssueDescription(topic),
   bcfTopicId: topic.id,
   projectCode: topic.projectCode,
   openProjectProjectId: topic.openProjectProjectId,
@@ -77,7 +99,7 @@ export async function createWorkPackageFromBcfTopic(
     attachmentsCount: payload.attachmentUrls?.length ?? 0,
   });
 
-  const response = await fetch(`${BFF_URL}/api/work-packages/from-bcf-topic`, {
+  const response = await bffFetch("/api/work-packages/from-bcf-topic", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

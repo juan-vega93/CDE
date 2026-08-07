@@ -125,7 +125,7 @@ export function LoginButton() {
         ref={buttonRef}
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-xs font-semibold text-gray-700 hover:bg-gray-200"
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-red-700 text-xs font-semibold text-white shadow-sm hover:bg-red-800"
         style={{ lineHeight: 1 }}
         aria-label="Abrir menú de usuario"
         aria-expanded={isOpen}
@@ -139,30 +139,42 @@ export function LoginButton() {
 
           <div
             ref={panelRef}
-            className="fixed right-6 top-16 z-[2000] w-72 rounded-2xl border border-gray-200 bg-white shadow-2xl"
+            className="fixed right-5 top-16 z-[2000] w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
           >
-            <div className="px-5 pt-5 pb-4">
-              <p className="text-sm font-semibold text-gray-900">
-                {fullName}
-              </p>
+            <div className="flex items-center gap-3 border-b border-slate-100 p-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-700 text-sm font-semibold text-white">
+                {initials}
+              </div>
 
-              <p className="mt-1 text-xs text-gray-500">
-                {email}
-              </p>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-slate-900">
+                  {fullName}
+                </div>
+                <div className="truncate text-xs text-slate-500">
+                  {email}
+                </div>
+              </div>
+            </div>
 
-              <div className="mt-3">
-                <span className="inline-block rounded-md bg-blue-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+            <div className="space-y-2 p-4 text-sm">
+              <div className="flex items-center justify-between gap-3 rounded bg-slate-50 px-3 py-2">
+                <span className="text-slate-500">Rol</span>
+                <span className="truncate font-semibold text-slate-800">
                   {primaryRole}
                 </span>
               </div>
-            </div>
-            <div className="mx-4 border-t border-gray-100" />
 
-            <div className="p-4">
+              <button
+                type="button"
+                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Mi perfil
+              </button>
+
               <button
                 type="button"
                 onClick={() => void handleLogout()}
-                className="w-full rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
+                className="w-full rounded bg-red-700 px-3 py-2 text-left text-sm font-semibold text-white hover:bg-red-800"
               >
                 Cerrar sesión
               </button>

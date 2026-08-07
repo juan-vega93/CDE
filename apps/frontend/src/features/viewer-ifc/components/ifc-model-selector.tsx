@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getDocuments, getFolders } from "@/services/documents.service";
+import { getDocumentExplorer } from "@/services/documents.service";
 
 type IfcModelSelectorProps = {
   isOpen: boolean;
   initialSelectedPaths: string[];
+  disabledPaths?: string[];
   projectCode?: string;
   onClose: () => void;
   onApply: (selected: Array<{ path: string; name: string }>) => void;
@@ -22,17 +23,9 @@ type DocumentItem = {
   name: string;
   path: string;
   extension?: string;
-};
-
-type FolderApiResponse = {
-  data?: {
-    items?: FolderItem[];
-  };
-};
-
-type DocumentsApiResponse = {
-  data?: {
-    items?: DocumentItem[];
+  bimDerivative?: {
+    status?: string;
+    error?: string | null;
   };
 };
 
@@ -49,6 +42,25 @@ function isBimViewerFile(fileName: string) {
   return lower.endsWith(".ifc") || lower.endsWith(".frag");
 }
 
+function isReadyForFederation(doc: DocumentItem) {
+  const extension = doc.extension?.toLowerCase() || doc.name.split(".").pop()?.toLowerCase() || "";
+
+  if (extension === "frag") return true;
+  if (extension !== "ifc") return false;
+
+  return doc.bimDerivative?.status === "generated";
+}
+
+function getBimStatusLabel(doc: DocumentItem) {
+  const extension = doc.extension?.toLowerCase() || doc.name.split(".").pop()?.toLowerCase() || "";
+
+  if (extension === "frag") return "FRAG";
+  if (doc.bimDerivative?.status === "generated") return "FRAG listo";
+  if (doc.bimDerivative?.status === "pending") return "Generando";
+  if (doc.bimDerivative?.status === "failed") return "FRAG fallido";
+  return "Sin FRAG";
+}
+
 function buildInitialSelectedMap(paths: string[]) {
   const initialMap: Record<string, { path: string; name: string }> = {};
 
@@ -62,23 +74,31 @@ function buildInitialSelectedMap(paths: string[]) {
 
 function SelectionCheckbox({
   checked,
+  disabled = false,
   onChange
 }: {
   checked: boolean;
+  disabled?: boolean;
   onChange: () => void;
 }) {
   return (
     <button
       type="button"
-      onClick={onChange}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!disabled) onChange();
+      }}
+      disabled={disabled}
       className={`inline-flex h-5 w-5 items-center justify-center border text-xs ${
-        checked
-          ? "border-zinc-700 bg-zinc-700 text-white"
-          : "border-zinc-300 bg-white text-transparent"
+        disabled
+          ? "border-zinc-700 bg-zinc-800 text-zinc-500"
+          : checked
+          ? "border-red-500 bg-red-600 text-white"
+          : "border-zinc-600 bg-zinc-900 text-transparent"
       }`}
-      aria-label={checked ? "Deseleccionar" : "Seleccionar"}
+      aria-label={disabled ? "Modelo ya cargado" : checked ? "Deseleccionar" : "Seleccionar"}
     >
-      ✓
+      x
     </button>
   );
 }
@@ -94,10 +114,10 @@ function ExpandButton({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex h-5 w-5 items-center justify-center text-sm text-zinc-600"
+      className="inline-flex h-5 w-5 items-center justify-center text-sm text-zinc-400 hover:text-white"
       aria-label={expanded ? "Colapsar" : "Expandir"}
     >
-      {expanded ? "▾" : "▸"}
+      {expanded ? "v" : ">"}
     </button>
   );
 }
@@ -105,6 +125,7 @@ function ExpandButton({
 export function IfcModelSelector({
   isOpen,
   initialSelectedPaths,
+  disabledPaths = [],
   projectCode = "",
   onClose,
   onApply
@@ -117,10 +138,11 @@ export function IfcModelSelector({
   const normalizedProjectCode = projectCode.trim().toUpperCase();
   const rootPath = normalizedProjectCode ? `/${normalizedProjectCode}` : "/";
 
-  const initialMap = useMemo(
-    () => buildInitialSelectedMap(initialSelectedPaths),
+  const initialSelectedKey = useMemo(
+    () => initialSelectedPaths.join("|"),
     [initialSelectedPaths]
   );
+  const disabledPathSet = useMemo(() => new Set(disabledPaths), [disabledPaths]);
   
 
   const loadNode = useCallback(async (targetPath: string) => {
@@ -136,11 +158,10 @@ export function IfcModelSelector({
     }));
 
     try {
-      const foldersRes = (await getFolders(targetPath)) as FolderApiResponse;
-      const docsRes = (await getDocuments(targetPath)) as DocumentsApiResponse;
+      const explorer = await getDocumentExplorer(targetPath, normalizedProjectCode);
 
-      const folders = Array.isArray(foldersRes?.data?.items)
-        ? foldersRes.data.items.filter((folder) => {
+      const folders = Array.isArray(explorer.folders)
+        ? explorer.folders.filter((folder) => {
             const folderName = String(folder.name || "").trim().toLowerCase();
 
             const folderPathRaw = String(folder.path || "");
@@ -164,8 +185,8 @@ export function IfcModelSelector({
           })
         : [];
 
-      const documents = Array.isArray(docsRes?.data?.items)
-        ? docsRes.data.items.filter((doc) => {
+      const documents = Array.isArray(explorer.documents)
+        ? explorer.documents.filter((doc) => {
             const documentPathRaw = String(doc.path || "");
             const documentPath = documentPathRaw.startsWith("/")
               ? documentPathRaw
@@ -204,19 +225,21 @@ export function IfcModelSelector({
         }
       }));
     }
-  }, [rootPath]);
+  }, [normalizedProjectCode, rootPath]);
 
   useEffect(() => {
     if (!isOpen) return;
 
     const frame = window.requestAnimationFrame(() => {
-      setSelectedMap(initialMap);
+      setSelectedMap(buildInitialSelectedMap(initialSelectedPaths));
     });
 
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [isOpen, initialMap]);
+    // Reset only when the modal is opened or the selected path set materially changes.
+    // Depending on the raw array identity here can clear user selection on re-render.
+  }, [isOpen, initialSelectedKey]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -275,6 +298,9 @@ export function IfcModelSelector({
   }
 
   function toggleFile(doc: DocumentItem) {
+    if (disabledPathSet.has(doc.path)) return;
+    if (!isReadyForFederation(doc)) return;
+
     setSelectedMap((prev) => {
       if (prev[doc.path]) {
         const next = { ...prev };
@@ -306,7 +332,7 @@ export function IfcModelSelector({
           return (
             <div key={folder.path}>
               <div
-                className="flex items-center gap-2 px-3 py-1 text-sm text-zinc-700"
+                className="flex min-w-0 items-center gap-2 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
                 style={{ paddingLeft: `${12 + depth * 18}px` }}
               >
                 <ExpandButton
@@ -334,18 +360,41 @@ export function IfcModelSelector({
                   {folderState.loaded
                     ? folderState.documents.map((doc) => {
                         const checked = Boolean(selectedMap[doc.path]);
+                        const ready = isReadyForFederation(doc);
+                        const disabled = disabledPathSet.has(doc.path) || !ready;
 
                         return (
                           <div
                             key={doc.path}
-                            className="flex items-center gap-2 px-3 py-1 text-sm text-zinc-700"
+                            onClick={() => toggleFile(doc)}
+                            className={`flex min-w-0 items-center gap-2 px-3 py-1.5 text-sm ${
+                              disabled
+                                ? "cursor-not-allowed text-zinc-600"
+                                : "cursor-pointer text-zinc-300 hover:bg-zinc-800"
+                            }`}
                             style={{ paddingLeft: `${34 + depth * 18}px` }}
                           >
                             <SelectionCheckbox
                               checked={checked}
+                              disabled={disabled}
                               onChange={() => toggleFile(doc)}
                             />
                             <span className="truncate">{doc.name}</span>
+                            <span
+                              className={`ml-auto shrink-0 rounded border px-1.5 py-0.5 text-[10px] uppercase ${
+                                ready
+                                  ? "border-emerald-700 bg-emerald-950 text-emerald-200"
+                                  : "border-amber-700 bg-amber-950 text-amber-200"
+                              }`}
+                              title={doc.bimDerivative?.error || getBimStatusLabel(doc)}
+                            >
+                              {getBimStatusLabel(doc)}
+                            </span>
+                            {disabledPathSet.has(doc.path) ? (
+                              <span className="shrink-0 text-[10px] uppercase text-zinc-500">
+                                Cargado
+                              </span>
+                            ) : null}
                           </div>
                         );
                       })
@@ -359,18 +408,41 @@ export function IfcModelSelector({
         {targetPath === rootPath
           ? node.documents.map((doc) => {
               const checked = Boolean(selectedMap[doc.path]);
+              const ready = isReadyForFederation(doc);
+              const disabled = disabledPathSet.has(doc.path) || !ready;
 
               return (
                 <div
                   key={doc.path}
-                  className="flex items-center gap-2 px-3 py-1 text-sm text-zinc-700"
+                  onClick={() => toggleFile(doc)}
+                  className={`flex min-w-0 items-center gap-2 px-3 py-1.5 text-sm ${
+                    disabled
+                      ? "cursor-not-allowed text-zinc-600"
+                      : "cursor-pointer text-zinc-300 hover:bg-zinc-800"
+                  }`}
                   style={{ paddingLeft: `${12 + depth * 18}px` }}
                 >
                   <SelectionCheckbox
                     checked={checked}
+                    disabled={disabled}
                     onChange={() => toggleFile(doc)}
                   />
                   <span className="truncate">{doc.name}</span>
+                  <span
+                    className={`ml-auto shrink-0 rounded border px-1.5 py-0.5 text-[10px] uppercase ${
+                      ready
+                        ? "border-emerald-700 bg-emerald-950 text-emerald-200"
+                        : "border-amber-700 bg-amber-950 text-amber-200"
+                    }`}
+                    title={doc.bimDerivative?.error || getBimStatusLabel(doc)}
+                  >
+                    {getBimStatusLabel(doc)}
+                  </span>
+                  {disabledPathSet.has(doc.path) ? (
+                    <span className="shrink-0 text-[10px] uppercase text-zinc-500">
+                      Cargado
+                    </span>
+                  ) : null}
                 </div>
               );
             })
@@ -382,14 +454,14 @@ export function IfcModelSelector({
   if (!isOpen) return null;
 
   return (
-    <div className="absolute inset-0 z-50 flex justify-end bg-black/20">
-      <div className="flex h-full w-[440px] max-w-full flex-col border-l border-zinc-300 bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-zinc-300 px-4 py-3">
+    <div className="absolute inset-0 z-50 flex justify-start bg-black/45">
+      <div className="flex h-full w-[390px] max-w-full flex-col border-r border-zinc-700 bg-zinc-950 text-zinc-100 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
           <div>
-            <h3 className="text-base font-semibold text-zinc-800">Agregar modelos</h3>
-            <p className="text-sm text-zinc-500">
+            <h3 className="text-base font-semibold text-zinc-100">Agregar modelos</h3>
+            <p className="text-xs text-zinc-400">
               {normalizedProjectCode
-                ? `Proyecto ${normalizedProjectCode} · selecciona IFC/FRAG`
+                ? `Proyecto ${normalizedProjectCode} - selecciona IFC/FRAG`
                 : "Explora carpetas y selecciona IFC/FRAG"}
             </p>
           </div>
@@ -397,24 +469,24 @@ export function IfcModelSelector({
           <button
             type="button"
             onClick={onClose}
-            className="h-9 border border-zinc-300 bg-white px-3 text-sm text-zinc-700 hover:bg-zinc-50"
+            className="min-h-8 border border-zinc-700 bg-zinc-900 px-3 py-1 text-sm text-zinc-200 hover:bg-zinc-800"
           >
             Cerrar
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto py-2">
           {treeState[rootPath] ? (
             renderNode(rootPath)
           ) : (
-            <div className="px-4 py-4 text-sm text-zinc-500">
-              Cargando árbol...
+            <div className="px-4 py-4 text-sm text-zinc-400">
+              Cargando arbol...
             </div>
           )}
         </div>
 
-        <div className="border-t border-zinc-300 bg-zinc-50 px-4 py-3">
-          <div className="mb-3 text-sm text-zinc-600">
+        <div className="border-t border-zinc-800 bg-zinc-900 px-4 py-3">
+          <div className="mb-3 text-sm text-zinc-300">
             Seleccionados: {selectedItems.length}
           </div>
 
@@ -422,15 +494,15 @@ export function IfcModelSelector({
             <button
               type="button"
               onClick={() => onApply(selectedItems)}
-              className="h-9 border border-zinc-300 bg-zinc-800 px-3 text-sm text-white hover:bg-zinc-700"
+              className="min-h-9 border border-red-700 bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-500"
             >
-              Aplicar selección
+              Aplicar seleccion
             </button>
 
             <button
               type="button"
               onClick={onClose}
-              className="h-9 border border-zinc-300 bg-white px-3 text-sm text-zinc-700 hover:bg-zinc-50"
+              className="min-h-9 border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
             >
               Cancelar
             </button>

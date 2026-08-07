@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   addProjectMember,
@@ -12,6 +12,7 @@ import {
   createProjectCardFromPortal,
   updateProjectCard,
   hardDeleteProjectCard,
+  repairProjectCardOpenProjectLink,
   type ProjectStatus,
   type CreateProjectMemberInput,
   type ProjectCard,
@@ -19,6 +20,8 @@ import {
   type PortalRoleKey
 } from "@/services/project-cards.service";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { Topbar } from "@/components/layout/topbar";
 
 const ROLE_OPTIONS: Array<{ value: PortalRoleKey; label: string }> = [
   { value: "bim-manager", label: "BIM Manager" },
@@ -57,6 +60,7 @@ function ProjectCardsAdminPageContent() {
   );
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { status: sessionStatus } = useSession();
   const [deleteConfirmationName, setDeleteConfirmationName] = useState("");
   const [projectStatusFilter, setProjectStatusFilter] = useState<
     "visible" | "all" | ProjectStatus
@@ -134,13 +138,13 @@ function ProjectCardsAdminPageContent() {
 
   function getStatusLabel(status?: ProjectCard["status"]) {
     const labels: Record<string, string> = {
-      planning: "Planificación",
+      planning: "PlanificaciÃ³n",
       active: "Activo",
       paused: "Pausado",
       closed: "Cerrado"
     };
 
-    return labels[status || "planning"] || "Planificación";
+    return labels[status || "planning"] || "PlanificaciÃ³n";
   }
 
   function formatDate(value?: string) {
@@ -189,7 +193,7 @@ function ProjectCardsAdminPageContent() {
         if (exists) {
           setSelectedProjectCode(projectCodeFromUrl);
         }
-      } else if (sectionFromUrl !== "users" && data.length > 0 && !selectedProjectCode) {
+      } else if (data.length > 0 && !selectedProjectCode) {
         setSelectedProjectCode(data[0].code);
       }
     } catch (error) {
@@ -219,11 +223,14 @@ function ProjectCardsAdminPageContent() {
   }
 
   useEffect(() => {
+    if (sessionStatus !== "authenticated") return;
+
     void loadProjectCards();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionStatus]);
 
   useEffect(() => {
+    if (sessionStatus !== "authenticated") return;
     if (!selectedProjectCode) return;
 
     let cancelled = false;
@@ -254,7 +261,7 @@ function ProjectCardsAdminPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [selectedProjectCode, memberStatusFilter]);
+  }, [selectedProjectCode, memberStatusFilter, sessionStatus]);
 
   useEffect(() => {
     const section = searchParams.get("section");
@@ -281,7 +288,7 @@ function ProjectCardsAdminPageContent() {
       const code = projectForm.code.trim().toUpperCase();
 
       if (!code || !projectForm.name.trim()) {
-        setMessage("Código y nombre del proyecto son obligatorios.");
+        setMessage("CÃ³digo y nombre del proyecto son obligatorios.");
         return;
       }
 
@@ -411,6 +418,31 @@ function ProjectCardsAdminPageContent() {
       setIsProvisioning(false);
     }
   }
+
+  async function handleRepairOpenProjectLink(projectCard: ProjectCard) {
+    setIsProvisioning(true);
+    setMessage("");
+
+    try {
+      const result = await repairProjectCardOpenProjectLink(projectCard.code);
+      setProjectCards((prev) =>
+        prev.map((item) =>
+          item.code === result.projectCard.code ? result.projectCard : item
+        )
+      );
+      setMessage(
+        `OpenProject reparado para ${projectCard.code}: ${result.openProject.identifier} (#${result.openProject.projectId}).`
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo reparar el enlace con OpenProject"
+      );
+    } finally {
+      setIsProvisioning(false);
+    }
+  }
   function validateMemberForm() {
     const errors: Record<string, string> = {};
 
@@ -422,7 +454,7 @@ function ProjectCardsAdminPageContent() {
     if (!email) {
       errors.email = "El correo es obligatorio.";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errors.email = "Ingresa un correo válido.";
+      errors.email = "Ingresa un correo vÃ¡lido.";
     }
 
     if (!username) {
@@ -477,7 +509,7 @@ function ProjectCardsAdminPageContent() {
 
       if (existingMember && existingMember.status === "active") {
         const confirmed = window.confirm(
-          "Este usuario ya existe en el proyecto. ¿Deseas actualizar su rol y disciplina?"
+          "Este usuario ya existe en el proyecto. Â¿Deseas actualizar su rol y disciplina?"
         );
 
         if (!confirmed) {
@@ -535,7 +567,7 @@ function ProjectCardsAdminPageContent() {
 
   async function handleRemoveMember(member: ProjectMember) {
     const confirmed = window.confirm(
-      `¿Retirar a ${member.email} del proyecto ${member.projectCode}?`
+      `Â¿Retirar a ${member.email} del proyecto ${member.projectCode}?`
     );
 
     if (!confirmed) return;
@@ -629,6 +661,18 @@ function ProjectCardsAdminPageContent() {
           className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 shadow hover:bg-white"
         >
           Editar
+        </button>
+        <button
+          type="button"
+          disabled={isProvisioning}
+          onClick={(event) => {
+            event.stopPropagation();
+            void handleRepairOpenProjectLink(projectCard);
+          }}
+          className="absolute left-3 top-12 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 shadow hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+          title="Busca o recrea el proyecto en OpenProject y actualiza el enlace de esta tarjeta"
+        >
+          Reparar OP
         </button>
         <button
           type="button"
@@ -782,7 +826,8 @@ function ProjectCardsAdminPageContent() {
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
-      <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-5 shadow-sm">
+      <Topbar />
+      <header className="hidden">
         <div className="flex items-center gap-3">
           <img
             src="/brand/typsa-logo.png"
@@ -818,7 +863,7 @@ function ProjectCardsAdminPageContent() {
 
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-slate-900">
-                    Juan Jesús Vega More
+                    Juan JesÃºs Vega More
                   </div>
                   <div className="truncate text-xs text-slate-500">
                     jjvega@typsa.es
@@ -844,7 +889,7 @@ function ProjectCardsAdminPageContent() {
                   onClick={handleLogout}
                   className="w-full rounded bg-red-700 px-3 py-2 text-left text-sm font-semibold text-white hover:bg-red-800"
                 >
-                  Cerrar sesión
+                  Cerrar sesiÃ³n
                 </button>
               </div>
             </div>
@@ -867,32 +912,32 @@ function ProjectCardsAdminPageContent() {
               Proyecto
             </button>
 
-            <button
-              type="button"
-              disabled={!selectedProjectCode}
-              onClick={() => setActiveSection("users")}
-              className={`rounded px-3 py-2 text-left font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
-                activeSection === "users"
-                  ? "bg-white text-red-800"
-                  : "hover:bg-red-700"
-              }`}
-            >
-              Usuarios
-            </button>
-            <button
-              type="button"
-              disabled={!selectedProjectCode}
-              onClick={() => {
-                if (!selectedProjectCode) return;
-
-                router.push(
-                  `/documents?projectCode=${encodeURIComponent(selectedProjectCode)}`
-                );
-              }}
-              className="rounded px-3 py-2 text-left font-medium disabled:cursor-not-allowed disabled:opacity-40 hover:bg-red-700"
-            >
-              Documentos
-            </button>
+            {selectedProjectCode && activeSection !== "projects" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("users")}
+                  className={`rounded px-3 py-2 text-left font-medium ${
+                    activeSection === "users"
+                      ? "bg-white text-red-800"
+                      : "hover:bg-red-700"
+                  }`}
+                >
+                  Usuarios
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    router.push(
+                      `/documents?projectCode=${encodeURIComponent(selectedProjectCode)}`
+                    );
+                  }}
+                  className="rounded px-3 py-2 text-left font-medium hover:bg-red-700"
+                >
+                  Documentos
+                </button>
+              </>
+            ) : null}
 
             <button
               type="button"
@@ -900,7 +945,34 @@ function ProjectCardsAdminPageContent() {
             >
               Dashboard
             </button>
-            
+
+            {selectedProjectCode && activeSection !== "projects" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    router.push(
+                      `/workflows?projectCode=${encodeURIComponent(selectedProjectCode)}`
+                    );
+                  }}
+                  className="rounded px-3 py-2 text-left font-medium hover:bg-red-700"
+                >
+                  Workflows
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    router.push(
+                      `/viewer?projectCode=${encodeURIComponent(selectedProjectCode)}`
+                    );
+                  }}
+                  className="rounded px-3 py-2 text-left font-medium hover:bg-red-700"
+                >
+                  BIM
+                </button>
+              </>
+            ) : null}
 
             
           </nav>          
@@ -921,7 +993,7 @@ function ProjectCardsAdminPageContent() {
                   <input
                     value={projectSearch}
                     onChange={(event) => setProjectSearch(event.target.value)}
-                    placeholder="Buscar proyecto por código o nombre..."
+                    placeholder="Buscar proyecto por cÃ³digo o nombre..."
                     className="h-10 w-80 rounded border border-slate-300 bg-white px-3 text-sm outline-none focus:border-red-600"
                   />
                   <select
@@ -935,7 +1007,7 @@ function ProjectCardsAdminPageContent() {
                   >
                     <option value="visible">No cerrados</option>
                     <option value="all">Todos</option>
-                    <option value="planning">Planificación</option>
+                    <option value="planning">PlanificaciÃ³n</option>
                     <option value="active">Activo</option>
                     <option value="paused">Pausado</option>
                     <option value="closed">Cerrado</option>
@@ -975,14 +1047,28 @@ function ProjectCardsAdminPageContent() {
               <div className="space-y-6">                
 
                 <section className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-5">
-                  {filteredProjectCards.map((projectCard) => (
-                    <ProjectCardTile
-                      key={projectCard.id}
-                      projectCard={projectCard}
-                    />
-                  ))}
+                  {sessionStatus === "loading" ? (
+                    <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+                      Verificando sesiÃ³n...
+                    </div>
+                  ) : sessionStatus === "unauthenticated" ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-sm text-amber-900">
+                      <div className="font-semibold">SesiÃ³n requerida</div>
+                      <p className="mt-1 text-amber-800">
+                        Inicia sesiÃ³n para cargar los proyectos y aplicar permisos por proyecto.
+                      </p>
+                    </div>
+                  ) : null}
 
-                  {filteredProjectCards.length === 0 && (
+                  {sessionStatus === "authenticated" &&
+                    filteredProjectCards.map((projectCard) => (
+                      <ProjectCardTile
+                        key={projectCard.id}
+                        projectCard={projectCard}
+                      />
+                    ))}
+
+                  {sessionStatus === "authenticated" && filteredProjectCards.length === 0 && (
                     <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
                       No se encontraron proyectos.
                     </div>
@@ -1150,7 +1236,7 @@ function ProjectCardsAdminPageContent() {
                   code: event.target.value.toUpperCase()
                 }))
               }
-              placeholder="Código del proyecto"
+              placeholder="CÃ³digo del proyecto"
               className="rounded border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-600"
             />
 
@@ -1176,7 +1262,7 @@ function ProjectCardsAdminPageContent() {
               }
               className="rounded border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-600"
             >
-              <option value="planning">Planificación</option>
+              <option value="planning">PlanificaciÃ³n</option>
               <option value="active">Activo</option>
               <option value="paused">Pausado</option>
               <option value="closed">Cerrado</option>
@@ -1262,7 +1348,7 @@ function ProjectCardsAdminPageContent() {
             >
               <option value="PEN">S/ PEN</option>
               <option value="USD">$ USD</option>
-              <option value="EUR">€ EUR</option>
+              <option value="EUR">â‚¬ EUR</option>
             </select>
 
             {coverImagePreview && (
@@ -1286,7 +1372,7 @@ function ProjectCardsAdminPageContent() {
                   description: event.target.value
                 }))
               }
-              placeholder="Descripción"
+              placeholder="DescripciÃ³n"
               className="min-h-24 rounded border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-600 md:col-span-2"
             />
           </div>
@@ -1348,7 +1434,7 @@ function ProjectCardsAdminPageContent() {
                     prev.username || event.target.value.split("@")[0] || ""
                 }))
               }
-              placeholder="Correo electrónico"
+              placeholder="Correo electrÃ³nico"
               className="rounded border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-600"
             />
             {memberFormErrors.email && (
@@ -1467,8 +1553,8 @@ function ProjectCardsAdminPageContent() {
               Archivar proyecto
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              El proyecto dejará de aparecer en la vista principal, pero su
-              información no será eliminada.
+              El proyecto dejarÃ¡ de aparecer en la vista principal, pero su
+              informaciÃ³n no serÃ¡ eliminada.
             </p>
           </div>
 
@@ -1484,8 +1570,8 @@ function ProjectCardsAdminPageContent() {
             </div>
 
             <p className="mt-4 text-sm text-slate-600">
-              Podrás conservar sus documentos, usuarios históricos y datos
-              asociados. Esta acción no borra carpetas ni información.
+              PodrÃ¡s conservar sus documentos, usuarios histÃ³ricos y datos
+              asociados. Esta acciÃ³n no borra carpetas ni informaciÃ³n.
             </p>
           </div>
 
@@ -1519,8 +1605,8 @@ function ProjectCardsAdminPageContent() {
               Eliminar definitivamente
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Esta acción eliminará el proyecto y sus recursos asociados. No se
-              debe usar en proyectos reales salvo autorización administrativa.
+              Esta acciÃ³n eliminarÃ¡ el proyecto y sus recursos asociados. No se
+              debe usar en proyectos reales salvo autorizaciÃ³n administrativa.
             </p>
           </div>
 
@@ -1593,8 +1679,9 @@ function ProjectCardsAdminPageContent() {
 
 export default function ProjectCardsAdminPage() {
   return (
-    <Suspense fallback={<main style={{ padding: 24 }}>Cargando administración de proyectos...</main>}>
+    <Suspense fallback={<main style={{ padding: 24 }}>Cargando administraciÃ³n de proyectos...</main>}>
       <ProjectCardsAdminPageContent />
     </Suspense>
   );
 }
+

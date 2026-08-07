@@ -23,6 +23,7 @@ export type ViewerViewpoint = {
   camera: {
     position: [number, number, number];
     target: [number, number, number];
+    up?: [number, number, number];
   };
   visibility: {
     hidden: Record<string, number[]>;

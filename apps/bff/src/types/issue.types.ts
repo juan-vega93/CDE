@@ -1,0 +1,34 @@
+export type CanonicalIssueSourceKind = "model" | "document";
+
+export type CanonicalIssue = {
+  id: string;
+  projectCode: string;
+  title: string;
+  description?: string;
+  sourceKind: CanonicalIssueSourceKind;
+  sourceSystem: string;
+  sourceId: string;
+  issueType: string;
+  status: string;
+  priority: string;
+  discipline?: string;
+  author?: string;
+  assignedTo?: string;
+  dueDate?: string;
+  documentPath?: string;
+  documentName?: string;
+  documentVersionId?: string | null;
+  pageNumber?: number;
+  snapshotUrl?: string;
+  viewpointId?: string;
+  nativeViewpointGuid?: string;
+  location?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  elementCount: number;
+  openProjectProjectRef?: string;
+  openProjectWorkPackageId?: string;
+  openProjectSyncStatus: string;
+  openProjectLastError?: string;
+  createdAt: string;
+  updatedAt: string;
+};

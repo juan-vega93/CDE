@@ -32,6 +32,9 @@ export type ProjectMember = {
       synced: boolean;
       projectId?: number;
       roleKey?: string;
+      roleId?: number;
+      roleName?: string;
+      fallbackUsed?: boolean;
       createdUser?: boolean;
       removed?: boolean;
       membershipId?: number;

@@ -1,4 +1,22 @@
 services:
+  cde-portal-db:
+    image: postgres:16-alpine
+    container_name: cde-portal-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cde_portal
+      POSTGRES_USER: cde_portal
+      POSTGRES_PASSWORD: cde_portal_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - cde-portal-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cde_portal -d cde_portal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   cde-portal-bff:
     build:
       context: .
@@ -7,8 +25,13 @@ services:
     restart: unless-stopped
     env_file:
       - ./apps/bff/.env
+    environment:
+      DATABASE_URL: postgresql://cde_portal:cde_portal_dev@cde-portal-db:5432/cde_portal
     ports:
       - "4000:4000"
+    depends_on:
+      cde-portal-db:
+        condition: service_healthy
 
   cde-portal-frontend:
     build:
@@ -22,3 +45,6 @@ services:
       - "3000:3000"
     depends_on:
       - cde-portal-bff
+
+volumes:
+  cde-portal-db-data:

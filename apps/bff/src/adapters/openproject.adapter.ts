@@ -213,10 +213,11 @@ export class OpenProjectAdapter {
   }
 
   async createWorkPackage(input: CreateWorkPackageInput): Promise<WorkPackage> {
-    const url = this.buildApiUrl("/api/v3/work_packages");
     if (!input.openProjectProjectId) {
       throw new Error("openProjectProjectId es obligatorio para crear Work Package");
     }
+    const projectRef = String(input.openProjectProjectId);
+    const fallbackProjectRef = input.openProjectProjectIdentifier?.trim() || "";
 
     let descriptionRaw = input.description || "";
     const metaLines: string[] = [];
@@ -237,28 +238,43 @@ export class OpenProjectAdapter {
     const body: Record<string, unknown> = {
       subject: input.subject,
       description: { raw: descriptionRaw },
-      dueDate: input.dueDate,
       customField2: "N/A",
       customField3: "N/A",
       _links: {
-        project: { href: `/api/v3/projects/${input.openProjectProjectId}` },
         type: { href: `/api/v3/types/${this.config.typeId}` },
         customField1: { href: this.resolveDisciplineOptionHref(`${input.subject} ${input.description}`) },
         customField4: { href: "/api/v3/custom_options/15" }
       }
     };
 
+    if (input.dueDate?.trim()) body.dueDate = input.dueDate;
     if (input.priority) body["customField5"] = input.priority;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: this.getAuthHeader(), "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
+    const postToProject = async (candidateProjectRef: string) => {
+      const url = this.buildApiUrl(
+        `/api/v3/projects/${encodeURIComponent(candidateProjectRef)}/work_packages`
+      );
+
+      return fetch(url, {
+        method: "POST",
+        headers: { Authorization: this.getAuthHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+    };
+
+    let response = await postToProject(projectRef);
+    let usedProjectRef = projectRef;
+
+    if (response.status === 404 && fallbackProjectRef && fallbackProjectRef !== projectRef) {
+      response = await postToProject(fallbackProjectRef);
+      usedProjectRef = fallbackProjectRef;
+    }
 
     const text = await response.text();
     if (!response.ok) {
-      throw new Error(`OpenProject createWorkPackage failed: ${response.status} - ${text}`);
+      throw new Error(
+        `OpenProject createWorkPackage failed project=${usedProjectRef}: ${response.status} - ${text}`
+      );
     }
 
     const data = JSON.parse(text) as OpenProjectWorkPackageResponse;

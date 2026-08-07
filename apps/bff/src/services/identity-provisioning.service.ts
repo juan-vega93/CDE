@@ -50,12 +50,15 @@ type ProvisionUserResult = {
     groupNames: string[];
     reason?: string;
   };
-  openProject: {
-    synced: boolean;
-    projectId?: number;
-    roleKey: string;
-    createdUser?: boolean;
-    reason?: string;
+    openProject: {
+      synced: boolean;
+      projectId?: number;
+      roleKey: string;
+      roleId?: number;
+      roleName?: string;
+      fallbackUsed?: boolean;
+      createdUser?: boolean;
+      reason?: string;
   };
 };
 
@@ -150,15 +153,42 @@ export class IdentityProvisioningService {
       });
     }
 
-    const openProjectSync = await this.openProjectMembersService.ensureProjectMember({
-      email,
-      firstName,
-      lastName,
-      login: email,
-      password,
-      roleName: mapping.openProjectRoleKey,
-      projectId: resolvedOpenProjectProjectId
-    });
+    const openProjectSync = await this.openProjectMembersService
+      .ensureProjectMember({
+        email,
+        firstName,
+        lastName,
+        login: email,
+        password,
+        roleName: mapping.openProjectRoleKey,
+        projectId: resolvedOpenProjectProjectId
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "No se pudo sincronizar miembro en OpenProject";
+
+        if (process.env.OPENPROJECT_MEMBER_SYNC_STRICT === "true") {
+          throw error;
+        }
+
+        console.warn("[IdentityProvisioningService] OpenProject sync skipped:", {
+          email,
+          projectCode,
+          roleKey,
+          reason: message
+        });
+
+        return {
+          synced: false,
+          createdUser: false,
+          roleId: undefined,
+          roleName: undefined,
+          fallbackUsed: undefined,
+          reason: message
+        };
+      });
 
     return {
       userId: keycloakUser.id,
@@ -181,6 +211,9 @@ export class IdentityProvisioningService {
         synced: openProjectSync.synced,
         projectId: resolvedOpenProjectProjectId,
         roleKey: mapping.openProjectRoleKey,
+        roleId: openProjectSync.roleId,
+        roleName: openProjectSync.roleName,
+        fallbackUsed: openProjectSync.fallbackUsed,
         createdUser: openProjectSync.createdUser,
         reason: openProjectSync.reason
       }

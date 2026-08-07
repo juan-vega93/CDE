@@ -1,11 +1,24 @@
 import type { FolderItem } from "../types/folder.types";
 import type { DocumentItem } from "../types/document.types";
+import { recordTiming, timedOperation } from "../utils/request-timing";
 
 type NextcloudConfig = {
   baseUrl: string;
   username: string;
   password: string;
   rootPath: string;
+};
+
+type PropfindCacheEntry = {
+  expiresAt: number;
+  xml: string;
+};
+
+export type NextcloudVersionItem = {
+  id: string;
+  size?: number;
+  modifiedAt?: string | null;
+  modifiedAtLocal?: string | null;
 };
 
 const HIDDEN_PORTAL_FOLDERS = new Set([
@@ -18,6 +31,10 @@ const HIDDEN_PORTAL_FOLDERS = new Set([
 
 export class NextcloudAdapter {
   private config: NextcloudConfig;
+  private static propfindCache = new Map<string, PropfindCacheEntry>();
+  private propfindCacheTtlMs = Number(
+    process.env.NEXTCLOUD_PROPFIND_CACHE_TTL_MS || "30000"
+  );
 
   constructor() {
     this.config = {
@@ -54,6 +71,17 @@ export class NextcloudAdapter {
     const normalizedFullPath = fullPath.endsWith("/") ? fullPath : `${fullPath}/`;
 
     return `${cleanBaseUrl}/remote.php/dav/files/${this.config.username}${normalizedFullPath}`;
+  }
+
+  private buildVersionsUrl(fileId: string): string {
+    const cleanBaseUrl = this.config.baseUrl.replace(/\/$/, "");
+    return `${cleanBaseUrl}/remote.php/dav/versions/${this.config.username}/versions/${encodeURIComponent(
+      fileId
+    )}/`;
+  }
+
+  private buildVersionFileUrl(fileId: string, versionId: string): string {
+    return `${this.buildVersionsUrl(fileId)}${encodeURIComponent(versionId)}`;
   }
 
   private mapNextcloudPathToPortalPath(nextcloudPath: string): string {
@@ -107,24 +135,78 @@ export class NextcloudAdapter {
     return this.parseDocumentsFromXml(xml, path);
   }
 
+  async listDirectory(path: string): Promise<{
+    folders: FolderItem[];
+    documents: DocumentItem[];
+  }> {
+    const { xml } = await this.propfind(path, "1");
+
+    return {
+      folders: this.parseFoldersFromXml(xml, path),
+      documents: this.parseDocumentsFromXml(xml, path)
+    };
+  }
+
+  async listFileVersions(fileId: string): Promise<NextcloudVersionItem[]> {
+    const url = this.buildVersionsUrl(fileId);
+    const { response, xml } = await timedOperation(
+      "nextcloud.versions.propfind",
+      async () => {
+        const response = await fetch(url, {
+          method: "PROPFIND",
+          headers: {
+            Authorization: this.getAuthHeader(),
+            Depth: "1"
+          }
+        });
+        const xml = await response.text();
+        return { response, xml };
+      },
+      fileId
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Nextcloud versions PROPFIND failed: ${response.status} ${response.statusText} - ${xml.slice(0, 500)}`
+      );
+    }
+
+    return this.parseVersionsFromXml(xml, fileId);
+  }
+
   private async propfind(path: string, depth: "0" | "1") {
     const url = this.buildWebDavUrl(path);
+    const cacheKey = `${depth}:${url}`;
+    const cached = NextcloudAdapter.propfindCache.get(cacheKey);
 
-    console.log("[NextcloudAdapter] PROPFIND", {
+    if (cached && cached.expiresAt > Date.now()) {
+      recordTiming("nextcloud.propfind_cache", 0, `${depth} ${path}`);
+      return { xml: cached.xml };
+    }
+
+    if (process.env.NEXTCLOUD_DEBUG_LOGS === "true") {
+      console.log("[NextcloudAdapter] PROPFIND", {
       path,
       depth,
       url
-    });
+      });
+    }
 
-    const response = await fetch(url, {
-      method: "PROPFIND",
-      headers: {
-        Authorization: this.getAuthHeader(),
-        Depth: depth
-      }
-    });
-
-    const xml = await response.text();
+    const { response, xml } = await timedOperation(
+      "nextcloud.propfind",
+      async () => {
+        const response = await fetch(url, {
+          method: "PROPFIND",
+          headers: {
+            Authorization: this.getAuthHeader(),
+            Depth: depth
+          }
+        });
+        const xml = await response.text();
+        return { response, xml };
+      },
+      `${depth} ${path}`
+    );
 
     if (!response.ok) {
       throw new Error(
@@ -132,7 +214,18 @@ export class NextcloudAdapter {
       );
     }
 
+    if (this.propfindCacheTtlMs > 0) {
+      NextcloudAdapter.propfindCache.set(cacheKey, {
+        expiresAt: Date.now() + this.propfindCacheTtlMs,
+        xml
+      });
+    }
+
     return { xml };
+  }
+
+  private clearPropfindCache(): void {
+    NextcloudAdapter.propfindCache.clear();
   }
 
   private parseFoldersFromXml(xml: string, currentPath: string): FolderItem[] {
@@ -257,9 +350,21 @@ export class NextcloudAdapter {
       const modifiedMatch = responseBlock.match(
         /<d:getlastmodified>(.*?)<\/d:getlastmodified>/
       );
+      const etagMatch = responseBlock.match(/<d:getetag>(.*?)<\/d:getetag>/);
+      const fileIdMatch = responseBlock.match(
+        /<(?:oc|nc):fileid>(.*?)<\/(?:oc|nc):fileid>/
+      );
+      const contentTypeMatch = responseBlock.match(
+        /<d:getcontenttype>(.*?)<\/d:getcontenttype>/
+      );
 
       const size = sizeMatch ? Number(sizeMatch[1]) : 0;
       const rawDate = modifiedMatch ? modifiedMatch[1] : null;
+      const etag = etagMatch
+        ? etagMatch[1].replace(/&quot;/g, "").replace(/"/g, "")
+        : null;
+      const fileId = fileIdMatch ? fileIdMatch[1] : null;
+      const contentType = contentTypeMatch ? contentTypeMatch[1] : null;
 
       const modifiedAt = rawDate
         ? new Date(rawDate).toISOString()
@@ -277,13 +382,15 @@ export class NextcloudAdapter {
           })
         : null;
 
-      console.log("[NextcloudAdapter] FILE FOUND", {
+      if (process.env.NEXTCLOUD_DEBUG_LOGS === "true") {
+        console.log("[NextcloudAdapter] FILE FOUND", {
         currentPath,
         portalPath,
         name,
         extension,
         size
-      });
+        });
+      }
 
       documents.push({
         id: `nc-${Buffer.from(portalPath).toString("base64url")}`,
@@ -293,12 +400,75 @@ export class NextcloudAdapter {
         size,
         modifiedAt,
         modifiedAtLocal,
+        etag,
+        fileId,
+        contentType,
         workflowStatus: null,
         uiStatus: "pending"
       });
     }
 
     return documents;
+  }
+
+  private parseVersionsFromXml(
+    xml: string,
+    fileId: string
+  ): NextcloudVersionItem[] {
+    const responses = xml.match(/<d:response[\s\S]*?<\/d:response>/g) || [];
+    const versions: NextcloudVersionItem[] = [];
+
+    for (const responseBlock of responses) {
+      const hrefMatch = responseBlock.match(/<d:href>(.*?)<\/d:href>/);
+      if (!hrefMatch) continue;
+
+      const rawHref = hrefMatch[1]
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">");
+
+      let decodedHref = rawHref;
+      try {
+        decodedHref = decodeURIComponent(rawHref);
+      } catch {
+        decodedHref = rawHref;
+      }
+
+      const cleanHref = decodedHref.replace(/\/$/, "");
+      const id = cleanHref.split("/").pop() || "";
+      if (!id || id === fileId) continue;
+
+      const sizeMatch = responseBlock.match(
+        /<d:getcontentlength>(.*?)<\/d:getcontentlength>/
+      );
+      const modifiedMatch = responseBlock.match(
+        /<d:getlastmodified>(.*?)<\/d:getlastmodified>/
+      );
+
+      const rawDate = modifiedMatch ? modifiedMatch[1] : null;
+      const modifiedAt = rawDate
+        ? new Date(rawDate).toISOString()
+        : null;
+      const modifiedAtLocal = rawDate
+        ? new Date(rawDate).toLocaleString("es-PE", {
+            timeZone: "America/Lima",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit"
+          })
+        : null;
+
+      versions.push({
+        id,
+        size: sizeMatch ? Number(sizeMatch[1]) : undefined,
+        modifiedAt,
+        modifiedAtLocal
+      });
+    }
+
+    return versions.sort((a, b) => Number(a.id) - Number(b.id));
   }
   async uploadFile(
   targetPath: string,
@@ -308,11 +478,13 @@ export class NextcloudAdapter {
   const cleanPath = targetPath.startsWith("/") ? targetPath : `/${targetPath}`;
   const url = this.buildWebDavUrl(cleanPath).replace(/\/$/, "");
 
-  console.log("[NextcloudAdapter] PUT", {
+  if (process.env.NEXTCLOUD_DEBUG_LOGS === "true") {
+    console.log("[NextcloudAdapter] PUT", {
     targetPath: cleanPath,
     url,
     size: fileBuffer.length
-  });
+    });
+  }
 
   const now = new Date();
 
@@ -335,16 +507,19 @@ export class NextcloudAdapter {
       `Nextcloud PUT failed: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
     );
   }
+  this.clearPropfindCache();
   }
   
   async createFolder(folderPath: string): Promise<void> {
   const cleanPath = folderPath.startsWith("/") ? folderPath : `/${folderPath}`;
   const url = this.buildWebDavUrl(cleanPath);
 
-  console.log("[NextcloudAdapter] MKCOL", {
+  if (process.env.NEXTCLOUD_DEBUG_LOGS === "true") {
+    console.log("[NextcloudAdapter] MKCOL", {
     folderPath: cleanPath,
     url
-  });
+    });
+  }
 
   const response = await fetch(url, {
     method: "MKCOL",
@@ -360,15 +535,18 @@ export class NextcloudAdapter {
       `Nextcloud MKCOL failed: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
     );
   }
+  this.clearPropfindCache();
   }
   async deletePath(targetPath: string): Promise<void> {
     const cleanPath = targetPath.startsWith("/") ? targetPath : `/${targetPath}`;
     const url = this.buildWebDavUrl(cleanPath).replace(/\/$/, "");
 
-    console.log("[NextcloudAdapter] DELETE", {
+    if (process.env.NEXTCLOUD_DEBUG_LOGS === "true") {
+      console.log("[NextcloudAdapter] DELETE", {
       targetPath: cleanPath,
       url
-    });
+      });
+    }
 
     const response = await fetch(url, {
       method: "DELETE",
@@ -388,6 +566,7 @@ export class NextcloudAdapter {
         `Nextcloud DELETE failed: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
       );
     }
+    this.clearPropfindCache();
   }
 
   async renamePath(oldPath: string, newName: string): Promise<void> {
@@ -399,10 +578,12 @@ export class NextcloudAdapter {
   const sourceUrl = this.buildWebDavUrl(cleanOldPath).replace(/\/$/, "");
   const destinationUrl = this.buildWebDavUrl(newPath).replace(/\/$/, "");
 
-  console.log("[NextcloudAdapter] MOVE", {
+  if (process.env.NEXTCLOUD_DEBUG_LOGS === "true") {
+    console.log("[NextcloudAdapter] MOVE", {
     from: cleanOldPath,
     to: newPath
-  });
+    });
+  }
 
   const response = await fetch(sourceUrl, {
     method: "MOVE",
@@ -419,6 +600,7 @@ export class NextcloudAdapter {
       `Nextcloud MOVE failed: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
     );
   }
+  this.clearPropfindCache();
   }
 
   async movePath(sourcePath: string, destinationPath: string): Promise<void> {
@@ -433,10 +615,12 @@ export class NextcloudAdapter {
   const sourceUrl = this.buildWebDavUrl(cleanSourcePath).replace(/\/$/, "");
   const destinationUrl = this.buildWebDavUrl(cleanDestinationPath).replace(/\/$/, "");
 
-  console.log("[NextcloudAdapter] MOVE", {
+  if (process.env.NEXTCLOUD_DEBUG_LOGS === "true") {
+    console.log("[NextcloudAdapter] MOVE", {
     sourcePath: cleanSourcePath,
     destinationPath: cleanDestinationPath
-  });
+    });
+  }
 
   const response = await fetch(sourceUrl, {
     method: "MOVE",
@@ -454,6 +638,7 @@ export class NextcloudAdapter {
       `Nextcloud MOVE failed: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
     );
   }
+  this.clearPropfindCache();
   }
 
   async fileExists(path: string): Promise<boolean> {
@@ -532,10 +717,12 @@ export class NextcloudAdapter {
     const cleanPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
     const url = this.buildWebDavUrl(cleanPath).replace(/\/$/, "");
 
-    console.log("[NextcloudAdapter] GET FILE", {
+    if (process.env.NEXTCLOUD_DEBUG_LOGS === "true") {
+      console.log("[NextcloudAdapter] GET FILE", {
       filePath: cleanPath,
       url
-    });
+      });
+    }
 
     const response = await fetch(url, {
       method: "GET",
@@ -567,6 +754,54 @@ export class NextcloudAdapter {
       contentType,
       fileName,
       size
+    };
+  }
+
+  async downloadFileVersion(input: {
+    fileId: string;
+    versionId: string;
+    fileName: string;
+  }): Promise<{
+    buffer: Buffer;
+    contentType: string;
+    fileName: string;
+    size?: number;
+  }> {
+    const url = this.buildVersionFileUrl(input.fileId, input.versionId);
+
+    if (process.env.NEXTCLOUD_DEBUG_LOGS === "true") {
+      console.log("[NextcloudAdapter] GET FILE VERSION", {
+        fileId: input.fileId,
+        versionId: input.versionId,
+        url
+      });
+    }
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: this.getAuthHeader()
+      }
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `Nextcloud version GET failed: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
+      );
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const contentType =
+      response.headers.get("content-type") || "application/octet-stream";
+    const sizeHeader = response.headers.get("content-length");
+
+    return {
+      buffer,
+      contentType,
+      fileName: input.fileName,
+      size: sizeHeader ? Number(sizeHeader) : undefined
     };
   }
 

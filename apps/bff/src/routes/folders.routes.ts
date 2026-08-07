@@ -1,17 +1,65 @@
 import { Router } from "express";
 import {
   getFolders,
+  getFolderTree,
   createFolder,
   deleteFolder,
   moveFolder,
   renameFolder
 } from "../services/folders.service";
 import type { ApiResponse } from "../types/api.types";
-import type { FoldersResponse } from "../types/folder.types";
+import type { FoldersResponse, FolderTreeResponse } from "../types/folder.types";
+import {
+  projectAuthorizedRoute,
+  projectCodeFromAny
+} from "../middleware/authorization.middleware";
 
 const router = Router();
 
-router.get("/", async (req, res) => {
+router.get(
+  "/tree",
+  projectAuthorizedRoute({
+    permission: "document:read",
+    source: "query",
+    projectCode: (req) => projectCodeFromAny(req.query.projectCode, req.query.rootPath)
+  }),
+  async (req, res) => {
+    try {
+      const rootPath = (req.query.rootPath as string) || "/";
+      const depth = Number(req.query.depth || 4);
+      const focusPath =
+        typeof req.query.focusPath === "string" ? req.query.focusPath : undefined;
+      const tree = await getFolderTree(rootPath, depth, focusPath);
+
+      const response: ApiResponse<FolderTreeResponse> = {
+        success: true,
+        data: {
+          rootPath,
+          depth: Math.min(Math.max(Number(depth) || 1, 1), 8),
+          tree
+        }
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error("[folders.routes] GET /tree error:", error);
+
+      res.status(500).json({
+        success: false,
+        message: "No se pudo obtener el arbol de carpetas"
+      });
+    }
+  }
+);
+
+router.get(
+  "/",
+  projectAuthorizedRoute({
+    permission: "document:read",
+    source: "query",
+    projectCode: (req) => projectCodeFromAny(req.query.projectCode, req.query.path)
+  }),
+  async (req, res) => {
   const path = (req.query.path as string) || "/";
   const result: FoldersResponse = await getFolders(path);
 
@@ -21,9 +69,17 @@ router.get("/", async (req, res) => {
   };
 
   res.json(response);
-});
+  }
+);
 
-router.post("/", async (req, res) => {
+router.post(
+  "/",
+  projectAuthorizedRoute({
+    permission: "document:write",
+    source: "body",
+    projectCode: (req) => projectCodeFromAny(req.body?.projectCode, req.body?.parentPath)
+  }),
+  async (req, res) => {
   try {
     const parentPath = (req.body.parentPath as string) || "/";
     const folderName = (req.body.folderName as string) || "";
@@ -57,9 +113,17 @@ router.post("/", async (req, res) => {
       message: "No se pudo crear la carpeta"
     });
   }
-});
+  }
+);
 
-router.delete("/", async (req, res) => {
+router.delete(
+  "/",
+  projectAuthorizedRoute({
+    permission: "document:hard-delete",
+    source: "body",
+    projectCode: (req) => projectCodeFromAny(req.body?.projectCode, req.body?.folderPath)
+  }),
+  async (req, res) => {
   try {
     const folderPath = (req.body.folderPath as string) || "";
 
@@ -91,9 +155,22 @@ router.delete("/", async (req, res) => {
       message
     });
   }
-});
+  }
+);
 
-router.put("/move", async (req, res) => {
+router.put(
+  "/move",
+  projectAuthorizedRoute({
+    permission: "document:write",
+    source: "body",
+    projectCode: (req) =>
+      projectCodeFromAny(
+        req.body?.projectCode,
+        req.body?.folderPath,
+        req.body?.destinationFolderPath
+      )
+  }),
+  async (req, res) => {
   try {
     const { folderPath, destinationFolderPath } = req.body;
 
@@ -126,8 +203,16 @@ router.put("/move", async (req, res) => {
       message
     });
   }
-});
-router.put("/rename", async (req, res) => {
+  }
+);
+router.put(
+  "/rename",
+  projectAuthorizedRoute({
+    permission: "document:write",
+    source: "body",
+    projectCode: (req) => projectCodeFromAny(req.body?.projectCode, req.body?.folderPath)
+  }),
+  async (req, res) => {
   try {
     const { folderPath, newName } = req.body as {
       folderPath?: string;
@@ -163,6 +248,7 @@ router.put("/rename", async (req, res) => {
       message
     });
   }
-});
+  }
+);
 
 export default router;

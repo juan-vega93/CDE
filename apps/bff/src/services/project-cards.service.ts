@@ -10,6 +10,7 @@ import {
   PORTAL_ROLE_MAPPING,
   buildProjectRoleGroupName
 } from "../config/role-mapping.config";
+import { getBffDataPath } from "../utils/data-dir";
 import type {
   CreateProjectCardFromPortalInput,
   CreateProjectCardInput,
@@ -74,8 +75,7 @@ const NEXTCLOUD_PROJECT_SHARE_RULES: NextcloudShareRule[] = [
     permissions: NEXTCLOUD_PERMISSIONS.READ
   }
 ];
-const DATA_DIR = path.resolve(process.cwd(), "data");
-const PROJECT_CARDS_FILE = path.join(DATA_DIR, "project-cards.json");
+const PROJECT_CARDS_FILE = getBffDataPath("project-cards.json");
 
 function normalizeProjectCode(code: string): string {
   const normalized = code.trim().toUpperCase();
@@ -92,7 +92,7 @@ function createId(): string {
 }
 
 async function ensureDataFile(): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.mkdir(path.dirname(PROJECT_CARDS_FILE), { recursive: true });
 
   try {
     await fs.access(PROJECT_CARDS_FILE);
@@ -372,6 +372,61 @@ export class ProjectCardsService {
         error
       );
     });
+
+    return {
+      projectCard: updatedProjectCard,
+      openProject: {
+        created: openProjectResult.created,
+        projectId: openProjectResult.project.id,
+        identifier: openProjectResult.project.identifier,
+        name: openProjectResult.project.name
+      }
+    };
+  }
+
+  async repairOpenProjectLink(code: string): Promise<{
+    projectCard: ProjectCard;
+    openProject: {
+      created: boolean;
+      projectId: number;
+      identifier: string;
+      name: string;
+    };
+  }> {
+    const normalizedCode = normalizeProjectCode(code);
+    const existingProjectCard = await this.requireByCode(normalizedCode);
+
+    const openProjectResult =
+      await this.openProjectProjectsService.createOrGetProject({
+        code: existingProjectCard.code,
+        name: existingProjectCard.name,
+        description: existingProjectCard.description
+      });
+
+    const projectCards = await this.getAll();
+    const index = projectCards.findIndex(
+      (projectCard) => projectCard.code.toUpperCase() === normalizedCode
+    );
+
+    if (index < 0) {
+      throw new Error(`No existe Project Card para '${normalizedCode}'`);
+    }
+
+    const now = new Date().toISOString();
+    const updatedProjectCard: ProjectCard = {
+      ...projectCards[index],
+      openProject: {
+        ...projectCards[index].openProject,
+        status: "enabled",
+        projectId: openProjectResult.project.id,
+        identifier: openProjectResult.project.identifier,
+        name: openProjectResult.project.name
+      },
+      updatedAt: now
+    };
+
+    projectCards[index] = updatedProjectCard;
+    await this.saveAll(projectCards);
 
     return {
       projectCard: updatedProjectCard,

@@ -6,13 +6,20 @@ import {
   createWorkPackageFromBcfTopic
 } from "../services/work-packages.service";
 import { getBcfTopics, saveBcfTopics } from "../services/bcf-topics.service";
+import { ProjectCardsService } from "../services/project-cards.service";
+import { projectCodeFromAny } from "../middleware/authorization.middleware";
 import type { ApiResponse } from "../types/api.types";
 import type { WorkPackage, WorkPackageStatus, CreateWorkPackageInput } from "../types/work-package.types";
 
 const router = Router();
+const projectCardsService = new ProjectCardsService();
 
-router.get("/", (_req, res) => {
-  const workPackages = getWorkPackages();
+router.get("/", (req, res) => {
+  const projectCode = projectCodeFromAny(req.query.projectCode);
+  const workPackages = getWorkPackages().filter((workPackage) => {
+    if (!projectCode) return true;
+    return String(workPackage.projectCode || "").toUpperCase() === projectCode;
+  });
 
   const response: ApiResponse<WorkPackage[]> = {
     success: true,
@@ -32,6 +39,24 @@ router.post("/from-bcf-topic", async (req, res) => {
 
     if (!input.description?.trim()) {
       input.description = "Creado desde el visor BCF del CDE Portal";
+    }
+
+    if (input.projectCode) {
+      try {
+        const projectCard = await projectCardsService.getByCode(input.projectCode);
+        if (projectCard?.openProject) {
+          input.openProjectProjectId =
+            input.openProjectProjectId ?? projectCard.openProject.projectId;
+          input.openProjectProjectIdentifier =
+            input.openProjectProjectIdentifier ??
+            projectCard.openProject.identifier;
+        }
+      } catch (projectCardError) {
+        console.warn(
+          "[work-packages] No se pudo resolver Project Card para OpenProject:",
+          projectCardError
+        );
+      }
     }
 
     const workPackage = await createWorkPackageFromBcfTopic(input);

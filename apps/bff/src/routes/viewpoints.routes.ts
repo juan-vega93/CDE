@@ -5,6 +5,10 @@ import {
   saveViewpoints,
   type StoredViewerViewpoint
 } from "../services/viewpoints.service";
+import {
+  projectAuthorizedRoute,
+  projectCodeFromAny
+} from "../middleware/authorization.middleware";
 
 const router = Router();
 
@@ -37,7 +41,14 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.put("/", async (req, res) => {
+router.put(
+  "/",
+  projectAuthorizedRoute({
+    permission: "bcf:write",
+    source: "body",
+    projectCode: (req) => projectCodeFromAny(req.body?.documentPath)
+  }),
+  async (req, res) => {
   try {
     const { documentPath, viewpoints } = req.body as {
       documentPath?: string;
@@ -75,6 +86,7 @@ router.put("/", async (req, res) => {
       message: "No se pudieron guardar los viewpoints"
     });
   }
-});
+  }
+);
 
 export default router;

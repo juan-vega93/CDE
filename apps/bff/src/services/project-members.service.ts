@@ -16,9 +16,9 @@ import type {
 import { KeycloakAdminService } from "./keycloak-admin.service";
 import { NextcloudProvisioningService } from "./nextcloud-provisioning.service";
 import { OpenProjectMembersService } from "./openproject-members.service";
+import { getBffDataPath } from "../utils/data-dir";
 
-const DATA_DIR = path.resolve(process.cwd(), "data");
-const PROJECT_MEMBERS_FILE = path.join(DATA_DIR, "project-members.json");
+const PROJECT_MEMBERS_FILE = getBffDataPath("project-members.json");
 
 function createId(): string {
   return `member_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -35,7 +35,7 @@ function normalizeProjectCode(code: string): string {
 }
 
 async function ensureDataFile(): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.mkdir(path.dirname(PROJECT_MEMBERS_FILE), { recursive: true });
 
   try {
     await fs.access(PROJECT_MEMBERS_FILE);
@@ -151,6 +151,9 @@ export class ProjectMembersService {
           synced: provisionResult.openProject.synced,
           projectId: provisionResult.openProject.projectId,
           roleKey: provisionResult.openProject.roleKey,
+          roleId: provisionResult.openProject.roleId,
+          roleName: provisionResult.openProject.roleName,
+          fallbackUsed: provisionResult.openProject.fallbackUsed,
           createdUser: provisionResult.openProject.createdUser,
           reason: provisionResult.openProject.reason
         },
@@ -356,6 +359,9 @@ export class ProjectMembersService {
             synced: provisionResult.openProject.synced,
             projectId: provisionResult.openProject.projectId,
             roleKey: provisionResult.openProject.roleKey,
+            roleId: provisionResult.openProject.roleId,
+            roleName: provisionResult.openProject.roleName,
+            fallbackUsed: provisionResult.openProject.fallbackUsed,
             createdUser: provisionResult.openProject.createdUser,
             reason: provisionResult.openProject.reason
         },
@@ -407,6 +413,29 @@ export class ProjectMembersService {
       await this.openProjectMembersService.removeProjectMemberByEmail({
         email: existing.email,
         projectId: projectCard.openProject.projectId
+      }).catch((error) => {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "No se pudo retirar miembro en OpenProject";
+
+        if (process.env.OPENPROJECT_MEMBER_SYNC_STRICT === "true") {
+          throw error;
+        }
+
+        console.warn("[ProjectMembersService] OpenProject removal skipped:", {
+          email: existing.email,
+          projectCode: normalizedProjectCode,
+          reason: message
+        });
+
+        return {
+          synced: false,
+          removed: false,
+          membershipId: undefined,
+          userId: undefined,
+          reason: message
+        };
       });
 
     const now = new Date().toISOString();

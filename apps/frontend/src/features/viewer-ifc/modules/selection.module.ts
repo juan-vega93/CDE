@@ -80,7 +80,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
   highlighter.setup({
     world,
     selectMaterialDefinition: {
-      color: new THREE.Color("#bcf124"),
+      color: new THREE.Color("#e30613"),
       opacity: 1,
       transparent: false,
       renderedFaces: 0
@@ -138,12 +138,12 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
             relations: true
           },
           ContainedInStructure: {
-            attributes: false,
-            relations: false
+            attributes: true,
+            relations: true
           },
           HasAssociations: {
-            attributes: false,
-            relations: false
+            attributes: true,
+            relations: true
           }
         }
       });

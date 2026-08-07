@@ -8,45 +8,48 @@ import { canManageUsers } from "@/lib/rbac";
 export function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const projectCode = searchParams.get("projectCode") || "";
+  const projectCode = searchParams.get("projectCode")?.trim().toUpperCase() || "";
   const { data: session } = useSession();
+  const userRoles = session?.roles ?? [];
+  const isProjectContext = Boolean(projectCode);
 
   const navigationItems = [
-     {
-    label: "Proyecto",
-    href: "/admin/project-cards"
-    },
     {
-      label: "Usuarios",
-      href: projectCode
-        ? `/admin/project-cards?section=users&projectCode=${encodeURIComponent(
-            projectCode
-          )}`
-        : "/admin/project-cards?section=users"
+      label: "Proyecto",
+      href: "/admin/project-cards"
     },
-    {
-      label: "Documentos",
-      href: projectCode
-        ? `/documents?projectCode=${encodeURIComponent(projectCode)}`
-        : "/documents"
-    },
-    {
-      label: "Workflows",
-      href: projectCode
-        ? `/workflows?projectCode=${encodeURIComponent(projectCode)}`
-        : "/workflows"
-    },
-    {
-      label: "BIM",
-      href: projectCode
-        ? `/viewer?projectCode=${encodeURIComponent(projectCode)}`
-        : "/admin/project-cards"
-    }
+    ...(isProjectContext && canManageUsers(userRoles)
+      ? [
+          {
+            label: "Usuarios",
+            href: `/admin/project-cards?section=users&projectCode=${encodeURIComponent(
+              projectCode
+            )}`
+          }
+        ]
+      : []),
+    ...(isProjectContext
+      ? [
+          {
+            label: "Documentos",
+            href: `/documents?projectCode=${encodeURIComponent(projectCode)}`
+          },
+          {
+            label: "Workflows",
+            href: `/workflows?projectCode=${encodeURIComponent(projectCode)}`
+          },
+          {
+            label: "BIM",
+            href: `/viewer?projectCode=${encodeURIComponent(projectCode)}`
+          }
+        ]
+      : [])
   ];
 
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
+    const hrefPath = href.split("?")[0] || href;
+    return pathname.startsWith(hrefPath);
   }
 
   return (

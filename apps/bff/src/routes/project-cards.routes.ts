@@ -7,18 +7,63 @@ import type {
   DeleteProjectCardInput
 } from "../types/project-card.types";
 import projectMembersRoutes from "./project-members.routes";
+import {
+  authenticatedRoute,
+  projectAuthorizedRoute,
+  projectCodeFromAny,
+  systemAdminRoute
+} from "../middleware/authorization.middleware";
+import {
+  AuthorizationError,
+  authorizeProjectAccess
+} from "../security/project-access";
+import { hasSystemAdminRole } from "../security/policies";
 
 const router = Router();
 const projectCardsService = new ProjectCardsService();
-router.use("/:code/members", projectMembersRoutes);
+router.use(
+  "/:code/members",
+  projectAuthorizedRoute({
+    permission: "project:admin",
+    source: "path",
+    projectCode: (req) => projectCodeFromAny(req.params.code)
+  }),
+  projectMembersRoutes
+);
 
-router.get("/", async (_req, res) => {
+router.get("/", authenticatedRoute(), async (req, res) => {
   try {
     const projectCards = await projectCardsService.getAll();
+    const user = req.auth!;
+    const visibleProjectCards = hasSystemAdminRole(user.realmRoles)
+      ? projectCards
+      : (
+          await Promise.all(
+            projectCards.map(async (projectCard) => {
+              try {
+                await authorizeProjectAccess(
+                  user,
+                  projectCard.code,
+                  "project:read"
+                );
+                return projectCard;
+              } catch (error) {
+                if (!(error instanceof AuthorizationError)) {
+                  console.warn(
+                    `[project-cards.routes] Ignorando Project Card no autorizable '${projectCard.code}':`,
+                    error
+                  );
+                }
+
+                return null;
+              }
+            })
+          )
+        ).filter((projectCard) => projectCard !== null);
 
     return res.json({
       success: true,
-      data: projectCards
+      data: visibleProjectCards
     });
   } catch (error) {
     console.error("[project-cards.routes] GET / error:", error);
@@ -33,7 +78,7 @@ router.get("/", async (_req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", systemAdminRoute(), async (req, res) => {
   try {
     const input = req.body as CreateProjectCardInput;
 
@@ -63,10 +108,17 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.post("/:code/provision", async (req, res) => {
+router.post(
+  "/:code/provision",
+  projectAuthorizedRoute({
+    permission: "project:admin",
+    source: "path",
+    projectCode: (req) => projectCodeFromAny(req.params.code)
+  }),
+  async (req, res) => {
   try {
     const result = await projectCardsService.provisionProjectInfrastructure(
-      req.params.code
+      String(req.params.code)
     );
 
     return res.json({
@@ -84,9 +136,44 @@ router.post("/:code/provision", async (req, res) => {
           : "No se pudo provisionar la infraestructura del proyecto"
     });
   }
-});
+  }
+);
 
-router.post("/from-portal", async (req, res) => {
+router.post(
+  "/:code/openproject/repair",
+  projectAuthorizedRoute({
+    permission: "project:admin",
+    source: "path",
+    projectCode: (req) => projectCodeFromAny(req.params.code)
+  }),
+  async (req, res) => {
+  try {
+    const result = await projectCardsService.repairOpenProjectLink(
+      String(req.params.code)
+    );
+
+    return res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error(
+      "[project-cards.routes] POST /:code/openproject/repair error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "No se pudo reparar el enlace con OpenProject"
+    });
+  }
+  }
+);
+
+router.post("/from-portal", systemAdminRoute(), async (req, res) => {
   try {
     const input = req.body as CreateProjectCardFromPortalInput;
 
@@ -116,10 +203,17 @@ router.post("/from-portal", async (req, res) => {
   }
 });
 
-router.post("/:code/archive", async (req, res) => {
+router.post(
+  "/:code/archive",
+  projectAuthorizedRoute({
+    permission: "project:admin",
+    source: "path",
+    projectCode: (req) => projectCodeFromAny(req.params.code)
+  }),
+  async (req, res) => {
   try {
     const projectCard = await projectCardsService.archiveProjectCard(
-      req.params.code
+      String(req.params.code)
     );
 
     return res.json({
@@ -137,13 +231,21 @@ router.post("/:code/archive", async (req, res) => {
           : "No se pudo archivar el proyecto"
     });
   }
-});
-router.put("/:code", async (req, res) => {
+  }
+);
+router.put(
+  "/:code",
+  projectAuthorizedRoute({
+    permission: "project:write",
+    source: "path",
+    projectCode: (req) => projectCodeFromAny(req.params.code)
+  }),
+  async (req, res) => {
   try {
     const input = req.body as UpdateProjectCardInput;
 
     const projectCard = await projectCardsService.updateProjectCard(
-      req.params.code,
+      String(req.params.code),
       input
     );
 
@@ -162,8 +264,16 @@ router.put("/:code", async (req, res) => {
           : "No se pudo actualizar el proyecto"
     });
   }
-});
-router.delete("/:code", async (req, res) => {
+  }
+);
+router.delete(
+  "/:code",
+  projectAuthorizedRoute({
+    permission: "document:hard-delete",
+    source: "path",
+    projectCode: (req) => projectCodeFromAny(req.params.code)
+  }),
+  async (req, res) => {
   try {
     const input = req.body as DeleteProjectCardInput;
 
@@ -175,7 +285,7 @@ router.delete("/:code", async (req, res) => {
     }
 
     const result = await projectCardsService.hardDeleteProjectCard(
-      req.params.code,
+      String(req.params.code),
       input
     );
 
@@ -194,11 +304,19 @@ router.delete("/:code", async (req, res) => {
           : "No se pudo eliminar definitivamente el proyecto"
     });
   }
-});
+  }
+);
 
-router.get("/:code", async (req, res) => {
+router.get(
+  "/:code",
+  projectAuthorizedRoute({
+    permission: "project:read",
+    source: "path",
+    projectCode: (req) => projectCodeFromAny(req.params.code)
+  }),
+  async (req, res) => {
   try {
-    const projectCard = await projectCardsService.getByCode(req.params.code);
+    const projectCard = await projectCardsService.getByCode(String(req.params.code));
 
     if (!projectCard) {
       return res.status(404).json({
@@ -222,6 +340,7 @@ router.get("/:code", async (req, res) => {
           : "No se pudo obtener la Project Card"
     });
   }
-});
+  }
+);
 
 export default router;

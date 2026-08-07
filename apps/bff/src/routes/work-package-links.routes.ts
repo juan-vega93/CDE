@@ -4,6 +4,7 @@ import {
   getWorkPackageLinks,
   getWorkPackageLinkByDocumentId
 } from "../services/work-package-links.service";
+import { projectCodeFromAny } from "../middleware/authorization.middleware";
 import type { ApiResponse } from "../types/api.types";
 import type {
   WorkPackageLink,
@@ -13,9 +14,13 @@ import { syncWorkPackageStatusByDocumentId } from "../services/work-package-link
 
 const router = Router();
 
-router.get("/", (_req, res) => {
+router.get("/", (req, res) => {
   try {
-    const links = getWorkPackageLinks();
+    const projectCode = projectCodeFromAny(req.query.projectCode);
+    const links = getWorkPackageLinks().filter((link) => {
+      if (!projectCode) return true;
+      return projectCodeFromAny(link.documentPath) === projectCode;
+    });
 
     const response: ApiResponse<WorkPackageLink[]> = {
       success: true,

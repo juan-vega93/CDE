@@ -24,6 +24,12 @@ type OpenProjectMembershipElement = {
   };
 };
 
+type OpenProjectRoleElement = {
+  id: number;
+  name: string;
+  _type?: string;
+};
+
 type EnsureOpenProjectMemberInput = {
   email: string;
   firstName: string;
@@ -34,54 +40,100 @@ type EnsureOpenProjectMemberInput = {
   projectId?: number;
 };
 
-function getRequiredEnvNumber(name: string): number {
-  const rawValue = process.env[name];
+type ResolvedOpenProjectRole = {
+  id: number;
+  name: string;
+  fallbackUsed: boolean;
+};
 
-  if (!rawValue) {
-    throw new Error(`Falta variable de entorno requerida: ${name}`);
-  }
+type OpenProjectMemberSyncResult = {
+  synced: boolean;
+  createdUser?: boolean;
+  reason?: string;
+  roleId?: number;
+  roleName?: string;
+  fallbackUsed?: boolean;
+};
+
+function getAuthHeader(apiKey: string) {
+  return `Basic ${Buffer.from(`apikey:${apiKey}`).toString("base64")}`;
+}
+
+function normalizeRoleName(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function getEnvNumber(name: string): number | null {
+  const rawValue = process.env[name]?.trim();
+
+  if (!rawValue) return null;
 
   const value = Number(rawValue);
 
   if (!Number.isFinite(value)) {
-    throw new Error(`La variable de entorno ${name} debe ser numérica`);
+    throw new Error(`La variable de entorno ${name} debe ser numerica`);
   }
 
   return value;
 }
 
-function getOpenProjectRoleId(roleName: string): number {
+function getRoleEnvKeys(roleName: string): { id: string; name: string } {
   const normalizedRoleName = roleName.trim().toLowerCase();
 
-  const envKeyByRole: Record<string, string> = {
-    viewer: "OPENPROJECT_ROLE_VIEWER_ID",
-    "doc-controller": "OPENPROJECT_ROLE_DOC_CONTROLLER_ID",
-    "discipline-lead": "OPENPROJECT_ROLE_DISCIPLINE_LEAD_ID",
-    "bim-coordinator": "OPENPROJECT_ROLE_BIM_COORDINATOR_ID",
-    "bim-manager": "OPENPROJECT_ROLE_BIM_MANAGER_ID"
+  const envKeyByRole: Record<string, { id: string; name: string }> = {
+    viewer: {
+      id: "OPENPROJECT_ROLE_VIEWER_ID",
+      name: "OPENPROJECT_ROLE_VIEWER_NAME"
+    },
+    "doc-controller": {
+      id: "OPENPROJECT_ROLE_DOC_CONTROLLER_ID",
+      name: "OPENPROJECT_ROLE_DOC_CONTROLLER_NAME"
+    },
+    "discipline-lead": {
+      id: "OPENPROJECT_ROLE_DISCIPLINE_LEAD_ID",
+      name: "OPENPROJECT_ROLE_DISCIPLINE_LEAD_NAME"
+    },
+    "bim-coordinator": {
+      id: "OPENPROJECT_ROLE_BIM_COORDINATOR_ID",
+      name: "OPENPROJECT_ROLE_BIM_COORDINATOR_NAME"
+    },
+    "bim-manager": {
+      id: "OPENPROJECT_ROLE_BIM_MANAGER_ID",
+      name: "OPENPROJECT_ROLE_BIM_MANAGER_NAME"
+    }
   };
 
-  const envKey = envKeyByRole[normalizedRoleName];
+  const envKeys = envKeyByRole[normalizedRoleName];
 
-  if (!envKey) {
+  if (!envKeys) {
     throw new Error(
-      `No hay mapeo de rol OpenProject para '${roleName}'. Roles válidos: ${Object.keys(
+      `No hay mapeo de rol OpenProject para '${roleName}'. Roles validos: ${Object.keys(
         envKeyByRole
       ).join(", ")}`
     );
   }
 
-  return getRequiredEnvNumber(envKey);
+  return envKeys;
 }
 
-function getAuthHeader(apiKey: string) {
-  return `Basic ${Buffer.from(`apikey:${apiKey}`).toString("base64")}`;
+function getRoleErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isUnassignableRoleError(error: unknown): boolean {
+  const message = getRoleErrorMessage(error).toLowerCase();
+
+  return (
+    message.includes("unassignable role") ||
+    message.includes("roles has an unassignable role")
+  );
 }
 
 export class OpenProjectMembersService {
   private baseUrl = process.env.OPENPROJECT_BASE_URL || "";
   private apiKey = process.env.OPENPROJECT_API_KEY || "";
   private defaultProjectId = Number(process.env.OPENPROJECT_DEFAULT_PROJECT_ID || "3");
+  private rolesCache: OpenProjectRoleElement[] | null = null;
 
   private getHeaders(): HeadersInit {
     return {
@@ -93,6 +145,92 @@ export class OpenProjectMembersService {
 
   private getProjectId(projectId?: number): number {
     return projectId || this.defaultProjectId;
+  }
+
+  private async listRoles(): Promise<OpenProjectRoleElement[]> {
+    if (this.rolesCache) {
+      return this.rolesCache;
+    }
+
+    const response = await fetch(`${this.baseUrl}/api/v3/roles?pageSize=200`, {
+      method: "GET",
+      headers: this.getHeaders()
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `No se pudo listar roles de OpenProject: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
+      );
+    }
+
+    const data = (await response.json()) as {
+      _embedded?: {
+        elements?: OpenProjectRoleElement[];
+      };
+    };
+
+    this.rolesCache = data._embedded?.elements ?? [];
+    return this.rolesCache;
+  }
+
+  private async findRoleByName(roleName: string): Promise<OpenProjectRoleElement | null> {
+    const normalizedTarget = normalizeRoleName(roleName);
+    const roles = await this.listRoles();
+
+    return (
+      roles.find((role) => normalizeRoleName(role.name) === normalizedTarget) ??
+      null
+    );
+  }
+
+  private async resolveConfiguredRole(roleName: string): Promise<ResolvedOpenProjectRole> {
+    const envKeys = getRoleEnvKeys(roleName);
+    const configuredRoleName = process.env[envKeys.name]?.trim();
+
+    if (configuredRoleName) {
+      const role = await this.findRoleByName(configuredRoleName);
+
+      if (!role) {
+        throw new Error(
+          `No existe rol OpenProject '${configuredRoleName}' configurado en ${envKeys.name}`
+        );
+      }
+
+      return {
+        id: role.id,
+        name: role.name,
+        fallbackUsed: false
+      };
+    }
+
+    const configuredRoleId = getEnvNumber(envKeys.id);
+
+    if (configuredRoleId) {
+      return {
+        id: configuredRoleId,
+        name: roleName,
+        fallbackUsed: false
+      };
+    }
+
+    return this.resolveFallbackRole();
+  }
+
+  private async resolveFallbackRole(): Promise<ResolvedOpenProjectRole> {
+    const fallbackRoleName =
+      process.env.OPENPROJECT_FALLBACK_MEMBER_ROLE_NAME?.trim() || "Member";
+    const fallbackRole = await this.findRoleByName(fallbackRoleName);
+
+    if (!fallbackRole) {
+      throw new Error(`No existe rol fallback OpenProject '${fallbackRoleName}'`);
+    }
+
+    return {
+      id: fallbackRole.id,
+      name: fallbackRole.name,
+      fallbackUsed: true
+    };
   }
 
   async findUserByEmail(email: string): Promise<OpenProjectPrincipal | null> {
@@ -163,6 +301,7 @@ export class OpenProjectMembersService {
 
     return JSON.parse(text) as OpenProjectPrincipal;
   }
+
   async ensureUser(params: {
     email: string;
     firstName: string;
@@ -179,43 +318,43 @@ export class OpenProjectMembersService {
     return this.createUser(params);
   }
 
-
-
   async listProjectMemberships(projectId?: number): Promise<OpenProjectMembershipElement[]> {
     const resolvedProjectId = this.getProjectId(projectId);
 
     const filters = [
-        {
+      {
         project: {
-            operator: "=",
-            values: [String(resolvedProjectId)]
+          operator: "=",
+          values: [String(resolvedProjectId)]
         }
-        }
+      }
     ];
 
     const response = await fetch(
-        `${this.baseUrl}/api/v3/memberships?filters=${encodeURIComponent(JSON.stringify(filters))}`,
-        {
+      `${this.baseUrl}/api/v3/memberships?filters=${encodeURIComponent(
+        JSON.stringify(filters)
+      )}`,
+      {
         method: "GET",
         headers: this.getHeaders()
-        }
+      }
     );
 
     if (!response.ok) {
-        const text = await response.text();
-        throw new Error(
+      const text = await response.text();
+      throw new Error(
         `No se pudo listar memberships de OpenProject: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
-        );
+      );
     }
 
     const data = (await response.json()) as {
-        _embedded?: {
+      _embedded?: {
         elements?: OpenProjectMembershipElement[];
-        };
+      };
     };
 
     return data._embedded?.elements ?? [];
- }
+  }
 
   async findProjectMembershipByUserId(
     userId: number,
@@ -233,43 +372,43 @@ export class OpenProjectMembersService {
 
   async createProjectMembership(
     userId: number,
-    roleId: number,
+    role: ResolvedOpenProjectRole,
     projectId?: number
-    ): Promise<void> {
+  ): Promise<void> {
     const resolvedProjectId = this.getProjectId(projectId);
 
     const response = await fetch(`${this.baseUrl}/api/v3/memberships`, {
-        method: "POST",
-        headers: this.getHeaders(),
-        body: JSON.stringify({
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify({
         _links: {
-            principal: {
+          principal: {
             href: `/api/v3/users/${userId}`
-            },
-            project: {
+          },
+          project: {
             href: `/api/v3/projects/${resolvedProjectId}`
-            },
-            roles: [
+          },
+          roles: [
             {
-                href: `/api/v3/roles/${roleId}`
+              href: `/api/v3/roles/${role.id}`
             }
-            ]
+          ]
         }
-        })
+      })
     });
 
     if (!response.ok) {
-        const text = await response.text();
-        throw new Error(
+      const text = await response.text();
+      throw new Error(
         `No se pudo crear membership en OpenProject: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
-        );
+      );
     }
- }
+  }
 
   async updateProjectMembership(
     membershipId: number,
     userId: number,
-    roleId: number
+    role: ResolvedOpenProjectRole
   ): Promise<void> {
     const response = await fetch(
       `${this.baseUrl}/api/v3/memberships/${membershipId}`,
@@ -283,7 +422,7 @@ export class OpenProjectMembersService {
             },
             roles: [
               {
-                href: `/api/v3/roles/${roleId}`
+                href: `/api/v3/roles/${role.id}`
               }
             ]
           }
@@ -298,6 +437,7 @@ export class OpenProjectMembersService {
       );
     }
   }
+
   async deleteProjectMembership(membershipId: number): Promise<void> {
     const response = await fetch(
       `${this.baseUrl}/api/v3/memberships/${membershipId}`,
@@ -310,10 +450,7 @@ export class OpenProjectMembersService {
     if (!response.ok && response.status !== 204) {
       const text = await response.text();
       throw new Error(
-        `No se pudo eliminar membership en OpenProject: ${response.status} ${response.statusText} - ${text.slice(
-          0,
-          500
-        )}`
+        `No se pudo eliminar membership en OpenProject: ${response.status} ${response.statusText} - ${text.slice(0, 500)}`
       );
     }
   }
@@ -360,13 +497,11 @@ export class OpenProjectMembersService {
       membershipId: membership.id,
       userId: user.id
     };
-  }  
+  }
 
-  async ensureProjectMember(input: EnsureOpenProjectMemberInput): Promise<{
-    synced: boolean;
-    createdUser?: boolean;
-    reason?: string;
-  }> {
+  async ensureProjectMember(
+    input: EnsureOpenProjectMemberInput
+  ): Promise<OpenProjectMemberSyncResult> {
     const user = await this.ensureUser({
       email: input.email,
       firstName: input.firstName,
@@ -375,26 +510,52 @@ export class OpenProjectMembersService {
       password: input.password
     });
 
-    const roleId = getOpenProjectRoleId(input.roleName);
-
+    const preferredRole = await this.resolveConfiguredRole(input.roleName);
     const existingMembership = await this.findProjectMembershipByUserId(
       user.id,
       input.projectId
     );
 
-    if (!existingMembership) {
-      await this.createProjectMembership(user.id, roleId, input.projectId);
+    const applyRole = async (role: ResolvedOpenProjectRole) => {
+      if (!existingMembership) {
+        await this.createProjectMembership(user.id, role, input.projectId);
+        return {
+          synced: true,
+          createdUser: true,
+          roleId: role.id,
+          roleName: role.name,
+          fallbackUsed: role.fallbackUsed
+        };
+      }
+
+      await this.updateProjectMembership(existingMembership.id, user.id, role);
+
       return {
         synced: true,
-        createdUser: true
+        createdUser: false,
+        roleId: role.id,
+        roleName: role.name,
+        fallbackUsed: role.fallbackUsed
       };
-    }
-
-    await this.updateProjectMembership(existingMembership.id, user.id, roleId);
-
-    return {
-      synced: true,
-      createdUser: false
     };
+
+    try {
+      return await applyRole(preferredRole);
+    } catch (error) {
+      if (preferredRole.fallbackUsed || !isUnassignableRoleError(error)) {
+        throw error;
+      }
+
+      const fallbackRole = await this.resolveFallbackRole();
+
+      console.warn("[OpenProjectMembersService] Using fallback role", {
+        requestedRoleName: input.roleName,
+        requestedOpenProjectRole: preferredRole.name,
+        fallbackRoleName: fallbackRole.name,
+        reason: getRoleErrorMessage(error)
+      });
+
+      return applyRole(fallbackRole);
+    }
   }
 }

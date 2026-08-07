@@ -46,6 +46,8 @@ export function setupViewerModules({
 
 
   const viewpoints = components.get(OBC.Viewpoints);
+  const views = components.get(OBC.Views);
+  views.world = world;
   const bcfTopics = components.get(OBC.BCFTopics);
   const marker = components.get(OBF.Marker);
   marker.threshold = 10;
@@ -59,6 +61,7 @@ export function setupViewerModules({
     coloring,
     sectionBox,
     viewpoints,
+    views,
     bcfTopics,
     marker,
     fastModelPickers,

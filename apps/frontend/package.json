@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit --incremental false"
   },
   "dependencies": {
     "@thatopen/components": "^3.4.0",
@@ -15,6 +16,7 @@
     "@thatopen/ui": "^3.4.0",
     "next": "16.2.0",
     "next-auth": "^4.24.13",
+    "pdfjs-dist": "^6.2.108",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "three": "^0.183.2",

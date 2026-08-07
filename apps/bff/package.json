@@ -4,20 +4,28 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:backfill": "tsx src/db/backfill-json-stores.ts",
+    "test": "tsx --test src/**/*.test.ts",
+    "start": "node dist/index.js",
+    "db:check": "tsx src/db/check.ts"
   },
   "dependencies": {
     "@thatopen/fragments": "^3.4.1",
-    "web-ifc": "^0.0.77",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "pg": "^8.22.0",
+    "web-ifc": "^0.0.77"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.20.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   }

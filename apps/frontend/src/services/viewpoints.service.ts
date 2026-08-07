@@ -1,10 +1,5 @@
 import type { ViewerViewpoint } from "@/features/viewer-ifc/types/viewpoint";
-
-const BFF_URL = process.env.NEXT_PUBLIC_BFF_URL;
-
-if (!BFF_URL) {
-  throw new Error("Falta definir NEXT_PUBLIC_BFF_URL en .env.local");
-}
+import { bffFetch } from "./bff-client";
 
 type ApiResponse<T> = {
   success: boolean;
@@ -13,11 +8,8 @@ type ApiResponse<T> = {
 };
 
 export async function getViewpoints(documentPath: string): Promise<ViewerViewpoint[]> {
-  const res = await fetch(
-    `${BFF_URL}/api/viewpoints?documentPath=${encodeURIComponent(documentPath)}`,
-    {
-      cache: "no-store"
-    }
+  const res = await bffFetch(
+    `/api/viewpoints?documentPath=${encodeURIComponent(documentPath)}`
   );
 
   if (!res.ok) {
@@ -32,7 +24,7 @@ export async function saveViewpoints(
   documentPath: string,
   viewpoints: ViewerViewpoint[]
 ): Promise<void> {
-  const res = await fetch(`${BFF_URL}/api/viewpoints`, {
+  const res = await bffFetch("/api/viewpoints", {
     method: "PUT",
     headers: {
       "Content-Type": "application/json"

@@ -1,10 +1,5 @@
 import type { BcfTopic } from "@/features/viewer-ifc/types/bcf-topic";
-
-const BFF_URL = process.env.NEXT_PUBLIC_BFF_URL;
-
-if (!BFF_URL) {
-  throw new Error("Falta definir NEXT_PUBLIC_BFF_URL en .env.local");
-}
+import { bffFetch } from "./bff-client";
 
 function normalizeProjectCode(projectCode?: string) {
   return projectCode?.trim().toUpperCase() || "";
@@ -17,9 +12,7 @@ export async function getBcfTopics(projectCode?: string): Promise<BcfTopic[]> {
     ? `?projectCode=${encodeURIComponent(normalizedProjectCode)}`
     : "";
 
-  const response = await fetch(`${BFF_URL}/api/bcf/topics${query}`, {
-    cache: "no-store"
-  });
+  const response = await bffFetch(`/api/bcf/topics${query}`);
 
   if (!response.ok) {
     throw new Error("No se pudieron cargar los topics BCF");
@@ -40,8 +33,8 @@ export async function saveBcfTopics(
     throw new Error("projectCode es obligatorio para guardar topics BCF");
   }
 
-  const response = await fetch(
-    `${BFF_URL}/api/bcf/topics?projectCode=${encodeURIComponent(
+  const response = await bffFetch(
+    `/api/bcf/topics?projectCode=${encodeURIComponent(
       normalizedProjectCode
     )}`,
     {

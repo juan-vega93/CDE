@@ -6,6 +6,7 @@ declare module "next-auth" {
     accessToken?: unknown;
     idToken?: unknown;
     roles?: string[];
+    error?: unknown;
   }
 }
 
@@ -13,6 +14,9 @@ declare module "next-auth/jwt" {
   interface JWT {
     accessToken?: unknown;
     idToken?: unknown;
+    accessTokenExpires?: unknown;
+    refreshToken?: unknown;
     roles?: string[];
+    error?: unknown;
   }
 }

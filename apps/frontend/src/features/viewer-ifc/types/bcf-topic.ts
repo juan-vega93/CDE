@@ -10,6 +10,15 @@ export type BcfTopicPriority =
   | "high"
   | "critical";
 
+export type BcfTopicIssueType =
+  | "coordination"
+  | "clash"
+  | "design"
+  | "parameter"
+  | "constructability"
+  | "safety"
+  | "other";
+
 export type BcfTopicComment = {
   id: string;
   author?: string;
@@ -37,10 +46,10 @@ export type BcfTopicAnnotation = {
 
 export type BcfTopicMeasurement = {
   id: string;
-  type: "distance";
-  points: [[number, number, number], [number, number, number]];
+  type: "distance" | "area" | "volume";
+  points: [number, number, number][];
   value: number;
-  unit: "m";
+  unit: "m" | "m2" | "m3";
   createdAt: string;
   author?: string;
 };
@@ -56,11 +65,26 @@ export type BcfTopicOpenProjectInfo = {
   lastError?: string;
 };
 
+export type BcfTopicLinkedSelection = {
+  modelId: string;
+  expressIds: number[];
+};
+
+export type BcfTopicSourceInfo = {
+  kind: "model" | "document";
+  modelNames?: string[];
+  documentPaths?: string[];
+  documentNames?: string[];
+};
+
 export type BcfTopic = {
   id: string;
   projectCode?: string;
   title: string;
   description?: string;
+  issueType?: BcfTopicIssueType;
+  discipline?: string;
+  dueDate?: string;
   status: BcfTopicStatus;
   priority: BcfTopicPriority;
   author?: string;
@@ -74,6 +98,8 @@ export type BcfTopic = {
     normal: [number, number, number];
     origin: [number, number, number];
   }[];
+  source?: BcfTopicSourceInfo;
+  linkedSelection?: BcfTopicLinkedSelection[];
   comments: BcfTopicComment[];
   attachments: BcfTopicAttachment[];
   annotations: BcfTopicAnnotation[];

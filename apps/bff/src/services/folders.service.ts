@@ -1,5 +1,11 @@
-import type { FoldersResponse } from "../types/folder.types";
+import type { FolderItem, FoldersResponse, FolderTreeNode } from "../types/folder.types";
 import { NextcloudAdapter } from "../adapters/nextcloud.adapter";
+import {
+  clearDocumentExplorerCache,
+  deleteDerivedFolderForSourceFolder,
+  moveDerivedFolderForFolderMove,
+  renameDerivedFolderForFolderRename
+} from "./documents.service";
 
 const nextcloudAdapter = new NextcloudAdapter();
 const TECHNICAL_FOLDER_NAMES = new Set([
@@ -133,16 +139,128 @@ export async function getFolders(path: string): Promise<FoldersResponse> {
   }
 }
 
+export async function getFolderTree(
+  rootPath: string,
+  depth = 4,
+  focusPath?: string
+): Promise<FolderTreeNode> {
+  const cleanRootPath = normalizePortalPath(rootPath);
+  const cleanFocusPath = focusPath ? normalizePortalPath(focusPath) : "";
+  const safeDepth = Math.min(Math.max(Number(depth) || 1, 1), 8);
+
+  if (
+    cleanFocusPath &&
+    (cleanFocusPath === cleanRootPath ||
+      cleanFocusPath.startsWith(`${cleanRootPath}/`))
+  ) {
+    return getFocusedFolderTree(cleanRootPath, cleanFocusPath);
+  }
+
+  async function buildNode(path: string, remainingDepth: number): Promise<FolderTreeNode> {
+    const normalizedPath = normalizePortalPath(path);
+    const name =
+      normalizedPath === "/"
+        ? "Repositorio"
+        : normalizedPath.split("/").filter(Boolean).pop() || "Repositorio";
+
+    if (remainingDepth <= 0) {
+      return {
+        name,
+        path: normalizedPath,
+        type: "folder",
+        children: []
+      };
+    }
+
+    const response = await getFolders(normalizedPath);
+    const children = await Promise.all(
+      response.items.map((folder: FolderItem) =>
+        buildNode(folder.path, remainingDepth - 1)
+      )
+    );
+
+    return {
+      name,
+      path: normalizedPath,
+      type: "folder",
+      children
+    };
+  }
+
+  return buildNode(cleanRootPath, safeDepth);
+}
+
+async function getFocusedFolderTree(
+  rootPath: string,
+  focusPath: string
+): Promise<FolderTreeNode> {
+  const rootSegments = getPathSegments(rootPath);
+  const focusSegments = getPathSegments(focusPath);
+  const branchPaths: string[] = [];
+
+  for (let index = rootSegments.length; index <= focusSegments.length; index += 1) {
+    const path = `/${focusSegments.slice(0, index).join("/")}`;
+    branchPaths.push(normalizePortalPath(path));
+  }
+
+  if (!branchPaths.includes(rootPath)) {
+    branchPaths.unshift(rootPath);
+  }
+
+  const uniqueBranchPaths = [...new Set(branchPaths)];
+  const folderResponses: Array<{ path: string; folders: FolderItem[] }> = [];
+
+  for (const path of uniqueBranchPaths) {
+    folderResponses.push({
+      path,
+      folders: (await getFolders(path)).items
+    });
+  }
+  const foldersByParent = new Map(
+    folderResponses.map((response) => [response.path, response.folders])
+  );
+
+  function buildBranchNode(path: string): FolderTreeNode {
+    const normalizedPath = normalizePortalPath(path);
+    const name =
+      normalizedPath === "/"
+        ? "Repositorio"
+        : normalizedPath.split("/").filter(Boolean).pop() || "Repositorio";
+    const childFolders = foldersByParent.get(normalizedPath) ?? [];
+
+    return {
+      name,
+      path: normalizedPath,
+      type: "folder",
+      children: childFolders.map((folder) => {
+        if (uniqueBranchPaths.includes(normalizePortalPath(folder.path))) {
+          return buildBranchNode(folder.path);
+        }
+
+        return {
+          ...folder,
+          path: normalizePortalPath(folder.path),
+          children: []
+        };
+      })
+    };
+  }
+
+  return buildBranchNode(rootPath);
+}
+
 export async function createFolder(folderPath: string): Promise<void> {
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
     console.log("[folders.service] Mock create folder:", { folderPath });
+    clearDocumentExplorerCache();
     return;
   }
 
   const cleanFolderPath = assertWritableDestinationPath(folderPath);
   await nextcloudAdapter.createFolder(cleanFolderPath);
+  clearDocumentExplorerCache();
 }
 
 export async function deleteFolder(folderPath: string): Promise<void> {
@@ -152,12 +270,15 @@ export async function deleteFolder(folderPath: string): Promise<void> {
     console.log("[folders.service] Mock delete folder recursively:", {
       folderPath
     });
+    clearDocumentExplorerCache();
     return;
   }
 
   const cleanFolderPath = assertWritableFolderPath(folderPath);
 
   await nextcloudAdapter.deletePath(cleanFolderPath);
+  await deleteDerivedFolderForSourceFolder(cleanFolderPath);
+  clearDocumentExplorerCache();
 }
 export async function moveFolder(
   folderPath: string,
@@ -170,6 +291,7 @@ export async function moveFolder(
       folderPath,
       destinationFolderPath
     });
+    clearDocumentExplorerCache();
     return;
   }
 
@@ -192,6 +314,11 @@ export async function moveFolder(
     throw new Error("No se puede mover una carpeta dentro de sí misma");
   }
   await nextcloudAdapter.movePath(cleanFolderPath, destinationPath);
+  await moveDerivedFolderForFolderMove(
+    cleanFolderPath,
+    cleanDestinationFolderPath
+  );
+  clearDocumentExplorerCache();
 }
 export async function renameFolder(
   folderPath: string,
@@ -204,12 +331,11 @@ export async function renameFolder(
       folderPath,
       newName
     });
+    clearDocumentExplorerCache();
     return;
   }
 
-  const cleanFolderPath = folderPath.startsWith("/")
-    ? folderPath
-    : `/${folderPath}`;
+  const cleanFolderPath = assertWritableFolderPath(folderPath);
 
   const cleanNewName = newName.trim();
 
@@ -218,4 +344,6 @@ export async function renameFolder(
   }
 
   await nextcloudAdapter.renamePath(cleanFolderPath, cleanNewName);
+  await renameDerivedFolderForFolderRename(cleanFolderPath, cleanNewName);
+  clearDocumentExplorerCache();
 }

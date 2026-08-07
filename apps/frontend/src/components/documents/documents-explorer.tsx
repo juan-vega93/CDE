@@ -1,44 +1,100 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import {
+  clearDocumentExplorerCache,
   deleteDocument,
   deleteFolder,
+  getDocumentVersions,
+  getFragGenerationQueueStatus,
+  queueDocumentFrag,
+  moveDocument,
+  moveFolder,
   renameDocument,
   renameFolder,
-  moveDocument,
-  moveFolder
+  sendToReview,
+  type FragGenerationQueueStatus
 } from "@/services/documents.service";
-import type { ExplorerRow, DocumentUiStatus } from "@/types/documents";
+import { requestDocumentExplorerRefresh } from "@/lib/document-explorer-events";
+import type {
+  DocumentUiStatus,
+  DocumentVersionItem,
+  ExplorerRow
+} from "@/types/documents";
 
 type DocumentsExplorerProps = {
   rows: ExplorerRow[];
   currentPath: string;
   projectCode?: string;
 };
-type RenameTarget = {
+
+type ActionTarget = {
   kind: "document" | "folder";
-  path: string;
-  currentName: string;
-} | null;
-type ActionsTarget = {
-  kind: "document" | "folder";
+  id?: string;
   path: string;
   name: string;
   extension?: string;
 } | null;
-type MoveTarget = {
-  kind: "document" | "folder";
-  path: string;
-  name: string;
-} | null;
-type DeleteTarget = {
-  kind: "document" | "folder";
-  path: string;
-  name: string;
-} | null;
+
+type DialogMode = "rename" | "move" | "delete" | null;
+
+type CustomAttribute = {
+  id: string;
+  label: string;
+  source: "filenameSegment" | "manual" | "extension" | "contentType" | "etag" | "path";
+  segmentIndex?: number;
+  manualValue?: string;
+};
+
+type ColumnKey =
+  | "name"
+  | "type"
+  | "description"
+  | "projectCode"
+  | "organization"
+  | "volume"
+  | "level"
+  | "discipline"
+  | "size"
+  | "modifiedAt"
+  | "status"
+  | "workflow"
+  | "bimDerivative"
+  | "version"
+  | "contentType"
+  | "etag"
+  | "path";
+
+const TECHNICAL_FOLDER_NAMES = new Set(["_bcf", "_derived", ".viewer", "_viewer"]);
+
+const COLUMNS: Array<{
+  key: ColumnKey;
+  label: string;
+  defaultVisible: boolean;
+}> = [
+  { key: "name", label: "Nombre", defaultVisible: true },
+  { key: "description", label: "Descripcion", defaultVisible: false },
+  { key: "projectCode", label: "Codigo de proyecto", defaultVisible: false },
+  { key: "organization", label: "Organizacion", defaultVisible: false },
+  { key: "volume", label: "Volumen / sistema", defaultVisible: false },
+  { key: "level", label: "Nivel", defaultVisible: false },
+  { key: "discipline", label: "Disciplina", defaultVisible: false },
+  { key: "type", label: "Tipo", defaultVisible: true },
+  { key: "size", label: "Tamano", defaultVisible: true },
+  { key: "modifiedAt", label: "Ultima modificacion", defaultVisible: true },
+  { key: "status", label: "Estado", defaultVisible: true },
+  { key: "workflow", label: "Workflow", defaultVisible: true },
+  { key: "bimDerivative", label: "Visor 3D", defaultVisible: true },
+  { key: "version", label: "Version", defaultVisible: true },
+  { key: "contentType", label: "Content type", defaultVisible: false },
+  { key: "etag", label: "ETag", defaultVisible: false },
+  { key: "path", label: "Ruta", defaultVisible: false }
+];
+
+const DEFAULT_VISIBLE_COLUMNS = COLUMNS.filter((column) => column.defaultVisible).map(
+  (column) => column.key
+);
 
 function formatBytes(bytes?: number): string {
   if (!bytes) return "-";
@@ -47,17 +103,28 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("es-PE", {
+    timeZone: "America/Lima",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
 
 function formatUiStatus(status?: DocumentUiStatus): string {
-  if (!status) return "-";
-
   switch (status) {
     case "pending":
       return "Pendiente";
     case "in_progress":
       return "En progreso";
     case "in_review":
-      return "En revisión";
+      return "En revision";
     case "approved":
       return "Aprobado";
     case "rejected":
@@ -65,1058 +132,1488 @@ function formatUiStatus(status?: DocumentUiStatus): string {
     case "closed":
       return "Cerrado";
     default:
-      return status;
+      return "-";
   }
 }
 
-function getStatusBadgeClass(status: DocumentUiStatus): string {
+function getStatusBadgeClass(status?: DocumentUiStatus): string {
   switch (status) {
-    case "pending":
-      return "bg-gray-100 text-gray-700 border-gray-200";
     case "in_progress":
-      return "bg-blue-100 text-blue-700 border-blue-200";
+      return "border-blue-200 bg-blue-50 text-blue-700";
     case "in_review":
-      return "bg-yellow-100 text-yellow-700 border-yellow-200";
+      return "border-amber-200 bg-amber-50 text-amber-700";
     case "approved":
-      return "bg-green-100 text-green-700 border-green-200";
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
     case "rejected":
-      return "bg-red-100 text-red-700 border-red-200";
+      return "border-red-200 bg-red-50 text-red-700";
     case "closed":
-      return "bg-zinc-100 text-zinc-700 border-zinc-200";
+      return "border-zinc-200 bg-zinc-50 text-zinc-700";
     default:
-      return "bg-gray-100 text-gray-700 border-gray-200";
+      return "border-slate-200 bg-slate-50 text-slate-700";
   }
 }
 
-function StatusBadge({ status }: { status: DocumentUiStatus }) {
-  return (
-    <span
-      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusBadgeClass(
-        status
-      )}`}
-    >
-      {formatUiStatus(status)}
-    </span>
-  );
+function getFileExtension(row: ExplorerRow) {
+  return row.kind === "document" ? row.extension?.toUpperCase() || "-" : "Carpeta";
 }
 
+function parseIso19650Metadata(row: ExplorerRow) {
+  const nameWithoutExt = row.name.replace(/\.[^.]+$/, "");
+  const parts = nameWithoutExt.split("-");
 
-function getFileTypeLabel(extension?: string): string {
-  if (!extension) return "Carpeta";
-  return extension.toUpperCase();
+  return {
+    projectCode: parts[0] || "-",
+    organization: parts[1] || "-",
+    volume: parts[3] || "-",
+    level: parts[5] || "-",
+    discipline:
+      parts[6] ||
+      (row.kind === "document" ? row.extension?.toUpperCase() || "-" : "-"),
+    description: row.kind === "folder" ? "Carpeta" : row.contentType || "-"
+  };
 }
 
-function formatDate(value?: string | number | Date | null) {
-  if (!value) return "-";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Lima",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).formatToParts(date);
-
-  const getPart = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "";
-
-  const day = Number(getPart("day"));
-  const month = Number(getPart("month"));
-  const year = getPart("year");
-
-  const hour24 = Number(getPart("hour"));
-  const minute = getPart("minute");
-  const second = getPart("second");
-
-  const period = hour24 >= 12 ? "p. m." : "a. m.";
-  const hour12 = hour24 % 12 || 12;
-
-  return `${day}/${month}/${year}, ${hour12}:${minute}:${second} ${period}`;
-}
-
-function getRowIcon(kind: ExplorerRow["kind"], extension?: string): string {
-  if (kind === "folder") return "📁";
-
-  switch ((extension || "").toLowerCase()) {
-    case "pdf":
-      return "📄";
-    case "docx":
-      return "📝";
-    case "ifc":
-      return "🧩";
-    default:
-      return "📦";
-  }
-}
-const TECHNICAL_FOLDER_NAMES = new Set([
-  "_bcf",
-  "_derived",
-  ".viewer",
-  "_viewer"
-]);
-
-function isTechnicalFolderRow(row: ExplorerRow): boolean {
+function isTechnicalFolder(row: ExplorerRow) {
   if (row.kind !== "folder") return false;
-
-  const name = String(row.name || "").trim().toLowerCase();
-
-  if (TECHNICAL_FOLDER_NAMES.has(name)) {
-    return true;
-  }
-
-  const pathSegments = String(row.path || "")
+  return row.path
     .split("/")
     .filter(Boolean)
-    .map((segment) => segment.trim().toLowerCase());
-
-  return pathSegments.some((segment) => TECHNICAL_FOLDER_NAMES.has(segment));
+    .some((segment) => TECHNICAL_FOLDER_NAMES.has(segment.toLowerCase()));
 }
-function isBimViewerDocument(row: ExplorerRow): boolean {
+
+function isBimDocument(row: ExplorerRow) {
   if (row.kind !== "document") return false;
-
-  const extension = String(row.extension || "")
-    .replace(".", "")
-    .trim()
-    .toLowerCase();
-
-  const name = String(row.name || "").trim().toLowerCase();
-
-  return (
-    extension === "ifc" ||
-    extension === "frag" ||
-    name.endsWith(".ifc") ||
-    name.endsWith(".frag")
-  );
+  const extension = row.extension?.toLowerCase() || "";
+  return extension === "ifc" || extension === "frag";
 }
+
+function formatBimDerivativeStatus(row: ExplorerRow) {
+  if (row.kind !== "document" || !isBimDocument(row)) return "-";
+
+  switch (row.bimDerivative?.status) {
+    case "generated":
+      return "Visor 3D listo";
+    case "pending":
+      return "Generando visor 3D";
+    case "failed":
+      return "Visor 3D falló";
+    case "missing":
+    default:
+      return "Sin visor 3D";
+  }
+}
+
+function getBimDerivativeBadgeClass(row: ExplorerRow) {
+  switch (row.kind === "document" ? row.bimDerivative?.status : undefined) {
+    case "generated":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "pending":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "failed":
+      return "border-red-200 bg-red-50 text-red-700";
+    case "missing":
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-700";
+  }
+}
+
+function isPdfDocument(
+  row: ExplorerRow
+): row is Extract<ExplorerRow, { kind: "document" }> {
+  return row.kind === "document" && row.extension?.toLowerCase() === "pdf";
+}
+
+function getVersionLabel(row: ExplorerRow) {
+  if (row.kind !== "document") return "-";
+  return "V1";
+}
+
+function normalizeExplorerPath(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  return parts.length ? `/${parts.join("/")}` : "/";
+}
+
+function getParentFolder(path: string) {
+  const parts = normalizeExplorerPath(path).split("/").filter(Boolean);
+  parts.pop();
+  return parts.length ? `/${parts.join("/")}` : "/";
+}
+
+function getMenuPosition(rect: DOMRect, width = 288, estimatedHeight = 420) {
+  const left = Math.min(
+    Math.max(12, rect.right - width),
+    Math.max(12, window.innerWidth - width - 12)
+  );
+  const opensDown = rect.bottom + estimatedHeight + 12 <= window.innerHeight;
+  const top = opensDown
+    ? rect.bottom + 8
+    : Math.max(12, rect.top - estimatedHeight - 8);
+
+  return { top, left };
+}
+
 export function DocumentsExplorer({
   rows,
   currentPath,
   projectCode = ""
 }: DocumentsExplorerProps) {
-  const router = useRouter();
-  const [deletingPath, setDeletingPath] = useState<string | null>(null);
-  const [actionsTarget, setActionsTarget] = useState<ActionsTarget>(null);
-  const [renameTarget, setRenameTarget] = useState<RenameTarget>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [actionError, setActionError] = useState("");
-  const [moveTarget, setMoveTarget] = useState<MoveTarget>(null);
-  const [moveValue, setMoveValue] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
-  const [deleteConfirmationValue, setDeleteConfirmationValue] = useState("");
-  const [actionsMenuPosition, setActionsMenuPosition] = useState<{
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(
+    () => new Set(DEFAULT_VISIBLE_COLUMNS)
+  );
+  const [showColumns, setShowColumns] = useState(false);
+  const [actionTarget, setActionTarget] = useState<ActionTarget>(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState<{
     top: number;
     left: number;
   } | null>(null);
+  const [dialogMode, setDialogMode] = useState<DialogMode>(null);
+  const [inputValue, setInputValue] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [versionTarget, setVersionTarget] =
+    useState<NonNullable<ActionTarget> | null>(null);
+  const [versions, setVersions] = useState<DocumentVersionItem[]>([]);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const [versionsError, setVersionsError] = useState("");
+  const [bulkReviewStatus, setBulkReviewStatus] = useState("");
+  const [isBulkReviewing, setIsBulkReviewing] = useState(false);
+  const [bimPreparationStatus, setBimPreparationStatus] = useState("");
+  const [isPreparingBim, setIsPreparingBim] = useState(false);
+  const [fragQueueStatus, setFragQueueStatus] =
+    useState<FragGenerationQueueStatus | null>(null);
+  const [fragQueueError, setFragQueueError] = useState("");
+  const [customAttributes, setCustomAttributes] = useState<CustomAttribute[]>([]);
+  const [showAttributeBuilder, setShowAttributeBuilder] = useState(false);
+  const [attributeDraft, setAttributeDraft] = useState<{
+    label: string;
+    source: CustomAttribute["source"];
+    segmentIndex: string;
+    manualValue: string;
+  }>({
+    label: "",
+    source: "filenameSegment",
+    segmentIndex: "0",
+    manualValue: ""
+  });
 
-  const visibleRows = rows.filter((row) => !isTechnicalFolderRow(row));
-  const isEmpty = visibleRows.length === 0;
+  const customAttributeStorageKey = `typsa-cde:document-attributes:${
+    projectCode || "global"
+  }`;
 
   useEffect(() => {
-  if (!actionsTarget) return;
+    try {
+      const raw = window.localStorage.getItem(customAttributeStorageKey);
+      setCustomAttributes(raw ? (JSON.parse(raw) as CustomAttribute[]) : []);
+    } catch {
+      setCustomAttributes([]);
+    }
+  }, [customAttributeStorageKey]);
 
-  function handleCloseMenu() {
-    setActionsTarget(null);
-    setActionsMenuPosition(null);
-  }
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        customAttributeStorageKey,
+        JSON.stringify(customAttributes)
+      );
+    } catch {
+      // La configuracion visual no debe romper el explorador.
+    }
+  }, [customAttributeStorageKey, customAttributes]);
 
-  window.addEventListener("click", handleCloseMenu);
-  window.addEventListener("scroll", handleCloseMenu, true);
+  const visibleRows = useMemo(
+    () => rows.filter((row) => !isTechnicalFolder(row)),
+    [rows]
+  );
+  const renderedColumns = COLUMNS.filter((column) => visibleColumns.has(column.key));
+  const selectedRows = visibleRows.filter((row) => selectedPaths.has(row.path));
+  const selectedDocuments = selectedRows.filter((row) => row.kind === "document");
+  const selectedBimDocuments = selectedDocuments.filter(isBimDocument);
+  const selectedBimReadyDocuments = selectedBimDocuments.filter(
+    (row) =>
+      row.extension?.toLowerCase() === "frag" ||
+      row.bimDerivative?.status === "generated"
+  );
+  const selectedBimPendingDocuments = selectedBimDocuments.filter(
+    (row) =>
+      row.extension?.toLowerCase() === "ifc" &&
+      row.bimDerivative?.status !== "generated"
+  );
+  const hasPendingBimDerivatives = visibleRows.some(
+    (row) =>
+      row.kind === "document" &&
+      row.extension?.toLowerCase() === "ifc" &&
+      row.bimDerivative?.status === "pending"
+  );
+  const allVisibleSelected =
+    visibleRows.length > 0 && visibleRows.every((row) => selectedPaths.has(row.path));
+  const someVisibleSelected = visibleRows.some((row) => selectedPaths.has(row.path));
 
-  return () => {
-    window.removeEventListener("click", handleCloseMenu);
-    window.removeEventListener("scroll", handleCloseMenu, true);
-  };
-}, [actionsTarget]);
+  useEffect(() => {
+    if (!hasPendingBimDerivatives) return;
 
-  function handleDeleteDocument(path: string, name?: string) {
-    setActionError("");
-    setDeleteTarget({
-      kind: "document",
-      path,
-      name: name || path.split("/").filter(Boolean).at(-1) || "Archivo"
+    const intervalId = window.setInterval(() => {
+      clearDocumentExplorerCache();
+      requestDocumentExplorerRefresh();
+    }, 4000);
+
+    return () => window.clearInterval(intervalId);
+  }, [hasPendingBimDerivatives]);
+
+  useEffect(() => {
+    if (!projectCode) return;
+
+    let cancelled = false;
+
+    async function loadQueueStatus() {
+      try {
+        const status = await getFragGenerationQueueStatus(projectCode);
+
+        if (!cancelled) {
+          setFragQueueStatus(status);
+          setFragQueueError("");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setFragQueueStatus(null);
+          setFragQueueError(
+            error instanceof Error ? error.message : "No se pudo consultar la cola del visor 3D"
+          );
+        }
+      }
+    }
+
+    void loadQueueStatus();
+
+    const queueHasWork =
+      hasPendingBimDerivatives ||
+      Boolean(fragQueueStatus?.activeJobs) ||
+      Boolean(fragQueueStatus?.queuedJobs);
+    const intervalId = window.setInterval(loadQueueStatus, queueHasWork ? 4000 : 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    projectCode,
+    hasPendingBimDerivatives,
+    fragQueueStatus?.activeJobs,
+    fragQueueStatus?.queuedJobs
+  ]);
+
+  function togglePath(path: string) {
+    setSelectedPaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
     });
-    setDeleteConfirmationValue("");
   }
 
-  function handleDeleteFolder(path: string, name?: string) {
-    setActionError("");
-    setDeleteTarget({
-      kind: "folder",
-      path,
-      name: name || path.split("/").filter(Boolean).at(-1) || "Carpeta"
+  function toggleAllVisible() {
+    setSelectedPaths((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) {
+        visibleRows.forEach((row) => next.delete(row.path));
+      } else {
+        visibleRows.forEach((row) => next.add(row.path));
+      }
+      return next;
     });
-    setDeleteConfirmationValue("");
-  }
-  function closeActionsMenu() {
-    setActionsTarget(null);
-    setActionsMenuPosition(null);
   }
 
-  function openActionsMenu(
-    event: React.MouseEvent<HTMLButtonElement>,
-    target: NonNullable<ActionsTarget>
+  function toggleColumn(column: ColumnKey) {
+    if (column === "name") return;
+    setVisibleColumns((current) => {
+      const next = new Set(current);
+      if (next.has(column)) next.delete(column);
+      else next.add(column);
+      return next;
+    });
+  }
+
+  function getCellValue(row: ExplorerRow, column: ColumnKey) {
+    const metadata = parseIso19650Metadata(row);
+
+    switch (column) {
+      case "name":
+        return row.name;
+      case "type":
+        return getFileExtension(row);
+      case "description":
+        return metadata.description;
+      case "projectCode":
+        return metadata.projectCode;
+      case "organization":
+        return metadata.organization;
+      case "volume":
+        return metadata.volume;
+      case "level":
+        return metadata.level;
+      case "discipline":
+        return metadata.discipline;
+      case "size":
+        return row.kind === "document" ? formatBytes(row.size) : "-";
+      case "modifiedAt":
+        return row.kind === "document"
+          ? row.modifiedAtLocal || formatDate(row.modifiedAt)
+          : "-";
+      case "status":
+        return row.kind === "document" ? formatUiStatus(row.uiStatus) : "-";
+      case "workflow":
+        return row.kind === "document" && row.workPackageLink
+          ? `WP #${row.workPackageLink.workPackageId}`
+          : "Sin workflow";
+      case "bimDerivative":
+        return formatBimDerivativeStatus(row);
+      case "version":
+        return getVersionLabel(row);
+      case "contentType":
+        return row.kind === "document" ? row.contentType || "-" : "-";
+      case "etag":
+        return row.kind === "document" ? row.etag || "-" : "-";
+      case "path":
+        return row.path;
+      default:
+        return "-";
+    }
+  }
+
+  function buildDocumentHref(
+    row: Extract<ExplorerRow, { kind: "document" }>,
+    documentVersionId?: string | null
   ) {
-    event.preventDefault();
-    event.stopPropagation();
+    if (isBimDocument(row)) {
+      const params = new URLSearchParams();
+      if (projectCode) params.set("projectCode", projectCode);
+      params.append("documentPath", row.path);
+      params.append("documentName", row.name);
+      if (documentVersionId && documentVersionId !== "current") {
+        params.append("documentVersionId", documentVersionId);
+      }
+      return `/viewer?${params.toString()}`;
+    }
 
-    const rect = event.currentTarget.getBoundingClientRect();
+    const params = new URLSearchParams({ path: currentPath });
+    if (projectCode) params.set("projectCode", projectCode);
+    if (documentVersionId && documentVersionId !== "current") {
+      params.set("documentVersionId", documentVersionId);
+    }
 
-    setActionsTarget(target);
-    setActionsMenuPosition({
-      top: rect.bottom + 8,
-      left: Math.max(16, rect.right - 192)
+    return `/documents/${row.id}?${params.toString()}`;
+  }
+
+  function buildFederatedViewerHref(documents: typeof selectedBimDocuments) {
+    const params = new URLSearchParams();
+    if (projectCode) params.set("projectCode", projectCode);
+    documents.forEach((row) => {
+      params.append("documentPath", row.path);
+      params.append("documentName", row.name);
     });
+    return `/viewer?${params.toString()}`;
   }
 
-  function handleRenameDocument(path: string, currentName: string) {
-    setActionError("");
-    setRenameTarget({
-      kind: "document",
-      path,
-      currentName
-    });
-    setRenameValue(currentName);
+  function buildVersionOpenHref(
+    target: NonNullable<ActionTarget>,
+    documentVersionId: string
+  ) {
+    const extension = target.extension?.toLowerCase() || "";
+
+    if (extension === "ifc" || extension === "frag") {
+      const params = new URLSearchParams();
+      if (projectCode) params.set("projectCode", projectCode);
+      params.set("documentPath", target.path);
+      params.set("documentName", target.name);
+      if (documentVersionId !== "current") {
+        params.set("documentVersionId", documentVersionId);
+      }
+      return `/viewer?${params.toString()}`;
+    }
+
+    if (extension === "pdf" && target.id) {
+      const params = new URLSearchParams({ path: currentPath });
+      if (projectCode) params.set("projectCode", projectCode);
+      if (documentVersionId !== "current") {
+        params.set("documentVersionId", documentVersionId);
+      }
+      return `/documents/${target.id}?${params.toString()}`;
+    }
+
+    return "#";
   }
-  
 
-  function handleRenameFolder(path: string, currentName: string) {
-    setActionError("");
-    setRenameTarget({
-      kind: "folder",
-      path,
-      currentName
-    });
-    setRenameValue(currentName);
-  }
-  function closeRenameModal() {
-    if (deletingPath) return;
+  async function handleSendSelectedToReview() {
+    const documents = selectedDocuments.filter((row) => row.kind === "document");
 
-    setRenameTarget(null);
-    setRenameValue("");
-    setActionError("");
-  }
-
-  async function submitRename() {
-    if (!renameTarget) return;
-
-    const nextName = renameValue.trim();
-
-    if (!nextName) {
-      setActionError("El nombre no puede estar vacío.");
+    if (documents.length === 0) {
+      setBulkReviewStatus("Selecciona al menos un archivo.");
       return;
     }
 
-    if (nextName === renameTarget.currentName) {
-      closeRenameModal();
+    const projectId = Number(process.env.NEXT_PUBLIC_OPENPROJECT_PROJECT_ID || 3);
+    const typeId = Number(process.env.NEXT_PUBLIC_OPENPROJECT_TYPE_ID || 13);
+
+    try {
+      setIsBulkReviewing(true);
+      setBulkReviewStatus("");
+
+      for (const document of documents) {
+        await sendToReview({
+          documentId: document.id,
+          documentPath: document.path,
+          documentName: document.name,
+          projectId,
+          typeId,
+          subject:
+            documents.length > 1
+              ? `Transmision documental - ${document.name}`
+              : `Revision de ${document.name}`,
+          description:
+            documents.length > 1
+              ? `Documento incluido en paquete de revision de ${documents.length} elemento(s).`
+              : `Enviar documento ${document.name} a revision tecnica`
+        });
+      }
+
+      setBulkReviewStatus(
+        `${documents.length} documento(s) enviados a revision.`
+      );
+      requestDocumentExplorerRefresh();
+    } catch (error) {
+      setBulkReviewStatus(
+        error instanceof Error ? error.message : "No se pudo enviar a revision"
+      );
+    } finally {
+      setIsBulkReviewing(false);
+    }
+  }
+
+  async function handlePrepareBimDocuments(
+    documents: Array<Extract<ExplorerRow, { kind: "document" }>>
+  ) {
+    const ifcDocuments = documents.filter(
+      (document) => document.extension?.toLowerCase() === "ifc"
+    );
+
+    if (ifcDocuments.length === 0) {
+      setBimPreparationStatus("Selecciona al menos un IFC.");
       return;
     }
 
     try {
-      setActionError("");
-      setDeletingPath(renameTarget.path);
+      setIsPreparingBim(true);
+      setBimPreparationStatus(`Encolando 0/${ifcDocuments.length} IFC...`);
 
-      if (renameTarget.kind === "folder") {
-        await renameFolder(renameTarget.path, nextName);
-      } else {
-        await renameDocument(renameTarget.path, nextName);
+      for (let index = 0; index < ifcDocuments.length; index += 1) {
+        const document = ifcDocuments[index];
+        setBimPreparationStatus(
+          `Encolando ${index + 1}/${ifcDocuments.length}: ${document.name}`
+        );
+        await queueDocumentFrag(document.path);
       }
 
-      setRenameTarget(null);
-      setRenameValue("");
-      router.refresh();
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : renameTarget.kind === "folder"
-            ? "No se pudo renombrar la carpeta"
-            : "No se pudo renombrar el archivo";
-
-      setActionError(errorMessage);
+      setBimPreparationStatus(
+        `${ifcDocuments.length} derivado(s) para visor 3D en cola.`
+      );
+      requestDocumentExplorerRefresh();
+    } catch (error) {
+      setBimPreparationStatus(
+        error instanceof Error ? error.message : "No se pudo preparar el visor 3D"
+      );
     } finally {
-      setDeletingPath(null);
+      setIsPreparingBim(false);
     }
   }
-  function closeMoveModal() {
-  if (deletingPath) return;
 
-  setMoveTarget(null);
-  setMoveValue("");
-  setActionError("");
-}
+  function getCustomAttributeValue(row: ExplorerRow, attribute: CustomAttribute) {
+    const nameWithoutExtension = row.name.replace(/\.[^.]+$/, "");
+    const parts = nameWithoutExtension.split("-");
 
-async function submitMove() {
-  if (!moveTarget) return;
-
-  const destinationPath = moveValue.trim();
-
-  if (!destinationPath) {
-    setActionError("Selecciona una carpeta destino.");
-    return;
+    switch (attribute.source) {
+      case "filenameSegment":
+        return parts[attribute.segmentIndex ?? 0] || "-";
+      case "manual":
+        return attribute.manualValue || "-";
+      case "extension":
+        return row.kind === "document" ? row.extension?.toUpperCase() || "-" : "-";
+      case "contentType":
+        return row.kind === "document" ? row.contentType || "-" : "-";
+      case "etag":
+        return row.kind === "document" ? row.etag || "-" : "-";
+      case "path":
+        return row.path;
+      default:
+        return "-";
+    }
   }
 
-  if (destinationPath === moveTarget.path) {
-    setActionError("No puedes mover el elemento hacia sí mismo.");
-    return;
+  function addCustomAttribute() {
+    const label = attributeDraft.label.trim();
+    const segmentIndex = Number(attributeDraft.segmentIndex);
+
+    if (!label) return;
+
+    setCustomAttributes((current) => [
+      ...current,
+      {
+        id: `${Date.now()}-${label.toLowerCase().replace(/\s+/g, "-")}`,
+        label,
+        source: attributeDraft.source,
+        segmentIndex: Number.isFinite(segmentIndex) ? Math.max(0, segmentIndex) : 0,
+        manualValue: attributeDraft.manualValue.trim()
+      }
+    ]);
+    setAttributeDraft({
+      label: "",
+      source: "filenameSegment",
+      segmentIndex: "0",
+      manualValue: ""
+    });
   }
 
-  if (
-    moveTarget.kind === "folder" &&
-    destinationPath.startsWith(`${moveTarget.path}/`)
-  ) {
-    setActionError("No puedes mover una carpeta dentro de sí misma.");
-    return;
+  function removeCustomAttribute(id: string) {
+    setCustomAttributes((current) =>
+      current.filter((attribute) => attribute.id !== id)
+    );
   }
 
-  try {
+  function openDialog(target: NonNullable<ActionTarget>, mode: DialogMode) {
+    setActionTarget(target);
+    setDialogMode(mode);
     setActionError("");
-    setDeletingPath(moveTarget.path);
 
-    if (moveTarget.kind === "folder") {
-      await moveFolder(moveTarget.path, destinationPath);
-    } else {
-      await moveDocument(moveTarget.path, destinationPath);
+    if (mode === "rename") setInputValue(target.name);
+    else if (mode === "move") {
+      const normalizedCurrentPath = normalizeExplorerPath(currentPath);
+      setInputValue(normalizedCurrentPath);
     }
-
-    setMoveTarget(null);
-    setMoveValue("");
-    router.refresh();
-  } catch (err) {
-    const errorMessage =
-      err instanceof Error
-        ? err.message
-        : moveTarget.kind === "folder"
-          ? "No se pudo mover la carpeta"
-          : "No se pudo mover el archivo";
-
-    setActionError(errorMessage);
-  } finally {
-    setDeletingPath(null);
+    else setInputValue("");
   }
-}
-function closeDeleteModal() {
-  if (deletingPath) return;
 
-  setDeleteTarget(null);
-  setDeleteConfirmationValue("");
-  setActionError("");
-}
+  function closeDialog() {
+    if (isSubmitting) return;
+    setActionTarget(null);
+    setDialogMode(null);
+    setInputValue("");
+    setActionError("");
+  }
 
-async function submitDelete() {
-  if (!deleteTarget) return;
+  async function submitDialog() {
+    if (!actionTarget || !dialogMode) return;
 
-  if (deleteTarget.kind === "folder") {
-    const expectedName = deleteTarget.name.trim();
-    const typedName = deleteConfirmationValue.trim();
+    const value = inputValue.trim();
 
-    if (typedName !== expectedName) {
-      setActionError(`Para confirmar, escribe exactamente: ${expectedName}`);
+    if ((dialogMode === "rename" || dialogMode === "move") && !value) {
+      setActionError("Completa el campo requerido.");
       return;
     }
-  }
 
-  try {
-    setActionError("");
-    setDeletingPath(deleteTarget.path);
-
-    if (deleteTarget.kind === "folder") {
-      await deleteFolder(deleteTarget.path);
-    } else {
-      await deleteDocument(deleteTarget.path);
+    if (dialogMode === "delete" && actionTarget.kind === "folder" && value !== actionTarget.name) {
+      setActionError(`Para confirmar, escribe exactamente: ${actionTarget.name}`);
+      return;
     }
 
-    setDeleteTarget(null);
-    setDeleteConfirmationValue("");
-    router.refresh();
-  } catch (err) {
-    const errorMessage =
-      err instanceof Error
-        ? err.message
-        : deleteTarget.kind === "folder"
-          ? "No se pudo eliminar la carpeta"
-          : "No se pudo eliminar el archivo";
+    try {
+      setIsSubmitting(true);
+      setActionError("");
 
-    setActionError(errorMessage);
-  } finally {
-    setDeletingPath(null);
-  }
-}
-
- function handleMoveDocument(path: string, name?: string) {
-  setActionError("");
-  setMoveTarget({
-    kind: "document",
-    path,
-    name: name || path.split("/").filter(Boolean).at(-1) || "Archivo"
-  });
-  setMoveValue("");
-}
-
- function handleMoveFolderInit(path: string, name?: string) {
-  setActionError("");
-  setMoveTarget({
-    kind: "folder",
-    path,
-    name: name || path.split("/").filter(Boolean).at(-1) || "Carpeta"
-  });
-  setMoveValue("");
-}
-function normalizeExplorerPath(pathValue: string) {
-  const clean = pathValue.trim();
-
-  if (!clean) return "/";
-  return clean.startsWith("/") ? clean : `/${clean}`;
-}
-
-function getParentFolder(pathValue: string) {
-  const normalized = normalizeExplorerPath(pathValue);
-  const parts = normalized.split("/").filter(Boolean);
-
-  if (parts.length <= 1) {
-    return normalized;
-  }
-
-  return `/${parts.slice(0, -1).join("/")}`;
-}
-
-function canUseMoveDestination(destinationPath: string, target: NonNullable<MoveTarget>) {
-  const normalizedDestination = normalizeExplorerPath(destinationPath);
-  const normalizedTarget = normalizeExplorerPath(target.path);
-
-  if (normalizedDestination === normalizedTarget) {
-    return false;
-  }
-
-  if (
-    target.kind === "folder" &&
-    normalizedDestination.startsWith(`${normalizedTarget}/`)
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function getMoveDestinationOptions(target: NonNullable<MoveTarget>) {
-  const options: Array<{
-    label: string;
-    path: string;
-    description: string;
-  }> = [];
-
-  const seen = new Set<string>();
-
-  function addOption(label: string, pathValue: string, description: string) {
-    const normalizedPath = normalizeExplorerPath(pathValue);
-
-    if (seen.has(normalizedPath)) return;
-    if (!canUseMoveDestination(normalizedPath, target)) return;
-
-    seen.add(normalizedPath);
-
-    options.push({
-      label,
-      path: normalizedPath,
-      description
-    });
-  }
-
-  const normalizedCurrentPath = normalizeExplorerPath(currentPath);
-  const currentParts = normalizedCurrentPath.split("/").filter(Boolean);
-  const projectRoot = projectCode ? `/${projectCode}` : `/${currentParts[0] || ""}`;
-
-  const parentPath = getParentFolder(normalizedCurrentPath);
-
-  if (parentPath && parentPath !== normalizedCurrentPath) {
-    addOption("Carpeta superior", parentPath, "Subir un nivel");
-  }
-
-  const currentFolderName = currentParts.at(-1)?.toUpperCase() || "";
-  const parentOfCurrent = getParentFolder(normalizedCurrentPath);
-
-  const standardWorkflowFolders = ["01_INPUT", "02_WORK", "03_EXPORT"];
-
-  if (standardWorkflowFolders.includes(currentFolderName)) {
-    standardWorkflowFolders.forEach((folderName) => {
-      const siblingPath = `${parentOfCurrent}/${folderName}`;
-
-      if (siblingPath !== normalizedCurrentPath) {
-        addOption(folderName, siblingPath, "Carpeta hermana del flujo actual");
+      if (dialogMode === "rename") {
+        if (actionTarget.kind === "folder") await renameFolder(actionTarget.path, value);
+        else await renameDocument(actionTarget.path, value);
       }
-    });
+
+      if (dialogMode === "move") {
+        if (actionTarget.kind === "folder") await moveFolder(actionTarget.path, value);
+        else await moveDocument(actionTarget.path, value);
+      }
+
+      if (dialogMode === "delete") {
+        if (actionTarget.kind === "folder") await deleteFolder(actionTarget.path);
+        else await deleteDocument(actionTarget.path);
+      }
+
+      setSelectedPaths((current) => {
+        const next = new Set(current);
+        next.delete(actionTarget.path);
+        return next;
+      });
+      closeDialog();
+      requestDocumentExplorerRefresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "No se pudo completar la accion");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  visibleRows
-    .filter((row) => row.kind === "folder")
-    .forEach((folder) => {
-      addOption(folder.name, folder.path, "Carpeta visible en esta ubicación");
-    });
+  async function openVersions(target: NonNullable<ActionTarget>) {
+    if (target.kind !== "document") return;
 
-  if (projectRoot && projectRoot !== normalizedCurrentPath) {
-    addOption("Raíz del proyecto", projectRoot, "Volver al nivel principal del proyecto");
+    setVersionTarget(target);
+    setActionTarget(null);
+    setActionMenuPosition(null);
+    setVersions([]);
+    setVersionsError("");
+    setIsLoadingVersions(true);
+
+    try {
+      const response = await getDocumentVersions(target.path, projectCode);
+      setVersions(response.versions);
+    } catch (error) {
+      setVersionsError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo obtener el historial de versiones"
+      );
+    } finally {
+      setIsLoadingVersions(false);
+    }
   }
 
-  return options;
-}
+  function getDestinationOptions(target: NonNullable<ActionTarget>) {
+    const current = normalizeExplorerPath(currentPath);
+    const currentParts = current.split("/").filter(Boolean);
+    const projectRoot = projectCode
+      ? `/${projectCode}`
+      : currentParts.length
+        ? `/${currentParts[0]}`
+        : "/";
+    const options: Array<{ label: string; path: string; description: string }> = [];
+    const seen = new Set<string>();
 
-const moveDestinationOptions = moveTarget
-  ? getMoveDestinationOptions(moveTarget)
-  : [];
+    function addOption(label: string, path: string, description: string) {
+      const normalizedPath = normalizeExplorerPath(path);
+      if (seen.has(normalizedPath)) return;
+      if (target.kind === "folder") {
+        const targetPath = normalizeExplorerPath(target.path);
+        if (
+          normalizedPath === targetPath ||
+          normalizedPath.startsWith(`${targetPath}/`)
+        ) {
+          return;
+        }
+      }
+      seen.add(normalizedPath);
+      options.push({ label, path: normalizedPath, description });
+    }
 
+    addOption("Raiz del proyecto", projectRoot, "Nivel principal del proyecto");
+    addOption("Carpeta actual", current, "Ubicacion abierta");
+    addOption("Carpeta superior", getParentFolder(current), "Subir un nivel");
+
+    visibleRows
+      .filter((row) => row.kind === "folder")
+      .forEach((folder) =>
+        addOption(folder.name, folder.path, "Subcarpeta visible")
+      );
+
+    return options;
+  }
 
   return (
-    <div className="mt-6 overflow-hidden rounded-xl border bg-white">
-      {renameTarget ? (
-        <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-            <div className="border-b border-slate-100 px-5 py-4">
-              <h2 className="text-lg font-semibold text-slate-900">
-                {renameTarget.kind === "folder"
-                  ? "Renombrar carpeta"
-                  : "Renombrar archivo"}
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Actualiza el nombre sin cambiar la ubicación del elemento.
-              </p>
-            </div>
-
-            <div className="space-y-4 px-5 py-5">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Nuevo nombre
-                </label>
-                <input
-                  value={renameValue}
-                  onChange={(event) => setRenameValue(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void submitRename();
+    <div className="overflow-hidden border-t border-slate-200 bg-white">
+      <div className="flex flex-col gap-2 border-b border-slate-200 px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <label className="inline-flex items-center gap-2 font-medium text-slate-700">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              ref={(input) => {
+                if (input) input.indeterminate = someVisibleSelected && !allVisibleSelected;
+              }}
+              onChange={toggleAllVisible}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Seleccionar visibles
+          </label>
+          {selectedRows.length > 0 ? (
+            <>
+              <span className="rounded bg-red-50 px-2 py-1 font-semibold text-red-700">
+                {selectedRows.length} seleccionado(s)
+              </span>
+              {selectedBimDocuments.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handlePrepareBimDocuments(
+                        selectedBimPendingDocuments.length
+                          ? selectedBimPendingDocuments
+                          : selectedBimDocuments
+                      )
                     }
-
-                    if (event.key === "Escape") {
-                      closeRenameModal();
-                    }
-                  }}
-                  autoFocus
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
-                />
-              </div>
-
-              {actionError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {actionError}
-                </div>
+                    disabled={isPreparingBim}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    {isPreparingBim
+                      ? "Preparando..."
+                      : selectedBimPendingDocuments.length
+                        ? `Preparar visor 3D (${selectedBimPendingDocuments.length})`
+                        : "Repreparar visor 3D"}
+                  </button>
+                  {selectedBimPendingDocuments.length === 0 ? (
+                    <Link
+                      href={buildFederatedViewerHref(selectedBimReadyDocuments)}
+                      prefetch={false}
+                      className="rounded border border-slate-300 bg-white px-2 py-1 font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Abrir en visor 3D
+                    </Link>
+                  ) : (
+                    <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+                      Prepara los IFC antes de federar
+                    </span>
+                  )}
+                </>
               ) : null}
-            </div>
-
-            <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4">
+              {selectedDocuments.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => void handleSendSelectedToReview()}
+                  disabled={isBulkReviewing}
+                  className="rounded bg-red-700 px-2 py-1 font-semibold text-white hover:bg-red-800 disabled:opacity-60"
+                >
+                  {isBulkReviewing ? "Enviando..." : "Enviar a revision"}
+                </button>
+              ) : null}
               <button
                 type="button"
-                onClick={closeRenameModal}
-                disabled={Boolean(deletingPath)}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => setSelectedPaths(new Set())}
+                className="rounded border border-slate-300 bg-white px-2 py-1 hover:bg-slate-50"
               >
-                Cancelar
+                Limpiar
               </button>
-
-              <button
-                type="button"
-                onClick={() => void submitRename()}
-                disabled={Boolean(deletingPath)}
-                className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {deletingPath ? "Guardando..." : "Guardar cambios"}
-              </button>
-            </div>
-          </div>
+              {bulkReviewStatus ? (
+                <span className="text-xs text-slate-600">{bulkReviewStatus}</span>
+              ) : null}
+              {bimPreparationStatus ? (
+                <span className="text-xs text-slate-600">{bimPreparationStatus}</span>
+              ) : null}
+            </>
+          ) : null}
         </div>
-      ) : null}
-      {moveTarget ? (
-        <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/45 px-4">
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="border-b border-slate-100 px-5 py-4">
-              <h2 className="text-lg font-semibold text-slate-900">
-                {moveTarget.kind === "folder"
-                  ? "Mover carpeta"
-                  : "Mover archivo"}
-              </h2>
 
-              <p className="mt-1 text-sm text-slate-500">
-                Indica la carpeta destino dentro del proyecto.
-              </p>
-            </div>
-
-            <div className="space-y-4 px-5 py-5">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Elemento
-                </div>
-                <div className="mt-1 break-all text-sm font-semibold text-slate-900">
-                  {moveTarget.name}
-                </div>
-                <div className="mt-1 break-all text-xs text-slate-500">
-                  {moveTarget.path}
-                </div>
+        <div className="flex items-center gap-2">
+          {fragQueueStatus?.activeJobs || fragQueueStatus?.queuedJobs ? (
+            <span className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
+              Visor 3D: {fragQueueStatus.activeJobs} activo(s), {fragQueueStatus.queuedJobs} en cola
+            </span>
+          ) : fragQueueError ? (
+            <span className="max-w-72 truncate rounded border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
+              {fragQueueError}
+            </span>
+          ) : null}
+          <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowColumns((current) => !current)}
+            className="h-9 rounded border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Columnas
+          </button>
+          {showColumns ? (
+            <div className="absolute right-0 z-30 mt-2 w-80 rounded border border-slate-200 bg-white p-3 shadow-xl">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Configuracion de atributos
               </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Carpeta destino
-                </label>
-
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Destinos sugeridos
-                  </div>
-
-                  <div className="flex max-h-56 flex-col gap-2 overflow-y-auto">
-                    {moveDestinationOptions.length > 0 ? (
-                      moveDestinationOptions.map((destination) => {
-                        const isSelected = moveValue === destination.path;
-
-                        return (
-                          <button
-                            key={destination.path}
-                            type="button"
-                            onClick={() => setMoveValue(destination.path)}
-                            className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${
-                              isSelected
-                                ? "border-red-300 bg-red-50 text-red-800"
-                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                            }`}
-                          >
-                            <span>📁</span>
-                            <span>
-                              <span className="block font-medium">{destination.label}</span>
-                              <span className="block text-xs text-slate-500">
-                                {destination.description}
-                              </span>
-                              <span className="block break-all text-xs text-slate-500">
-                                {destination.path}
-                              </span>
-                            </span>
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <div className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-4 text-sm text-slate-500">
-                        No hay destinos sugeridos para este elemento.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <label className="mb-1 block text-xs font-medium text-slate-500">
-                    Ruta destino seleccionada
+              <div className="max-h-80 space-y-1 overflow-y-auto">
+                {COLUMNS.map((column) => (
+                  <label
+                    key={column.key}
+                    className="flex items-center gap-2 rounded px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visibleColumns.has(column.key)}
+                      disabled={column.key === "name"}
+                      onChange={() => toggleColumn(column.key)}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    {column.label}
                   </label>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setVisibleColumns(new Set(DEFAULT_VISIBLE_COLUMNS))}
+                className="mt-3 w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Restablecer
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAttributeBuilder((current) => !current)}
+                className="mt-2 w-full rounded border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+              >
+                Mas / configurar atributos
+              </button>
 
+              {showAttributeBuilder ? (
+                <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
                   <input
-                    value={moveValue}
-                    onChange={(event) => setMoveValue(event.target.value)}
-                    placeholder="Selecciona una carpeta o pega una ruta"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+                    value={attributeDraft.label}
+                    onChange={(event) =>
+                      setAttributeDraft((current) => ({
+                        ...current,
+                        label: event.target.value
+                      }))
+                    }
+                    placeholder="Nombre del campo"
+                    className="h-9 w-full rounded border border-slate-300 px-2 text-sm"
                   />
-                </div>
+                  <select
+                    value={attributeDraft.source}
+                    onChange={(event) =>
+                      setAttributeDraft((current) => ({
+                        ...current,
+                        source: event.target.value as CustomAttribute["source"]
+                      }))
+                    }
+                    className="h-9 w-full rounded border border-slate-300 px-2 text-sm"
+                  >
+                    <option value="filenameSegment">Segmento del nombre</option>
+                    <option value="manual">Valor fijo/manual</option>
+                    <option value="extension">Extension</option>
+                    <option value="contentType">Content type</option>
+                    <option value="etag">ETag / version marker</option>
+                    <option value="path">Ruta</option>
+                  </select>
+                  {attributeDraft.source === "filenameSegment" ? (
+                    <input
+                      type="number"
+                      min={0}
+                      value={attributeDraft.segmentIndex}
+                      onChange={(event) =>
+                        setAttributeDraft((current) => ({
+                          ...current,
+                          segmentIndex: event.target.value
+                        }))
+                      }
+                      placeholder="Indice de segmento, base 0"
+                      className="h-9 w-full rounded border border-slate-300 px-2 text-sm"
+                    />
+                  ) : null}
+                  {attributeDraft.source === "manual" ? (
+                    <input
+                      value={attributeDraft.manualValue}
+                      onChange={(event) =>
+                        setAttributeDraft((current) => ({
+                          ...current,
+                          manualValue: event.target.value
+                        }))
+                      }
+                      placeholder="Valor fijo"
+                      className="h-9 w-full rounded border border-slate-300 px-2 text-sm"
+                    />
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={addCustomAttribute}
+                    className="w-full rounded bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
+                  >
+                    Agregar campo
+                  </button>
 
-                <p className="mt-2 text-xs text-slate-500">
-                  Puedes elegir un destino sugerido o pegar manualmente una ruta si necesitas mover a otra carpeta.
-                </p>
-              </div>
-
-              {actionError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {actionError}
+                  {customAttributes.length > 0 ? (
+                    <div className="space-y-1 pt-1">
+                      {customAttributes.map((attribute) => (
+                        <div
+                          key={attribute.id}
+                          className="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1 text-sm"
+                        >
+                          <span className="truncate">{attribute.label}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeCustomAttribute(attribute.id)}
+                            className="text-red-700"
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
-
-            <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4">
-              <button
-                type="button"
-                onClick={closeMoveModal}
-                disabled={Boolean(deletingPath)}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void submitMove()}
-                disabled={Boolean(deletingPath)}
-                className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {deletingPath ? "Moviendo..." : "Mover"}
-              </button>
-            </div>
+          ) : null}
           </div>
         </div>
-      ) : null}    
-      {deleteTarget ? (
-        <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/45 px-4">
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="border-b border-red-100 bg-red-50 px-5 py-4">
-              <h2 className="text-lg font-semibold text-red-800">
-                {deleteTarget.kind === "folder"
-                  ? "Eliminar carpeta"
-                  : "Eliminar archivo"}
-              </h2>
+      </div>
 
-              <p className="mt-1 text-sm text-red-700">
-                {deleteTarget.kind === "folder"
-                  ? "Esta acción eliminará la carpeta y todo su contenido interno. Verifica antes de continuar."
-                  : "Esta acción eliminará el archivo seleccionado. Verifica antes de continuar."}
-              </p>
-            </div>
-
-            <div className="space-y-4 px-5 py-5">
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3">
-                <div className="text-xs font-medium uppercase tracking-wide text-red-700">
-                  Elemento
-                </div>
-
-                <div className="mt-1 break-all text-sm font-semibold text-slate-900">
-                  {deleteTarget.name}
-                </div>
-
-                <div className="mt-1 break-all text-xs text-slate-600">
-                  {deleteTarget.path}
-                </div>
-              </div>
-
-              {deleteTarget.kind === "folder" ? (
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Para confirmar, escribe exactamente:
-                </label>
-
-                <div className="mb-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900">
-                  {deleteTarget.name}
-                </div>
-
-                <input
-                  value={deleteConfirmationValue}
-                  onChange={(event) =>
-                    setDeleteConfirmationValue(event.target.value)
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void submitDelete();
-                    }
-
-                    if (event.key === "Escape") {
-                      closeDeleteModal();
-                    }
-                  }}
-                  autoFocus
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
-                />
-              </div>
-            ) : (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                Se eliminará este archivo. Esta acción no eliminará carpetas ni otros contenidos.
-              </div>
-            )}
-
-              {actionError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {actionError}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4">
-              <button
-                type="button"
-                onClick={closeDeleteModal}
-                disabled={Boolean(deletingPath)}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void submitDelete()}
-                disabled={
-                  Boolean(deletingPath) ||
-                  (deleteTarget.kind === "folder" &&
-                    deleteConfirmationValue.trim() !== deleteTarget.name.trim())
-                }
-                className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {deletingPath
-                  ? "Eliminando..."
-                  : deleteTarget.kind === "folder"
-                    ? "Eliminar carpeta y contenido"
-                    : "Eliminar archivo"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      <table className="min-w-full border-collapse">
-        <thead className="bg-gray-50">
-          <tr className="text-left text-sm">
-            <th className="border-b px-4 py-3">Nombre</th>
-            <th className="border-b px-4 py-3">Tipo</th>
-            <th className="border-b px-4 py-3">Tamaño</th>
-            <th className="border-b px-4 py-3">Última modificación</th>
-            <th className="border-b px-4 py-3">Estado</th>
-            <th className="border-b px-4 py-3">Workflow</th>
-            <th className="border-b px-4 py-3 text-right">Acciones</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {isEmpty ? (
-            <tr>
-              <td colSpan={7} className="px-6 py-12 text-center">
-                <div className="mx-auto max-w-md">
-                  <div className="text-4xl">📂</div>
-                  <h3 className="mt-3 text-base font-semibold text-gray-900">
-                    Esta carpeta no contiene elementos
-                  </h3>
-                  <p className="mt-2 text-sm text-gray-600">
-                    No se encontraron subcarpetas ni documentos en{" "}
-                    <span className="font-medium">{currentPath}</span>.
-                  </p>
-                </div>
-              </td>
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse">
+          <thead className="bg-slate-50">
+            <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <th className="w-10 border-b border-slate-200 px-3 py-2"></th>
+              {renderedColumns.map((column) => (
+                <th key={column.key} className="border-b border-slate-200 px-3 py-2">
+                  {column.label}
+                </th>
+              ))}
+              {customAttributes.map((attribute) => (
+                <th
+                  key={attribute.id}
+                  className="border-b border-slate-200 px-3 py-2"
+                >
+                  {attribute.label}
+                </th>
+              ))}
+              <th className="w-20 border-b border-slate-200 px-3 py-2 text-right">
+                Acciones
+              </th>
             </tr>
-          ) : (
-            visibleRows.map((row, index) => {
-              if (row.kind === "folder") {
+          </thead>
+          <tbody>
+            {visibleRows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={renderedColumns.length + customAttributes.length + 2}
+                  className="px-6 py-12 text-center text-sm text-slate-500"
+                >
+                  Esta carpeta no contiene elementos.
+                </td>
+              </tr>
+            ) : (
+              visibleRows.map((row) => {
+                const checked = selectedPaths.has(row.path);
+
                 return (
                   <tr
-                    key={`folder-${row.path}-${index}`}
-                    className="text-sm hover:bg-gray-50"
+                    key={row.path}
+                    className={`text-sm hover:bg-slate-50 ${
+                      checked ? "bg-red-50" : ""
+                    }`}
                   >
-                    <td className="border-b px-4 py-3">
-                      <Link
-                        href={`/documents?path=${encodeURIComponent(row.path)}${
-                          projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
-                        }`}
-                        className="flex items-center gap-2 font-medium text-blue-700 hover:underline"
-                      >
-                        <span>{getRowIcon("folder")}</span>
-                        <span>{row.name}</span>
-                      </Link>
+                    <td className="border-b border-slate-200 px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => togglePath(row.path)}
+                        className="h-4 w-4 rounded border-slate-300"
+                        aria-label={`Seleccionar ${row.name}`}
+                      />
                     </td>
 
-                    <td className="border-b px-4 py-3">Carpeta</td>
-                    <td className="border-b px-4 py-3">-</td>
-                    <td className="border-b px-4 py-3">-</td>
-                    <td className="border-b px-4 py-3">-</td>
-                    <td className="border-b px-4 py-3">-</td>
+                    {renderedColumns.map((column) => {
+                      const value = getCellValue(row, column.key);
 
-                    <td className="border-b px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={(event) =>
-                          openActionsMenu(event, {
-                            kind: "folder",
-                            path: row.path,
-                            name: row.name
-                          })
-                        }
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-lg leading-none text-slate-700 shadow-sm hover:bg-slate-50"
-                        aria-label={`Acciones de ${row.name}`}
-                      >
-                        ⋯
-                      </button>
+                      if (column.key === "name") {
+                        return (
+                          <td
+                            key={column.key}
+                            className="min-w-[320px] border-b border-slate-200 px-3 py-2"
+                          >
+                            {row.kind === "folder" ? (
+                              <Link
+                                href={`/documents?path=${encodeURIComponent(row.path)}${
+                                  projectCode
+                                    ? `&projectCode=${encodeURIComponent(projectCode)}`
+                                    : ""
+                                }`}
+                                prefetch={false}
+                                className="font-medium text-blue-700 hover:underline"
+                              >
+                                <span>{row.name}</span>
+                              </Link>
+                            ) : (
+                              <Link
+                                href={buildDocumentHref(row)}
+                                prefetch={false}
+                                className="font-medium text-blue-700 hover:underline"
+                              >
+                                <span>{row.name}</span>
+                              </Link>
+                            )}
+                          </td>
+                        );
+                      }
+
+                      if (column.key === "status" && row.kind === "document") {
+                        return (
+                          <td key={column.key} className="border-b border-slate-200 px-3 py-2">
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusBadgeClass(
+                                row.uiStatus
+                              )}`}
+                            >
+                              {value}
+                            </span>
+                          </td>
+                        );
+                      }
+
+                      if (
+                        column.key === "workflow" &&
+                        row.kind === "document" &&
+                        row.workPackageLink
+                      ) {
+                        return (
+                          <td key={column.key} className="border-b border-slate-200 px-3 py-2">
+                            <Link
+                              href={`/workflows/${row.workPackageLink.workPackageId}${
+                                projectCode
+                                  ? `?projectCode=${encodeURIComponent(projectCode)}`
+                                  : ""
+                              }`}
+                              prefetch={false}
+                              className="font-medium text-blue-700 hover:underline"
+                            >
+                              {value}
+                            </Link>
+                          </td>
+                        );
+                      }
+
+                      if (column.key === "bimDerivative" && row.kind === "document") {
+                        return (
+                          <td key={column.key} className="border-b border-slate-200 px-3 py-2">
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getBimDerivativeBadgeClass(
+                                row
+                              )}`}
+                              title={row.bimDerivative?.error || String(value)}
+                            >
+                              {value}
+                            </span>
+                          </td>
+                        );
+                      }
+
+                      return (
+                        <td
+                          key={column.key}
+                          className="max-w-[360px] truncate border-b border-slate-200 px-3 py-2 text-slate-700"
+                          title={String(value)}
+                        >
+                          {value}
+                        </td>
+                      );
+                    })}
+
+                    {customAttributes.map((attribute) => {
+                      const value = getCustomAttributeValue(row, attribute);
+
+                      return (
+                        <td
+                          key={attribute.id}
+                          className="max-w-[320px] truncate border-b border-slate-200 px-3 py-2 text-slate-700"
+                          title={String(value)}
+                        >
+                          {value}
+                        </td>
+                      );
+                    })}
+
+                    <td className="border-b border-slate-200 px-3 py-2 text-right">
+                      <div className="inline-flex items-center gap-1">
+                      {isBimDocument(row) ? (
+                        row.kind === "document" &&
+                        row.extension?.toLowerCase() === "ifc" &&
+                        row.bimDerivative?.status !== "generated" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handlePrepareBimDocuments([row])}
+                            disabled={isPreparingBim}
+                            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                          >
+                            Preparar
+                          </button>
+                        ) : (
+                          <Link
+                            href={`/viewer?projectCode=${encodeURIComponent(
+                              projectCode
+                            )}&documentPath=${encodeURIComponent(
+                              row.path
+                            )}&documentName=${encodeURIComponent(row.name)}`}
+                            prefetch={false}
+                            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            Visor 3D
+                          </Link>
+                        )
+                      ) : null}
+                        {isPdfDocument(row) ? (
+                          <Link
+                            href={buildDocumentHref(row)}
+                            prefetch={false}
+                            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            PDF
+                          </Link>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            setActionTarget({
+                              kind: row.kind,
+                              id: row.kind === "document" ? row.id : undefined,
+                              path: row.path,
+                              name: row.name,
+                              extension: row.kind === "document" ? row.extension : undefined
+                            });
+                            setActionMenuPosition(getMenuPosition(rect));
+                          }}
+                          className="h-8 w-8 rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                          aria-label={`Acciones de ${row.name}`}
+                        >
+                          ...
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
-              }
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
 
-              return (
-                <tr key={`doc-${row.id}`} className="text-sm hover:bg-gray-50">
-                  <td className="border-b px-4 py-3">
-                    <Link
-                      href={`/documents/${row.id}?path=${encodeURIComponent(currentPath)}${
-                        projectCode ? `&projectCode=${encodeURIComponent(projectCode)}` : ""
-                      }`}
-                      className="flex items-center gap-2 font-medium text-blue-700 hover:underline"
-                    >
-                      <span>{getRowIcon("document", row.extension)}</span>
-                      <span>{row.name}</span>
-                    </Link>
-                  </td>
-
-                  <td className="border-b px-4 py-3">
-                    {getFileTypeLabel(row.extension)}
-                  </td>
-
-                  <td className="border-b px-4 py-3">
-                    {formatBytes(row.size)}
-                  </td>
-
-                  <td className="border-b px-4 py-3">
-                    {formatDate(row.modifiedAt)}
-                  </td>
-
-                  <td className="border-b px-4 py-3">
-                    <StatusBadge status={row.uiStatus} />
-                  </td>
-
-                  <td className="border-b px-4 py-3">
-                    {row.workPackageLink ? (
-                      <Link
-                        href={`/workflows/${row.workPackageLink.workPackageId}`}
-                        className="font-medium text-blue-700 hover:underline"
-                      >
-                        WP #{row.workPackageLink.workPackageId} ·{" "}
-                        {row.workPackageLink.linkType}
-                      </Link>
-                    ) : (
-                      <span className="text-gray-500">Sin workflow</span>
-                    )}
-                  </td>
-
-                  <td className="border-b px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={(event) =>
-                        openActionsMenu(event, {
-                          kind: "document",
-                          path: row.path,
-                          name: row.name,
-                          extension: row.extension
-                        })
-                      }
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-lg leading-none text-slate-700 shadow-sm hover:bg-slate-50"
-                      aria-label={`Acciones de ${row.name}`}
-                    >
-                      ⋯
-                    </button>
-                  </td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
-      {actionsTarget && actionsMenuPosition ? (
+      {actionTarget && !dialogMode ? (
         <div
-          className="fixed z-[100000] w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-2xl"
-          style={{
-            top: actionsMenuPosition.top,
-            left: actionsMenuPosition.left
-          }}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
+          className="fixed inset-0 z-[100000] bg-transparent"
+          onClick={() => {
+            setActionTarget(null);
+            setActionMenuPosition(null);
           }}
         >
-          <button
-            type="button"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-
-              const target = actionsTarget;
-              closeActionsMenu();
-
-              if (target.kind === "folder") {
-                handleRenameFolder(target.path, target.name);
-              } else {
-                handleRenameDocument(target.path, target.name);
-              }
+          <div
+            className="absolute max-h-[calc(100vh-2rem)] w-72 overflow-y-auto rounded border border-slate-200 bg-white py-1 shadow-xl"
+            style={{
+              top: actionMenuPosition?.top ?? 0,
+              left: actionMenuPosition?.left ?? 0
             }}
-            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-          >
-            Renombrar
-          </button>
-
-          <button
-            type="button"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-
-              const target = actionsTarget;
-              closeActionsMenu();
-
-              if (target.kind === "folder") {
-                handleMoveFolderInit(target.path, target.name);
-              } else {
-                handleMoveDocument(target.path, target.name);
-              }
-            }}
-            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-          >
-            Mover
-          </button>
-
-          {actionsTarget.kind === "document" &&
-          (() => {
-            const extension = String(actionsTarget.extension || "")
-              .replace(".", "")
-              .trim()
-              .toLowerCase();
-
-            const name = String(actionsTarget.name || "")
-              .trim()
-              .toLowerCase();
-
-            return (
-              extension === "ifc" ||
-              extension === "frag" ||
-              name.endsWith(".ifc") ||
-              name.endsWith(".frag")
-            );
-          })() ? (
-            <Link
-              href={`/viewer?projectCode=${encodeURIComponent(
-                projectCode
-              )}&documentPath=${encodeURIComponent(
-                actionsTarget.path
-              )}&documentName=${encodeURIComponent(actionsTarget.name)}`}
-              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-              onClick={closeActionsMenu}
+            onClick={(event) => event.stopPropagation()}
             >
-              Abrir en visor BIM
-            </Link>
-          ) : null}
-
-          <button
-            type="button"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-
-              const target = actionsTarget;
-              closeActionsMenu();
-
-              if (target.kind === "folder") {
-                handleDeleteFolder(target.path, target.name);
-              } else {
-                handleDeleteDocument(target.path, target.name);
+            <button
+              type="button"
+              onClick={() => openDialog(actionTarget, "move")}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Desplazar
+            </button>
+            <button
+              type="button"
+              disabled
+              className="block w-full px-3 py-2 text-left text-sm text-slate-400"
+            >
+              Copiar
+            </button>
+            <button
+              type="button"
+              onClick={() => openDialog(actionTarget, "rename")}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Cambiar nombre
+            </button>
+            <button
+              type="button"
+              disabled
+              className="block w-full px-3 py-2 text-left text-sm text-slate-400"
+            >
+              Compartir
+            </button>
+            <button
+              type="button"
+              disabled
+              className="block w-full px-3 py-2 text-left text-sm text-slate-400"
+            >
+              Bloquear
+            </button>
+            <button
+              type="button"
+              onClick={() => openDialog(actionTarget, "delete")}
+              className="block w-full px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
+            >
+              Suprimir
+            </button>
+            <div className="my-1 border-t border-slate-100" />
+            <button
+              type="button"
+              disabled
+              className="block w-full px-3 py-2 text-left text-sm text-slate-400"
+            >
+              Editar valores de atributo
+            </button>
+            <button
+              type="button"
+              disabled={
+                actionTarget.kind !== "document" ||
+                actionTarget.extension?.toLowerCase() !== "ifc" ||
+                isPreparingBim
               }
-            }}
-            className="block w-full px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
-          >
-            Eliminar
-          </button>
+              onClick={() => {
+                if (
+                  actionTarget.kind !== "document" ||
+                  actionTarget.extension?.toLowerCase() !== "ifc"
+                ) {
+                  return;
+                }
+
+                const target = actionTarget;
+                setActionTarget(null);
+                setActionMenuPosition(null);
+                void handlePrepareBimDocuments([
+                  {
+                    kind: "document",
+                    id: target.id || target.path,
+                    name: target.name,
+                    path: target.path,
+                    extension: target.extension || "ifc",
+                    size: 0,
+                    modifiedAt: "",
+                    workflowStatus: null,
+                    uiStatus: "pending"
+                  }
+                ]);
+              }}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:text-slate-400 disabled:hover:bg-white"
+            >
+              Preparar visor 3D / reintentar derivado
+            </button>
+            <button
+              type="button"
+              disabled={actionTarget.kind !== "document"}
+              onClick={() => void openVersions(actionTarget)}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:text-slate-400 disabled:hover:bg-white"
+            >
+              Ver historial de versiones
+            </button>
+            <button
+              type="button"
+              disabled
+              className="block w-full px-3 py-2 text-left text-sm text-slate-400"
+            >
+              Ver actividades de archivos
+            </button>
+            <button
+              type="button"
+              disabled
+              className="block w-full px-3 py-2 text-left text-sm text-slate-400"
+            >
+              Descargar archivo de origen
+            </button>
+            <button
+              type="button"
+              disabled={actionTarget.kind !== "document"}
+              onClick={() => {
+                if (actionTarget.kind !== "document") return;
+                setSelectedPaths(new Set([actionTarget.path]));
+                setActionTarget(null);
+                setActionMenuPosition(null);
+                setBulkReviewStatus("Archivo listo para enviar desde la barra de seleccion.");
+              }}
+              className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:text-slate-400 disabled:hover:bg-white"
+            >
+              Enviar para revision
+            </button>
+            <button
+              type="button"
+              disabled
+              className="block w-full px-3 py-2 text-left text-sm text-slate-400"
+            >
+              Crear informe de transmision
+            </button>
+          </div>
         </div>
       ) : null}
 
+      {actionTarget && dialogMode ? (
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {dialogMode === "rename"
+                  ? "Cambiar nombre"
+                  : dialogMode === "move"
+                    ? "Desplazar elemento"
+                    : "Suprimir elemento"}
+              </h2>
+              <p className="mt-1 break-all text-sm text-slate-500">
+                {actionTarget.path}
+              </p>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              {dialogMode === "delete" ? (
+                actionTarget.kind === "folder" ? (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Para confirmar, escribe exactamente: {actionTarget.name}
+                    </label>
+                    <input
+                      value={inputValue}
+                      onChange={(event) => setInputValue(event.target.value)}
+                      className="w-full rounded border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-600"
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    Se eliminara el archivo seleccionado.
+                  </div>
+                )
+              ) : dialogMode === "move" ? (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Seleccionar carpeta de destino
+                  </label>
+                  <div className="max-h-80 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-2">
+                    {getDestinationOptions(actionTarget).map((option) => {
+                      const selected = normalizeExplorerPath(inputValue) === option.path;
+
+                      return (
+                        <button
+                          key={option.path}
+                          type="button"
+                          onClick={() => setInputValue(option.path)}
+                          className={`mb-2 block w-full rounded border px-3 py-2 text-left text-sm last:mb-0 ${
+                            selected
+                              ? "border-red-300 bg-red-50 text-red-900"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                          }`}
+                        >
+                          <span className="block font-semibold">{option.label}</span>
+                          <span className="block text-xs text-slate-500">
+                            {option.description}
+                          </span>
+                          <span className="mt-1 block break-all text-xs text-slate-600">
+                            {option.path}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Nuevo nombre
+                  </label>
+                  <input
+                    value={inputValue}
+                    onChange={(event) => setInputValue(event.target.value)}
+                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-600"
+                  />
+                </div>
+              )}
+
+              {actionError ? (
+                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {actionError}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={closeDialog}
+                disabled={isSubmitting}
+                className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitDialog()}
+                disabled={isSubmitting}
+                className="rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50"
+              >
+                {isSubmitting ? "Procesando..." : "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {versionTarget ? (
+        <div className="fixed inset-0 z-[100000] flex items-center justify-end bg-black/30">
+          <aside className="h-full w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white shadow-xl">
+            <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Historial de versiones
+                </h2>
+                <p className="mt-1 truncate text-sm text-slate-500">
+                  {versionTarget.name}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setVersionTarget(null);
+                  setVersions([]);
+                  setVersionsError("");
+                }}
+                className="h-8 w-8 rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+                aria-label="Cerrar historial"
+              >
+                x
+              </button>
+            </div>
+
+            <div className="space-y-2 p-4">
+              {isLoadingVersions ? (
+                <div className="rounded border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  Cargando versiones...
+                </div>
+              ) : versionsError ? (
+                <div className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {versionsError}
+                </div>
+              ) : versions.length === 0 ? (
+                <div className="rounded border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  No hay historial disponible.
+                </div>
+              ) : (
+                versions
+                  .slice()
+                  .reverse()
+                  .map((version) => (
+                    <div
+                      key={version.id}
+                      className={`rounded border p-3 ${
+                        version.isCurrent
+                          ? "border-red-200 bg-red-50"
+                          : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-slate-900">
+                            {version.label}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {version.modifiedAtLocal || "-"} ·{" "}
+                            {version.size ? formatBytes(version.size) : "-"}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <Link
+                          href={buildVersionOpenHref(versionTarget, version.id)}
+                          prefetch={false}
+                          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Abrir version
+                        </Link>
+                        <button
+                          type="button"
+                          disabled
+                          className="rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-400"
+                        >
+                          Comparar
+                        </button>
+                      </div>
+                    </div>
+                  ))
+              )}
+            </div>
+          </aside>
+        </div>
+      ) : null}
     </div>
   );
 }

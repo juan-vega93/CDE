@@ -60,7 +60,8 @@ export async function captureViewpoint(
         threeCamera.position.y,
         threeCamera.position.z
       ],
-      target: [targetVec.x, targetVec.y, targetVec.z]
+      target: [targetVec.x, targetVec.y, targetVec.z],
+      up: [threeCamera.up.x, threeCamera.up.y, threeCamera.up.z]
     },
     visibility: {
       hidden

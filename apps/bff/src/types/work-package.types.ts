@@ -43,4 +43,6 @@ export type CreateWorkPackageInput = {
 
   /** ID real del proyecto OpenProject asociado a la tarjeta del proyecto */
   openProjectProjectId?: number;
+  /** Identifier/slug real del proyecto OpenProject, cuando existe en Project Card */
+  openProjectProjectIdentifier?: string;
 };

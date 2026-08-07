@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import type { ViewerSource } from "@/features/viewer-ifc/lib/resolve-viewer-source";
+import { bffAssetFetch } from "@/services/bff-client";
 
 type LoadViewerModelParams = {
   components: OBC.Components;
@@ -20,6 +21,8 @@ type ControlsWithUpdateListener = {
 };
 
 const controlsHooked = new WeakSet<object>();
+const FRAGMENTS_WORKER_URL = "/vendor/thatopen/fragments-worker.mjs";
+const WEB_IFC_WASM_PATH = "/vendor/web-ifc/";
 
 async function ensureFragmentsInitialized(
   components: OBC.Components,
@@ -30,23 +33,7 @@ async function ensureFragmentsInitialized(
 
   const initPromise = (async () => {
     const fragments = components.get(OBC.FragmentsManager);
-
-    const workerResponse = await fetch(
-      "https://thatopen.github.io/engine_fragment/resources/worker.mjs"
-    );
-
-    if (!workerResponse.ok) {
-      throw new Error(
-        `No se pudo descargar el worker de fragments: ${workerResponse.status}`
-      );
-    }
-
-    const workerBlob = await workerResponse.blob();
-    const workerUrl = URL.createObjectURL(
-      new File([workerBlob], "worker.mjs", {
-        type: "text/javascript"
-      })
-    );
+    const workerUrl = FRAGMENTS_WORKER_URL;
 
     fragments.init(workerUrl);
 
@@ -93,7 +80,7 @@ export async function loadViewerModel({
   const resolvedModelName = getResolvedModelName(source, modelName);
 
   if (source.kind === "frag") {
-    const response = await fetch(source.modelUrl);
+    const response = await bffAssetFetch(source.modelUrl);
 
     if (!response.ok) {
       throw new Error(`No se pudo descargar el FRAG: ${response.status}`);
@@ -126,12 +113,12 @@ export async function loadViewerModel({
   await ifcLoader.setup({
     autoSetWasm: false,
     wasm: {
-      path: "https://unpkg.com/web-ifc@0.0.77/",
+      path: WEB_IFC_WASM_PATH,
       absolute: true
     }
   });
 
-  const response = await fetch(source.modelUrl);
+  const response = await bffAssetFetch(source.modelUrl);
 
   if (!response.ok) {
     throw new Error(`No se pudo descargar el IFC: ${response.status}`);

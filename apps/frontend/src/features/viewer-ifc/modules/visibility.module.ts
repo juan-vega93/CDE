@@ -36,6 +36,27 @@ export function setupVisibility({ components }: SetupVisibilityParams) {
     await refreshFragments();
   }
 
+  async function showOnly(modelIdMap: OBC.ModelIdMap, universeMap: OBC.ModelIdMap) {
+    const toHide: OBC.ModelIdMap = {};
+
+    for (const [modelId, universeIds] of Object.entries(universeMap)) {
+      const visibleIds = modelIdMap[modelId] ?? new Set<number>();
+      const hiddenIds = new Set<number>();
+
+      for (const localId of universeIds) {
+        if (!visibleIds.has(localId)) hiddenIds.add(localId);
+      }
+
+      if (hiddenIds.size > 0) toHide[modelId] = hiddenIds;
+    }
+
+    await hider.set(true);
+    if (Object.keys(toHide).length > 0) {
+      await hider.set(false, toHide);
+    }
+    await refreshFragments();
+  }
+
   async function toggle(modelIdMap: OBC.ModelIdMap) {
     const hiddenMap = await hider.getVisibilityMap(false);
 
@@ -101,6 +122,7 @@ export function setupVisibility({ components }: SetupVisibilityParams) {
     show,
     showAll,
     isolate,
+    showOnly,
     getHiddenMap,
     applyHiddenMap,
     toggle

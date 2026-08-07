@@ -15,7 +15,7 @@ export function PortalShell({ children }: PortalShellProps) {
         <Sidebar />
 
         <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="mx-auto w-full max-w-[1500px] px-8 py-7">
+          <div className="mx-auto w-full max-w-[1800px] px-5 py-4">
             {children}
           </div>
         </main>

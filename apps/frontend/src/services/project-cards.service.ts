@@ -1,4 +1,6 @@
-const BFF_URL = process.env.NEXT_PUBLIC_BFF_URL || "http://localhost:4000";
+"use client";
+
+import { bffFetch } from "./bff-client";
 
 export type PortalRoleKey =
   | "bim-manager"
@@ -161,9 +163,8 @@ async function requestJson<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const response = await fetch(`${BFF_URL}${path}`, {
+  const response = await bffFetch(path, {
     ...options,
-    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {})
@@ -292,6 +293,33 @@ export async function createProjectCardFromPortal(
 export async function provisionProjectCard(code: string): Promise<unknown> {
   return requestJson<unknown>(
     `/api/project-cards/${encodeURIComponent(code)}/provision`,
+    {
+      method: "POST"
+    }
+  );
+}
+
+export async function repairProjectCardOpenProjectLink(
+  code: string
+): Promise<{
+  projectCard: ProjectCard;
+  openProject: {
+    created: boolean;
+    projectId: number;
+    identifier: string;
+    name: string;
+  };
+}> {
+  return requestJson<{
+    projectCard: ProjectCard;
+    openProject: {
+      created: boolean;
+      projectId: number;
+      identifier: string;
+      name: string;
+    };
+  }>(
+    `/api/project-cards/${encodeURIComponent(code)}/openproject/repair`,
     {
       method: "POST"
     }
