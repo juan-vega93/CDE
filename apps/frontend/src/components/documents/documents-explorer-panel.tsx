@@ -304,13 +304,9 @@ export function DocumentsExplorerPanel({
           >
             {isLoadingChildren ? "..." : expanded ? "v" : ">"}
           </button>
-          <button
-            type="button"
-            onClick={() => window.location.assign(href)}
-            className="min-w-0 flex-1 truncate text-left"
-          >
+          <a href={href} className="min-w-0 flex-1 truncate text-left">
             {label}
-          </button>
+          </a>
           {showActions ? (
             <button
               type="button"

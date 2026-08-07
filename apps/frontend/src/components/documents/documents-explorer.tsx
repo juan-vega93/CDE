@@ -418,7 +418,7 @@ export function DocumentsExplorer({
   }
 
   function openFolder(path: string) {
-    window.location.assign(buildFolderHref(path));
+    window.location.href = buildFolderHref(path);
   }
 
   function toggleAllVisible() {
@@ -1122,13 +1122,16 @@ export function DocumentsExplorer({
                             className="min-w-[320px] border-b border-slate-200 px-3 py-2"
                           >
                             {row.kind === "folder" ? (
-                              <button
-                                type="button"
-                                onClick={() => openFolder(row.path)}
+                              <a
+                                href={buildFolderHref(row.path)}
+                                onDoubleClick={(event) => {
+                                  event.preventDefault();
+                                  openFolder(row.path);
+                                }}
                                 className="font-medium text-blue-700 hover:underline"
                               >
                                 <span>{row.name}</span>
-                              </button>
+                              </a>
                             ) : (
                               <Link
                                 href={buildDocumentHref(row)}
