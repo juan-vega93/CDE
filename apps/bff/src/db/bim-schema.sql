@@ -30,7 +30,7 @@ create index if not exists cde_bim_models_project_idx
 create index if not exists cde_bim_models_status_idx
   on cde_bim_models (status);
 
-create table if not exists cde_bim_derivatives (
+create table if not exists cde_bim_model_derivatives (
   id uuid primary key default gen_random_uuid(),
   bim_model_id uuid not null references cde_bim_models(id) on delete cascade,
   derivative_type text not null default 'frag'
@@ -47,11 +47,11 @@ create table if not exists cde_bim_derivatives (
   unique (bim_model_id, derivative_type, storage_path)
 );
 
-create index if not exists cde_bim_derivatives_model_idx
-  on cde_bim_derivatives (bim_model_id);
+create index if not exists cde_bim_model_derivatives_model_idx
+  on cde_bim_model_derivatives (bim_model_id);
 
-create index if not exists cde_bim_derivatives_status_idx
-  on cde_bim_derivatives (status);
+create index if not exists cde_bim_model_derivatives_status_idx
+  on cde_bim_model_derivatives (status);
 
 create table if not exists cde_bim_elements (
   id uuid primary key default gen_random_uuid(),

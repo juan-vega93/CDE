@@ -4,6 +4,7 @@ import { getDatabasePool, isDatabaseEnabled } from "./client";
 const REQUIRED_TABLES = [
   "cde_issues",
   "cde_bim_models",
+  "cde_bim_model_derivatives",
   "cde_bim_elements",
   "cde_bim_property_sets",
   "cde_bim_properties",
