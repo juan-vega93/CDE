@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   clearDocumentExplorerCache,
@@ -257,6 +258,7 @@ export function DocumentsExplorer({
   currentPath,
   projectCode = ""
 }: DocumentsExplorerProps) {
+  const router = useRouter();
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(
     () => new Set(DEFAULT_VISIBLE_COLUMNS)
@@ -1106,17 +1108,27 @@ export function DocumentsExplorer({
                             className="min-w-[320px] border-b border-slate-200 px-3 py-2"
                           >
                             {row.kind === "folder" ? (
-                              <Link
-                                href={`/documents?path=${encodeURIComponent(row.path)}${
+                              (() => {
+                                const href = `/documents?path=${encodeURIComponent(row.path)}${
                                   projectCode
                                     ? `&projectCode=${encodeURIComponent(projectCode)}`
                                     : ""
-                                }`}
-                                prefetch={false}
-                                className="font-medium text-blue-700 hover:underline"
-                              >
-                                <span>{row.name}</span>
-                              </Link>
+                                }`;
+
+                                return (
+                                  <Link
+                                    href={href}
+                                    prefetch={false}
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      router.push(href);
+                                    }}
+                                    className="font-medium text-blue-700 hover:underline"
+                                  >
+                                    <span>{row.name}</span>
+                                  </Link>
+                                );
+                              })()
                             ) : (
                               <Link
                                 href={buildDocumentHref(row)}

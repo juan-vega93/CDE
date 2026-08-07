@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { DocumentsExplorer } from "@/components/documents/documents-explorer";
 import {
@@ -56,6 +57,7 @@ export function DocumentsExplorerPanel({
   currentPath,
   projectCode = ""
 }: DocumentsExplorerPanelProps) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     () => new Set([normalizeExplorerPath(currentPath)])
@@ -304,7 +306,15 @@ export function DocumentsExplorerPanel({
           >
             {isLoadingChildren ? "..." : expanded ? "v" : ">"}
           </button>
-          <Link href={href} prefetch={false} className="min-w-0 flex-1 truncate">
+          <Link
+            href={href}
+            prefetch={false}
+            onClick={(event) => {
+              event.preventDefault();
+              router.push(href);
+            }}
+            className="min-w-0 flex-1 truncate"
+          >
             {label}
           </Link>
           {showActions ? (
