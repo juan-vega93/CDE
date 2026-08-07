@@ -138,13 +138,13 @@ function ProjectCardsAdminPageContent() {
 
   function getStatusLabel(status?: ProjectCard["status"]) {
     const labels: Record<string, string> = {
-      planning: "Planificación",
+      planning: "Planificacion",
       active: "Activo",
       paused: "Pausado",
       closed: "Cerrado"
     };
 
-    return labels[status || "planning"] || "Planificación";
+    return labels[status || "planning"] || "Planificacion";
   }
 
   function formatDate(value?: string) {
@@ -288,7 +288,7 @@ function ProjectCardsAdminPageContent() {
       const code = projectForm.code.trim().toUpperCase();
 
       if (!code || !projectForm.name.trim()) {
-        setMessage("Código y nombre del proyecto son obligatorios.");
+        setMessage("Codigo y nombre del proyecto son obligatorios.");
         return;
       }
 
@@ -993,7 +993,7 @@ function ProjectCardsAdminPageContent() {
                   <input
                     value={projectSearch}
                     onChange={(event) => setProjectSearch(event.target.value)}
-                    placeholder="Buscar proyecto por código o nombre..."
+                    placeholder="Buscar proyecto por codigo o nombre..."
                     className="h-10 w-80 rounded border border-slate-300 bg-white px-3 text-sm outline-none focus:border-red-600"
                   />
                   <select
@@ -1007,7 +1007,7 @@ function ProjectCardsAdminPageContent() {
                   >
                     <option value="visible">No cerrados</option>
                     <option value="all">Todos</option>
-                    <option value="planning">Planificación</option>
+                    <option value="planning">Planificacion</option>
                     <option value="active">Activo</option>
                     <option value="paused">Pausado</option>
                     <option value="closed">Cerrado</option>
@@ -1236,7 +1236,7 @@ function ProjectCardsAdminPageContent() {
                   code: event.target.value.toUpperCase()
                 }))
               }
-              placeholder="Código del proyecto"
+              placeholder="Codigo del proyecto"
               className="rounded border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-600"
             />
 
@@ -1262,7 +1262,7 @@ function ProjectCardsAdminPageContent() {
               }
               className="rounded border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-600"
             >
-              <option value="planning">Planificación</option>
+              <option value="planning">Planificacion</option>
               <option value="active">Activo</option>
               <option value="paused">Pausado</option>
               <option value="closed">Cerrado</option>

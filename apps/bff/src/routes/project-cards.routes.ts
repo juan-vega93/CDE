@@ -61,6 +61,21 @@ router.get("/", authenticatedRoute(), async (req, res) => {
           )
         ).filter((projectCard) => projectCard !== null);
 
+    if (
+      process.env.BFF_AUTH_DEBUG === "true" &&
+      projectCards.length > 0 &&
+      visibleProjectCards.length === 0
+    ) {
+      console.warn("[project-cards.routes] usuario autenticado sin project cards visibles", {
+        username: user.username,
+        email: user.email,
+        realmRoles: user.realmRoles,
+        clientRoles: user.clientRoles,
+        groups: user.groups,
+        projectCodes: projectCards.map((projectCard) => projectCard.code)
+      });
+    }
+
     return res.json({
       success: true,
       data: visibleProjectCards
