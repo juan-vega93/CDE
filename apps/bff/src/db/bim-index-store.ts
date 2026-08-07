@@ -1,4 +1,4 @@
-﻿import type { PoolClient } from "pg";
+import type { PoolClient } from "pg";
 import { getDatabasePool, isDatabaseEnabled } from "./client";
 
 export type BimModelStatus = "pending" | "processing" | "ready" | "failed" | "stale";
@@ -60,6 +60,15 @@ export type UpsertBimModelInput = {
   metadata?: Record<string, unknown>;
 };
 
+export type UpsertBimModelDerivativeInput = {
+  bimModelId: string;
+  derivativeType: string;
+  storagePath: string;
+  sourceHash?: string;
+  fileSizeBytes?: number;
+  status?: BimModelStatus;
+  metadata?: Record<string, unknown>;
+};
 export type BimElementPropertyInput = {
   setName: string;
   name: string;
@@ -328,6 +337,53 @@ export async function listBimModels(projectCode: string) {
   return result.rows.map(toModel);
 }
 
+export async function upsertBimModelDerivative(input: UpsertBimModelDerivativeInput) {
+  ensureBimDatabaseEnabled();
+
+  const pool = getDatabasePool();
+  const result = await pool.query(
+    `
+      insert into cde_bim_model_derivatives (
+        bim_model_id,
+        derivative_type,
+        storage_path,
+        source_hash,
+        file_size_bytes,
+        status,
+        metadata
+      )
+      values ($1, $2, $3, $4, $5, $6, $7::jsonb)
+      on conflict (bim_model_id, derivative_type, storage_path)
+      do update set
+        source_hash = excluded.source_hash,
+        file_size_bytes = coalesce(excluded.file_size_bytes, cde_bim_model_derivatives.file_size_bytes),
+        status = excluded.status,
+        metadata = coalesce(cde_bim_model_derivatives.metadata, '{}'::jsonb) || excluded.metadata,
+        updated_at = now()
+      returning id,
+        bim_model_id as "bimModelId",
+        derivative_type as "derivativeType",
+        storage_path as "storagePath",
+        source_hash as "sourceHash",
+        file_size_bytes as "fileSizeBytes",
+        status,
+        metadata,
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+    `,
+    [
+      input.bimModelId,
+      normalizeText(input.derivativeType) || "frag",
+      normalizeText(input.storagePath),
+      normalizeText(input.sourceHash),
+      input.fileSizeBytes ?? null,
+      input.status ?? "pending",
+      JSON.stringify(input.metadata ?? {})
+    ]
+  );
+
+  return result.rows[0];
+}
 export async function getBimModelByDocument(input: {
   projectCode: string;
   documentPath: string;
@@ -924,7 +980,10 @@ export async function getBimCost5DAggregation(
         coalesce(nullif(item_id, ''), 'Sin partida') as item_id,
         coalesce(nullif(item_name, ''), '-') as item_name,
         coalesce(nullif(item_unit, ''), '-') as item_unit,
-        coalesce(sum(quantity_value), count(*))::text as quantity,
+        case
+          when $10::text is null or $11::text is null then count(*)::double precision
+          else coalesce(sum(quantity_value), 0)
+        end::text as quantity,
         count(*)::text as element_count,
         count(distinct model_key)::text as model_count,
         array_agg(distinct model_key order by model_key) as model_keys
@@ -933,7 +992,12 @@ export async function getBimCost5DAggregation(
         coalesce(nullif(item_id, ''), 'Sin partida'),
         coalesce(nullif(item_name, ''), '-'),
         coalesce(nullif(item_unit, ''), '-')
-      order by coalesce(sum(quantity_value), count(*)) desc, item_id asc
+      order by
+        case
+          when $10::text is null or $11::text is null then count(*)::double precision
+          else coalesce(sum(quantity_value), 0)
+        end desc,
+        item_id asc
       limit $12
     `,
     params
@@ -1166,7 +1230,3 @@ export async function upsertBimPropertyIndexSnapshot(input: {
     updatedAt: result.rows[0].updated_at.toISOString()
   };
 }
-
-
-
-

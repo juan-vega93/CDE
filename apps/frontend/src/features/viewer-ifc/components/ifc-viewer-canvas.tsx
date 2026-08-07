@@ -3897,6 +3897,8 @@ function buildCost5DRows({
   const itemNameLookup = buildCost5DValueLookup(propertyIndex, mapping.itemName);
   const itemUnitLookup = buildCost5DValueLookup(propertyIndex, mapping.itemUnit);
   const quantityLookup = buildCost5DValueLookup(propertyIndex, mapping.quantity);
+  const hasQuantityMapping =
+    Boolean(mapping.quantity.set.trim()) && Boolean(mapping.quantity.property.trim());
 
   for (const [modelKey, localIds] of Object.entries(universeByModelKey)) {
     const model = modelByKey.get(modelKey);
@@ -3908,7 +3910,8 @@ function buildCost5DRows({
       const itemName = itemNameLookup.get(elementKey) || "Sin nombre";
       const itemUnit = itemUnitLookup.get(elementKey) || "-";
       const quantityValue = quantityLookup.get(elementKey) || "";
-      const quantity = parseCost5DQuantity(quantityValue) ?? 1;
+      const parsedQuantity = parseCost5DQuantity(quantityValue);
+      const quantity = parsedQuantity ?? (hasQuantityMapping ? 0 : 1);
       const key = `${itemId}::${itemName}::${itemUnit}`;
       const identityKey = `${key}::${
         elementIdentityByKey[elementKey] ?? `${modelKey}:local:${localId}`
@@ -8479,7 +8482,7 @@ export function IfcViewerCanvas({
       }
 
       await fitSelectionInView(viewer, viewer.components, modelIdMap);
-      await applySelectionFocusMode(modelIdMap);
+      await resetContextGhostOpacity();
       setHasSelection(true);
       setStatus(`Valor seleccionado: ${bucket.value} (${bucket.count} elementos).`);
       requestViewerRefresh();
@@ -8490,6 +8493,8 @@ export function IfcViewerCanvas({
   }
 
   async function resetContextGhostOpacity() {
+    if (!lastGhostedSelectionRef.current) return;
+
     for (const model of models) {
       await model.runtimeModel.resetOpacity?.(undefined);
     }
@@ -8615,7 +8620,7 @@ export function IfcViewerCanvas({
       }
 
       await fitSelectionInView(viewer, viewer.components, modelIdMap);
-      await applySelectionFocusMode(modelIdMap);
+      await resetContextGhostOpacity();
       setHasSelection(true);
       setStatus(successStatus);
       requestViewerRefresh();
@@ -8972,7 +8977,7 @@ export function IfcViewerCanvas({
         false
       );
       await fitSelectionInView(viewer, viewer.components, modelIdMap);
-      await applySelectionFocusMode(modelIdMap);
+      await resetContextGhostOpacity();
       setActiveAuditResultId(result.id);
       setRightPanelTab("audit");
       setStatus(`Elemento auditado seleccionado: ${result.elementName}`);

@@ -196,7 +196,7 @@ function formatBimDerivativeStatus(row: ExplorerRow) {
     case "pending":
       return "Generando visor 3D";
     case "failed":
-      return "Visor 3D fallÃ³";
+      return "Visor 3D fallo";
     case "missing":
     default:
       return "Sin visor 3D";
@@ -1598,7 +1598,7 @@ export function DocumentsExplorer({
                             {version.label}
                           </div>
                           <div className="mt-1 text-xs text-slate-500">
-                            {version.modifiedAtLocal || "-"} Â·{" "}
+                            {version.modifiedAtLocal || "-"} - {" "}
                             {version.size ? formatBytes(version.size) : "-"}
                           </div>
                         </div>

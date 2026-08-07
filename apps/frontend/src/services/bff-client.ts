@@ -41,24 +41,38 @@ export async function bffFetch(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const accessToken = await getSessionAccessToken();
+  let accessToken = await getSessionAccessToken();
 
-  const headers = new Headers(options.headers);
+  const buildHeaders = () => {
+    const headers = new Headers(options.headers);
 
-  if (!(options.body instanceof FormData)) {
-    headers.set("Content-Type", headers.get("Content-Type") || "application/json");
-  }
+    if (!(options.body instanceof FormData)) {
+      headers.set("Content-Type", headers.get("Content-Type") || "application/json");
+    }
 
-  if (typeof accessToken === "string" && accessToken) {
-    headers.set("Authorization", `Bearer ${accessToken}`);
-  }
+    if (typeof accessToken === "string" && accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    return headers;
+  };
 
   const startedAt = performance.now();
-  const response = await fetch(`${RESOLVED_BFF_URL}${path}`, {
+  let response = await fetch(`${RESOLVED_BFF_URL}${path}`, {
     ...options,
-    headers,
+    headers: buildHeaders(),
     cache: options.cache ?? "no-store"
   });
+
+  if (response.status === 401) {
+    cachedAccessToken = null;
+    accessToken = await getSessionAccessToken();
+    response = await fetch(`${RESOLVED_BFF_URL}${path}`, {
+      ...options,
+      headers: buildHeaders(),
+      cache: options.cache ?? "no-store"
+    });
+  }
 
   if (ENABLE_CLIENT_PERF_LOGS) {
     console.info("[BFF_CLIENT_PERF]", {
@@ -88,11 +102,12 @@ export function getBffPathFromUrl(value: string): string | null {
     const url = new URL(value);
     const baseUrl = new URL(RESOLVED_BFF_URL);
 
-    if (url.origin !== baseUrl.origin) {
-      return null;
+    if (url.origin === baseUrl.origin || url.pathname.startsWith("/api/")) {
+      // Docker can publish a different BFF origin than the one embedded in URLs.
+      return `${url.pathname}${url.search}`;
     }
 
-    return `${url.pathname}${url.search}`;
+    return null;
   } catch {
     return null;
   }

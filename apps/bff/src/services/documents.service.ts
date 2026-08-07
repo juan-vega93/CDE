@@ -11,6 +11,13 @@ import { getWorkPackageLinks } from "./work-package-links.service";
 import type { FolderItem } from "../types/folder.types";
 import type { WorkPackageLink } from "../types/work-package-link.types";
 import { recordTiming } from "../utils/request-timing";
+import { isDatabaseEnabled } from "../db/client";
+import {
+  upsertBimIndexJob,
+  upsertBimModel,
+  upsertBimModelDerivative,
+  type BimModelStatus
+} from "../db/bim-index-store";
 import {
   buildBimDerivativeId,
   deleteBimDerivativesForSource,
@@ -24,6 +31,97 @@ import {
 } from "./bim-derivatives.service";
 
 const nextcloudAdapter = new NextcloudAdapter();
+type CurrentBimDerivativeIdentity = {
+  id: string;
+  projectCode: string;
+  sourcePath: string;
+  sourceName: string;
+  fileId?: string | null;
+  versionId: string;
+  versionKey?: string | null;
+  fragPath: string;
+};
+
+function getBimIndexSourceHash(identity: CurrentBimDerivativeIdentity): string {
+  return identity.versionKey?.trim() || identity.fileId?.trim() || identity.id;
+}
+
+function getBimIndexModelKey(identity: CurrentBimDerivativeIdentity): string {
+  return `frag:${identity.sourcePath}`.toLowerCase();
+}
+
+function mapDerivativeStatusToBimStatus(status: "pending" | "generated" | "failed"): BimModelStatus {
+  if (status === "failed") return "failed";
+  return "pending";
+}
+
+async function registerBimIndexCandidate(
+  identity: CurrentBimDerivativeIdentity,
+  input: {
+    derivativeStatus: "pending" | "generated" | "failed";
+    phase: string;
+    errorMessage?: string | null;
+  }
+): Promise<void> {
+  if (!isDatabaseEnabled()) return;
+
+  try {
+    const sourceHash = getBimIndexSourceHash(identity);
+    const modelKey = getBimIndexModelKey(identity);
+    const modelStatus = mapDerivativeStatusToBimStatus(input.derivativeStatus);
+    const model = await upsertBimModel({
+      projectCode: identity.projectCode,
+      documentId: identity.fileId ?? undefined,
+      documentPath: identity.sourcePath,
+      documentName: identity.sourceName,
+      sourceVersion: identity.versionId,
+      sourceHash,
+      modelKey,
+      status: modelStatus,
+      errorMessage: input.errorMessage ?? undefined,
+      metadata: {
+        derivativeId: identity.id,
+        fragPath: identity.fragPath,
+        sourceKind: "nextcloud-ifc",
+        versionKey: identity.versionKey ?? null
+      }
+    });
+
+    await upsertBimModelDerivative({
+      bimModelId: model.id,
+      derivativeType: "frag",
+      storagePath: identity.fragPath,
+      sourceHash,
+      status: input.derivativeStatus === "generated" ? "ready" : modelStatus,
+      metadata: {
+        derivativeId: identity.id,
+        sourcePath: identity.sourcePath,
+        sourceName: identity.sourceName,
+        versionId: identity.versionId,
+        versionKey: identity.versionKey ?? null
+      }
+    });
+
+    await upsertBimIndexJob({
+      projectCode: identity.projectCode,
+      documentPath: identity.sourcePath,
+      sourceHash,
+      status: input.derivativeStatus === "failed" ? "failed" : "pending",
+      errorMessage: input.errorMessage ?? undefined,
+      stats: {
+        modelKey,
+        documentName: identity.sourceName,
+        derivativeId: identity.id,
+        fragPath: identity.fragPath,
+        phase: input.phase,
+        needsPropertyExtraction: input.derivativeStatus === "generated"
+      }
+    });
+  } catch (error) {
+    console.warn("[documents.service] No se pudo registrar candidato de indice BIM:", error);
+  }
+}
+
 const TECHNICAL_FOLDER_NAMES = new Set([
   "_derived",
   "_bcf",
@@ -163,6 +261,10 @@ export async function queueFragGeneration(documentPath: string): Promise<{
     try {
       const exists = await nextcloudAdapter.fileExists(existingDerivative.fragPath);
       if (exists) {
+        void registerBimIndexCandidate(identity, {
+          derivativeStatus: "generated",
+          phase: "frag-existing"
+        });
         return {
           documentPath: cleanDocumentPath,
           status: "generated",
@@ -186,6 +288,11 @@ export async function queueFragGeneration(documentPath: string): Promise<{
     status: "pending",
     error: null,
     generatedAt: null
+  });
+
+  void registerBimIndexCandidate(identity, {
+    derivativeStatus: "pending",
+    phase: "frag-queued"
   });
 
   clearDocumentExplorerCache();
@@ -866,6 +973,10 @@ export async function getViewerSource(
       const exists = await nextcloudAdapter.fileExists(registeredDerivative.fragPath);
 
       if (exists) {
+        void registerBimIndexCandidate(identity, {
+          derivativeStatus: "generated",
+          phase: "frag-viewer-source"
+        });
         return {
           kind: "frag",
           fragPath: registeredDerivative.fragPath,
@@ -899,6 +1010,11 @@ export async function getViewerSource(
         fragPath,
         status: "generated",
         generatedAt: new Date().toISOString()
+      });
+
+      void registerBimIndexCandidate(identity, {
+        derivativeStatus: "generated",
+        phase: "frag-detected"
       });
 
       return {
@@ -998,6 +1114,10 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
     try {
       const exists = await nextcloudAdapter.fileExists(existingDerivative.fragPath);
       if (exists) {
+        void registerBimIndexCandidate(identity, {
+          derivativeStatus: "generated",
+          phase: "frag-existing"
+        });
         return { fragPath: existingDerivative.fragPath };
       }
     } catch {
@@ -1016,6 +1136,11 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
     fragPath: identity.fragPath,
     status: "pending",
     generatedAt: null
+  });
+
+  void registerBimIndexCandidate(identity, {
+    derivativeStatus: "pending",
+    phase: "frag-generating"
   });
 
   const fragPath = identity.fragPath;
@@ -1061,7 +1186,13 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
       status: "generated",
       generatedAt: new Date().toISOString()
     });
+
+    void registerBimIndexCandidate(identity, {
+      derivativeStatus: "generated",
+      phase: "frag-generated"
+    });
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     upsertBimDerivative({
       id: identity.id,
       projectCode: identity.projectCode,
@@ -1072,8 +1203,14 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
       versionKey: identity.versionKey,
       fragPath,
       status: "failed",
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
       generatedAt: null
+    });
+
+    void registerBimIndexCandidate(identity, {
+      derivativeStatus: "failed",
+      phase: "frag-failed",
+      errorMessage
     });
 
     throw error;
