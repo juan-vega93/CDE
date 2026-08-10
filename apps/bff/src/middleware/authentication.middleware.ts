@@ -32,7 +32,13 @@ export async function authenticateRequest(
     req.auth = await verifyKeycloakJwt(token);
     return next();
   } catch (error) {
-    if (!(error instanceof AuthenticationError)) {
+    if (process.env.BFF_AUTH_DEBUG === "true") {
+      console.warn("[authentication] JWT validation failed", {
+        reason: error instanceof Error ? error.message : "Unknown error",
+        hasAuthorization: Boolean(req.header("authorization")),
+        path: req.originalUrl
+      });
+    } else if (!(error instanceof AuthenticationError)) {
       console.error("[authentication] JWT validation failed");
     }
 
