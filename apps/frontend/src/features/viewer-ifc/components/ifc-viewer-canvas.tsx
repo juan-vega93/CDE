@@ -330,6 +330,91 @@ async function loadSmartViewPropertyIndexFromDatabase(input: {
     return null;
   }
 }
+
+async function loadSmartViewPropertyLocalIdsFromDatabase(input: {
+  projectCode?: string;
+  modelKeys: string[];
+  propertySet: string;
+  propertyName: string;
+  propertyValue?: string;
+}): Promise<Record<string, number[]> | null> {
+  const normalizedProjectCode = input.projectCode?.trim().toUpperCase();
+  const modelKeys = input.modelKeys.map((key) => key.trim()).filter(Boolean);
+  const propertySet = input.propertySet.trim();
+  const propertyName = input.propertyName.trim();
+  const propertyValue = input.propertyValue?.trim();
+
+  if (!normalizedProjectCode || modelKeys.length === 0 || !propertySet || !propertyName) return null;
+
+  try {
+    const response = await bffFetch("/api/bim-index/properties/query", {
+      method: "POST",
+      body: JSON.stringify({
+        projectCode: normalizedProjectCode,
+        modelKeys,
+        property: { setName: propertySet, propertyName },
+        propertyValue: propertyValue || undefined,
+        maxIdsPerModel: 250000
+      })
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { success?: boolean; data?: unknown };
+    if (!payload.success || !payload.data || typeof payload.data !== "object" || Array.isArray(payload.data)) {
+      return null;
+    }
+
+    const result: Record<string, number[]> = {};
+    for (const [key, ids] of Object.entries(payload.data as Record<string, unknown>)) {
+      if (Array.isArray(ids)) {
+        result[key] = ids.map(Number).filter(Number.isFinite);
+      }
+    }
+
+    return result;
+  } catch (error) {
+    console.warn("[viewer-ifc] No se pudo consultar localIds BIM normalizados:", error);
+    return null;
+  }
+}
+async function loadParameterAnalysisSummaryFromDatabase(input: {
+  projectCode?: string;
+  modelKeys: string[];
+  propertySet: string;
+  propertyName: string;
+}): Promise<BimPropertySummaryPayload | null> {
+  const normalizedProjectCode = input.projectCode?.trim().toUpperCase();
+  const modelKeys = input.modelKeys.map((key) => key.trim()).filter(Boolean);
+  const propertySetName = input.propertySet.trim();
+  const propertyName = input.propertyName.trim();
+
+  if (!normalizedProjectCode || modelKeys.length === 0 || !propertySetName || !propertyName) return null;
+
+  try {
+    const response = await bffFetch("/api/bim-index/properties/summary", {
+      method: "POST",
+      body: JSON.stringify({
+        projectCode: normalizedProjectCode,
+        modelKeys,
+        propertySetName,
+        propertyName,
+        maxBuckets: 180,
+        maxIdsPerBucket: MAX_LOCAL_IDS_PER_VALUE_BUCKET
+      })
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { success?: boolean; data?: BimPropertySummaryPayload };
+    if (!payload.success || !payload.data || !Array.isArray(payload.data.buckets)) return null;
+
+    return payload.data;
+  } catch (error) {
+    console.warn("[viewer-ifc] No se pudo leer resumen BIM normalizado:", error);
+    return null;
+  }
+}
 async function saveSmartViewPropertyIndexSnapshot(input: {
   projectCode?: string;
   signature: string;
@@ -930,6 +1015,20 @@ function getSelectionCacheKey(modelIdMap: OBC.ModelIdMap) {
     .join("|");
 }
 
+function setBoundedModelIdMapCache(
+  cache: Map<string, OBC.ModelIdMap>,
+  key: string,
+  modelIdMap: OBC.ModelIdMap,
+  maxEntries = 24
+) {
+  cache.set(key, cloneModelIdMap(modelIdMap));
+
+  while (cache.size > maxEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) break;
+    cache.delete(oldestKey);
+  }
+}
 function getDynamicPropertyIndexLimit(modelCount: number) {
   const perModelBudget = Math.floor(
     MAX_PROPERTY_INDEX_TOTAL_LOCAL_IDS / Math.max(modelCount, 1)
@@ -1083,6 +1182,17 @@ type SmartViewPropertyCatalog = {
   propertyCount?: number;
   valueCount?: number;
 };
+type BimPropertySummaryPayload = {
+  totalElements: number;
+  missingValueCount: number;
+  bucketCount: number;
+  buckets: Array<{
+    value: string;
+    count: number;
+    localIdsByModelKey: Record<string, number[]>;
+    truncated?: boolean;
+  }>;
+};
 type SmartViewSelectorSource = {
   sets: string[];
   propertiesBySet: Record<string, string[]>;
@@ -1207,15 +1317,15 @@ type ViewerPerformanceStats = {
 
 const MAX_TREE_ELEMENT_NODES = 25000;
 const MAX_RENDERED_TREE_GROUP_CHILDREN = 350;
-const MAX_PROPERTY_INDEX_LOCAL_IDS = 9000;
-const MAX_PROPERTY_INDEX_TOTAL_LOCAL_IDS = 30000;
-const PROPERTY_INDEX_BATCH_SIZE = 24;
-const PROPERTY_INDEX_YIELD_MS = 55;
-const PROPERTY_INDEX_HEAP_WARN_RATIO = 0.78;
-const BIM_INDEX_PERSIST_BATCH_SIZE = 120;
-const BIM_INDEX_PERSIST_MAX_CONCURRENT = 3;
+const MAX_PROPERTY_INDEX_LOCAL_IDS = 6500;
+const MAX_PROPERTY_INDEX_TOTAL_LOCAL_IDS = 20000;
+const PROPERTY_INDEX_BATCH_SIZE = 12;
+const PROPERTY_INDEX_YIELD_MS = 24;
+const PROPERTY_INDEX_HEAP_WARN_RATIO = 0.66;
+const BIM_INDEX_PERSIST_BATCH_SIZE = 80;
+const BIM_INDEX_PERSIST_MAX_CONCURRENT = 1;
 const MAX_INDEXED_VALUES_PER_PROPERTY = 450;
-const MAX_LOCAL_IDS_PER_VALUE_BUCKET = 12000;
+const MAX_LOCAL_IDS_PER_VALUE_BUCKET = 8000;
 const MAX_MODEL_ID_MAP_EXPANSION_IDS = 1500;
 const MAX_NATIVE_LEVEL_INDEX_LOCAL_IDS = 80000;
 const NATIVE_LEVEL_INDEX_BATCH_SIZE = 80;
@@ -3718,6 +3828,106 @@ function mergeModelIdMap(target: OBC.ModelIdMap, source: OBC.ModelIdMap) {
   }
 }
 
+const MODEL_ID_MAP_RENDER_CHUNK_SIZE = 1200;
+const MODEL_ID_MAP_COLOR_CHUNK_SIZE = 900;
+
+
+function splitModelIdMap(
+  modelIdMap: OBC.ModelIdMap,
+  chunkSize = MODEL_ID_MAP_RENDER_CHUNK_SIZE
+) {
+  const chunks: OBC.ModelIdMap[] = [];
+  let current: OBC.ModelIdMap = {};
+  let currentCount = 0;
+
+  const flush = () => {
+    if (currentCount === 0) return;
+    chunks.push(current);
+    current = {};
+    currentCount = 0;
+  };
+
+  for (const [modelId, ids] of Object.entries(modelIdMap)) {
+    for (const localId of ids) {
+      if (currentCount >= chunkSize) flush();
+
+      const targetIds = current[modelId] ?? new Set<number>();
+      targetIds.add(localId);
+      current[modelId] = targetIds;
+      currentCount += 1;
+    }
+  }
+
+  flush();
+  return chunks;
+}
+
+async function forEachModelIdMapChunk(
+  modelIdMap: OBC.ModelIdMap,
+  callback: (chunk: OBC.ModelIdMap) => Promise<void> | void,
+  chunkSize = MODEL_ID_MAP_RENDER_CHUNK_SIZE,
+  shouldContinue: () => boolean = () => true
+) {
+  const chunks = splitModelIdMap(modelIdMap, chunkSize);
+
+  for (const chunk of chunks) {
+    if (!shouldContinue()) return false;
+    await callback(chunk);
+    await waitForNextFrame();
+  }
+
+  return true;
+}
+
+function buildParameterAnalysisBucketsFromSummary({
+  models,
+  summary
+}: {
+  models: FederatedModelEntry[];
+  summary: BimPropertySummaryPayload;
+}) {
+  const modelIdByKey = new Map(
+    models
+      .filter((model) => Boolean(model.modelId))
+      .map((model) => [model.key, model.modelId as string])
+  );
+
+  return summary.buckets
+    .map((bucket) => {
+      const value = normalizeParameterBucketValue(bucket.value);
+      const modelIdMap: OBC.ModelIdMap = {};
+
+      for (const [modelKey, localIds] of Object.entries(bucket.localIdsByModelKey ?? {})) {
+        const modelId = modelIdByKey.get(modelKey);
+        if (!modelId) continue;
+        addIdsToModelIdMap(
+          modelIdMap,
+          modelId,
+          localIds.map(Number).filter(Number.isFinite)
+        );
+      }
+
+      return {
+        value,
+        count: Number(bucket.count) || countModelIdMapElements(modelIdMap),
+        color: PARAMETER_ANALYSIS_MISSING_COLOR,
+        modelIdMap
+      };
+    })
+    .filter((bucket) => bucket.count > 0 && countModelIdMapElements(bucket.modelIdMap) > 0)
+    .sort((a, b) => {
+      if (a.value === "Sin valor") return 1;
+      if (b.value === "Sin valor") return -1;
+      return b.count - a.count || a.value.localeCompare(b.value);
+    })
+    .map((bucket, index) => ({
+      ...bucket,
+      color:
+        bucket.value === "Sin valor"
+          ? PARAMETER_ANALYSIS_MISSING_COLOR
+          : getParameterAnalysisColor(index)
+    }));
+}
 function buildParameterAnalysisBuckets({
   models,
   propertyIndex,
@@ -3725,6 +3935,7 @@ function buildParameterAnalysisBuckets({
   propertyName
 }: {
   models: FederatedModelEntry[];
+  projectCode?: string;
   propertyIndex: SmartViewPropertyIndex;
   propertySet: string;
   propertyName: string;
@@ -3885,6 +4096,7 @@ function buildCost5DRows({
   mapping
 }: {
   models: FederatedModelEntry[];
+  projectCode?: string;
   propertyIndex: SmartViewPropertyIndex;
   mapping: Cost5DMapping;
 }) {
@@ -3965,6 +4177,7 @@ function buildMeteringRows({
   columns
 }: {
   models: FederatedModelEntry[];
+  projectCode?: string;
   propertyIndex: SmartViewPropertyIndex;
   columns: MeteringColumn[];
 }) {
@@ -4102,6 +4315,7 @@ function BimIndexStatusCard({
 
 function ParameterAnalysisPanel({
   models,
+  projectCode,
   propertyIndex,
   propertyCatalog,
   propertyCatalogLoading,
@@ -4116,6 +4330,7 @@ function ParameterAnalysisPanel({
   onClear
 }: {
   models: FederatedModelEntry[];
+  projectCode?: string;
   propertyIndex: SmartViewPropertyIndex;
   propertyCatalog: SmartViewPropertyCatalog | null;
   propertyCatalogLoading: boolean;
@@ -4153,7 +4368,20 @@ function ParameterAnalysisPanel({
   const availableProperties = propertySet
     ? selectorSource.propertiesBySet[propertySet] ?? []
     : [];
-  const buckets = useMemo(
+  const [databaseBuckets, setDatabaseBuckets] = useState<
+    ParameterValueBucket[] | null
+  >(null);
+  const [databaseBucketsLoading, setDatabaseBucketsLoading] = useState(false);
+  const modelKeySignature = useMemo(
+    () =>
+      models
+        .map((model) => model.key)
+        .filter(Boolean)
+        .sort()
+        .join("|"),
+    [models]
+  );
+  const localBuckets = useMemo(
     () =>
       buildParameterAnalysisBuckets({
         models,
@@ -4163,6 +4391,7 @@ function ParameterAnalysisPanel({
       }),
     [models, propertyIndex, propertySet, propertyName]
   );
+  const buckets = databaseBuckets ?? localBuckets;
   const displayBuckets = useMemo(
     () =>
       buckets.map((bucket) => ({
@@ -4179,6 +4408,45 @@ function ParameterAnalysisPanel({
     (bucket) => !hiddenBucketValues.has(bucket.value)
   );
 
+  useEffect(() => {
+    let active = true;
+    setDatabaseBuckets(null);
+
+    const modelKeys = models.map((model) => model.key).filter(Boolean);
+    if (
+      !projectCode?.trim() ||
+      modelKeys.length === 0 ||
+      !propertySet ||
+      !propertyName
+    ) {
+      return () => {
+        active = false;
+      };
+    }
+
+    setDatabaseBucketsLoading(true);
+    void loadParameterAnalysisSummaryFromDatabase({
+      projectCode,
+      modelKeys,
+      propertySet,
+      propertyName
+    })
+      .then((summary) => {
+        if (!active) return;
+        setDatabaseBuckets(
+          summary
+            ? buildParameterAnalysisBucketsFromSummary({ models, summary })
+            : null
+        );
+      })
+      .finally(() => {
+        if (active) setDatabaseBucketsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [models, modelKeySignature, projectCode, propertyName, propertySet]);
   useEffect(() => {
     if (!propertySet && selectorSource.sets.length > 0) {
       setPropertySet(selectorSource.sets[0]);
@@ -4262,10 +4530,14 @@ function ParameterAnalysisPanel({
           <button
             type="button"
             onClick={onBuildPropertyIndex}
-            disabled={propertiesIndexLoading}
+            disabled={propertiesIndexLoading || databaseBucketsLoading}
             className="min-h-8 shrink-0 rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {propertiesIndexLoading ? "Indexando" : "Cargar parametros"}
+            {databaseBucketsLoading
+              ? "Consultando"
+              : propertiesIndexLoading
+                ? "Indexando"
+                : "Cargar parametros"}
           </button>
         </div>
       </div>
@@ -5806,6 +6078,7 @@ function IfcModelsPanelV2({
   onToggleTreeNodeVisibility
 }: {
   models: FederatedModelEntry[];
+  projectCode?: string;
   propertyIndex: SmartViewPropertyIndex;
   propertiesIndexLoading: boolean;
   onBuildLevelIndex: () => void;
@@ -6166,7 +6439,12 @@ export function IfcViewerCanvas({
   const lastGhostedSelectionRef = useRef<OBC.ModelIdMap | null>(null);
   const visibilityUniverseCacheRef = useRef<Map<string, number[]>>(new Map());
   const expandedModelIdMapCacheRef = useRef<Map<string, OBC.ModelIdMap>>(new Map());
+  const flattenedTreeCacheRef = useRef<Map<string, ModelTreeNode[]>>(new Map());
+  const levelMapCacheRef = useRef<Map<string, Map<number, string>>>(new Map());
+  const smartViewModelIdMapCacheRef = useRef<Map<string, OBC.ModelIdMap>>(new Map());
   const smartViewIndexRunRef = useRef(0);
+  const renderOperationTokenRef = useRef(0);
+  const smartViewIndexInFlightSignatureRef = useRef<string | null>(null);
 
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("properties");
   const activeRightPanelGroup = getRightPanelGroup(rightPanelTab);
@@ -6263,6 +6541,9 @@ export function IfcViewerCanvas({
   useEffect(() => {
     visibilityUniverseCacheRef.current.clear();
     expandedModelIdMapCacheRef.current.clear();
+    flattenedTreeCacheRef.current.clear();
+    levelMapCacheRef.current.clear();
+    smartViewModelIdMapCacheRef.current.clear();
   }, [loadedModelsSignature]);
   const viewerTreeNodes = useMemo(
     () =>
@@ -7635,6 +7916,12 @@ export function IfcViewerCanvas({
       indexingJobModels = analysisModels;
       indexingJobSignature = analysisSignature;
 
+      if (smartViewIndexInFlightSignatureRef.current === analysisSignature) {
+        setStatus("Indice BIM ya esta en proceso para los modelos cargados.");
+        return;
+      }
+      smartViewIndexInFlightSignatureRef.current = analysisSignature;
+
       if (
         smartViewPropertyIndexSignature === analysisSignature &&
         smartViewPropertyIndex.sets.length > 0
@@ -8009,13 +8296,50 @@ export function IfcViewerCanvas({
       );
       setStatus("No se pudieron indexar propiedades para SmartView.");
     } finally {
+      if (
+        indexingJobSignature &&
+        smartViewIndexInFlightSignatureRef.current === indexingJobSignature
+      ) {
+        smartViewIndexInFlightSignatureRef.current = null;
+      }
       setSmartViewPropertiesIndexLoading(false);
       void refreshBimIndexOverview();
     }
   }
 
+  function getCachedModelTreeNodes(model: FederatedModelEntry) {
+    const cached = flattenedTreeCacheRef.current.get(model.key);
+    if (cached) return cached;
+
+    const nodes = flattenModelTreeNodes(model.spatialTree ?? []);
+    flattenedTreeCacheRef.current.set(model.key, nodes);
+    return nodes;
+  }
+
+  function getCachedModelLevelMap(model: FederatedModelEntry) {
+    const cached = levelMapCacheRef.current.get(model.key);
+    if (cached) return cached;
+
+    const levelMap = buildElementLevelMap(model.spatialTree ?? []);
+    levelMapCacheRef.current.set(model.key, levelMap);
+    return levelMap;
+  }
   async function getSmartViewModelIdMap(criteria: SmartViewCriteria) {
     const analysisModels = await ensureSpatialTreesForAnalysis();
+    const criteriaCacheKey = JSON.stringify({
+      criteria,
+      models: analysisModels
+        .map(
+          (model) =>
+            `${model.key}:${model.modelId ?? "no-model"}:${model.spatialTree?.length ?? 0}`
+        )
+        .sort()
+    });
+    const cachedResult = smartViewModelIdMapCacheRef.current.get(criteriaCacheKey);
+
+    if (cachedResult) {
+      return cloneModelIdMap(cachedResult);
+    }
     const normalizedText = criteria.text.trim().toLowerCase();
     const normalizedType = criteria.type.trim().toUpperCase();
     const normalizedLevel = criteria.level.trim().toLowerCase();
@@ -8023,14 +8347,27 @@ export function IfcViewerCanvas({
     const normalizedPropertyName = criteria.propertyName.trim().toLowerCase();
     const normalizedPropertyValue = criteria.propertyValue.trim().toLowerCase();
     const result: OBC.ModelIdMap = {};
+    const shouldQueryDbPropertyLocalIds = Boolean(
+      !normalizedText && normalizedPropertySet && normalizedPropertyName
+    );
+    const dbLocalIdsByModelKey = shouldQueryDbPropertyLocalIds
+      ? await loadSmartViewPropertyLocalIdsFromDatabase({
+          projectCode,
+          modelKeys: criteria.modelKey
+            ? [criteria.modelKey]
+            : analysisModels.map((model) => model.key),
+          propertySet: criteria.propertySet,
+          propertyName: criteria.propertyName,
+          propertyValue: criteria.propertyValue
+        })
+      : null;
 
     for (const model of analysisModels) {
       if (criteria.modelKey && model.key !== criteria.modelKey) continue;
       if (!model.modelId) continue;
 
-      const sourceTree = model.spatialTree ?? [];
-      const levelByLocalId = buildElementLevelMap(sourceTree);
-      const candidateNodes = flattenModelTreeNodes(sourceTree).filter((node) => {
+      const levelByLocalId = getCachedModelLevelMap(model);
+      const candidateNodes = getCachedModelTreeNodes(model).filter((node) => {
         if (!isModelTreeElement(node) || typeof node.localId !== "number") {
           return false;
         }
@@ -8048,6 +8385,21 @@ export function IfcViewerCanvas({
       });
 
       if (candidateNodes.length === 0) continue;
+
+      if (dbLocalIdsByModelKey) {
+        const dbIds = new Set(dbLocalIdsByModelKey[model.key] ?? []);
+        if (dbIds.size === 0) continue;
+
+        const filteredIds = candidateNodes
+          .map((node) => node.localId as number)
+          .filter((localId) => dbIds.has(localId));
+
+        if (filteredIds.length > 0) {
+          result[model.modelId] = new Set(filteredIds);
+        }
+
+        continue;
+      }
 
       const indexedValueBuckets =
         criteria.propertySet && criteria.propertyName
@@ -8192,7 +8544,13 @@ export function IfcViewerCanvas({
       }
     }
 
-    return result;
+    setBoundedModelIdMapCache(
+      smartViewModelIdMapCacheRef.current,
+      criteriaCacheKey,
+      result
+    );
+
+    return cloneModelIdMap(result);
   }
 
   async function handleApplySmartView(criteria: SmartViewCriteria) {
@@ -8260,8 +8618,11 @@ export function IfcViewerCanvas({
     const modules = modulesRef.current;
     if (!modules) return;
 
+    beginRenderOperation();
+
     try {
       await modules.visibility.showAll();
+      await waitForNextFrame();
       await modules.coloring.restoreAllColors();
       await modules.selection.clearSelection();
       lastColoredSelectionRef.current = null;
@@ -8375,6 +8736,66 @@ export function IfcViewerCanvas({
     return exclusive;
   }
 
+
+  function beginRenderOperation() {
+    renderOperationTokenRef.current += 1;
+    return renderOperationTokenRef.current;
+  }
+
+  function isRenderOperationCurrent(token: number) {
+    return renderOperationTokenRef.current === token;
+  }
+
+  async function applyChunkedVisibility(
+    modelIdMap: OBC.ModelIdMap,
+    visible: boolean,
+    token: number
+  ) {
+    const modules = modulesRef.current;
+    if (!modules) return false;
+
+    return forEachModelIdMapChunk(
+      modelIdMap,
+      async (chunk) => {
+        if (visible) {
+          await modules.visibility.show(chunk);
+        } else {
+          await modules.visibility.hide(chunk);
+        }
+      },
+      MODEL_ID_MAP_RENDER_CHUNK_SIZE,
+      () => isRenderOperationCurrent(token)
+    );
+  }
+
+  async function applyChunkedColorSelections(
+    selections: Array<{ modelIdMap: OBC.ModelIdMap; color: string }>,
+    token: number
+  ) {
+    const modules = modulesRef.current;
+    if (!modules) return false;
+
+    for (const selection of selections) {
+      const completed = await forEachModelIdMapChunk(
+        selection.modelIdMap,
+        async (chunk) => {
+          await modules.coloring.colorSelections([
+            {
+              modelIdMap: chunk,
+              color: selection.color
+            }
+          ]);
+        },
+        MODEL_ID_MAP_COLOR_CHUNK_SIZE,
+        () => isRenderOperationCurrent(token)
+      );
+
+      if (!completed) return false;
+    }
+
+    return true;
+  }
+
   async function handleApplyParameterColors(
     propertySet: string,
     propertyName: string,
@@ -8388,8 +8809,11 @@ export function IfcViewerCanvas({
       return;
     }
 
+    const token = beginRenderOperation();
+
     try {
       await modules.visibility.showAll();
+      await waitForNextFrame();
 
       const coloredMap: OBC.ModelIdMap = {};
       const seenKeys = new Set<string>();
@@ -8440,12 +8864,18 @@ export function IfcViewerCanvas({
         { overlapCount }
       );
 
-      await modules.coloring.colorSelections(
+      const completed = await applyChunkedColorSelections(
         renderBuckets.map((bucket) => ({
           modelIdMap: bucket.modelIdMap,
           color: bucket.color
-        }))
+        })),
+        token
       );
+
+      if (!completed || !isRenderOperationCurrent(token)) {
+        setStatus("Operacion de coloreo cancelada por una accion nueva.");
+        return;
+      }
 
       lastColoredSelectionRef.current = cloneModelIdMap(coloredMap);
       setHasSelection(countModelIdMapElements(coloredMap) > 0);
@@ -8464,24 +8894,35 @@ export function IfcViewerCanvas({
     const viewer = viewerRef.current;
     if (!modules || !viewer) return;
 
+    const token = beginRenderOperation();
+
     try {
       const modelIdMap = await expandModelIdMapForRendering(bucket.modelIdMap);
+      if (!isRenderOperationCurrent(token)) return;
 
-      try {
-        await modules.selection.highlighter.highlightByID(
-          "select",
-          modelIdMap,
-          true,
-          false
-        );
-      } catch (selectionError) {
-        console.warn(
-          "[viewer-ifc] Parameter bucket selection highlight failed:",
-          selectionError
-        );
+      const elementCount = countModelIdMapElements(modelIdMap);
+
+      if (elementCount <= TREE_ACTION_HIGHLIGHT_LIMIT) {
+        try {
+          await modules.selection.highlighter.highlightByID(
+            "select",
+            modelIdMap,
+            true,
+            false
+          );
+        } catch (selectionError) {
+          console.warn(
+            "[viewer-ifc] Parameter bucket selection highlight failed:",
+            selectionError
+          );
+        }
+
+        await fitSelectionInView(viewer, viewer.components, modelIdMap);
+      } else {
+        await modules.selection.clearSelection();
       }
 
-      await fitSelectionInView(viewer, viewer.components, modelIdMap);
+      if (!isRenderOperationCurrent(token)) return;
       await resetContextGhostOpacity();
       setHasSelection(true);
       setStatus(`Valor seleccionado: ${bucket.value} (${bucket.count} elementos).`);
@@ -8567,15 +9008,22 @@ export function IfcViewerCanvas({
 
     return universeMap;
   }
-  async function applySelectionFocusMode(modelIdMap: OBC.ModelIdMap) {
+  async function applySelectionFocusMode(
+    modelIdMap: OBC.ModelIdMap,
+    token = beginRenderOperation()
+  ) {
     const modules = modulesRef.current;
 
     if (!modules) return;
 
     await modules.visibility.showAll();
+    await waitForNextFrame();
+    if (!isRenderOperationCurrent(token)) return;
     await resetContextGhostOpacity();
 
     for (const model of models) {
+      if (!isRenderOperationCurrent(token)) return;
+
       const modelId = model.modelId;
       if (!modelId || !model.runtimeModel.setOpacity) continue;
 
@@ -8587,7 +9035,14 @@ export function IfcViewerCanvas({
       );
 
       if (contextIdsToDim.length > 0) {
-        await model.runtimeModel.setOpacity(contextIdsToDim, 0.16);
+        for (let index = 0; index < contextIdsToDim.length; index += MODEL_ID_MAP_RENDER_CHUNK_SIZE) {
+          if (!isRenderOperationCurrent(token)) return;
+          await model.runtimeModel.setOpacity(
+            contextIdsToDim.slice(index, index + MODEL_ID_MAP_RENDER_CHUNK_SIZE),
+            0.16
+          );
+          await waitForNextFrame();
+        }
       }
 
       if (selectedIds?.size) await model.runtimeModel.resetOpacity?.(Array.from(selectedIds));
@@ -8605,22 +9060,34 @@ export function IfcViewerCanvas({
     const viewer = viewerRef.current;
     if (!modules || !viewer) return;
 
+    const token = beginRenderOperation();
+
     try {
       const modelIdMap = await expandModelIdMapForRendering(sourceMap);
+      if (!isRenderOperationCurrent(token)) return;
 
-      try {
-        await modules.selection.highlighter.highlightByID(
-          "select",
-          modelIdMap,
-          true,
-          false
-        );
-      } catch (selectionError) {
-        console.warn("[viewer-ifc] 5D selection highlight failed:", selectionError);
+      const elementCount = countModelIdMapElements(modelIdMap);
+
+      if (elementCount <= TREE_ACTION_HIGHLIGHT_LIMIT) {
+        try {
+          await modules.selection.highlighter.highlightByID(
+            "select",
+            modelIdMap,
+            true,
+            false
+          );
+        } catch (selectionError) {
+          console.warn("[viewer-ifc] 5D selection highlight failed:", selectionError);
+        }
+
+        await fitSelectionInView(viewer, viewer.components, modelIdMap);
+      } else {
+        await modules.selection.clearSelection();
+        setStatus("Seleccion grande detectada. Aplicando contexto liviano por lotes...");
       }
 
-      await fitSelectionInView(viewer, viewer.components, modelIdMap);
-      await resetContextGhostOpacity();
+      if (!isRenderOperationCurrent(token)) return;
+      await applySelectionFocusMode(modelIdMap, token);
       setHasSelection(true);
       setStatus(successStatus);
       requestViewerRefresh();
@@ -8645,17 +9112,19 @@ export function IfcViewerCanvas({
     const modules = modulesRef.current;
     if (!modules) return;
 
+    const token = beginRenderOperation();
+
     try {
       const modelIdMap = await expandModelIdMapForRendering(bucket.modelIdMap);
-
-      if (visible) {
-        await modules.visibility.show(modelIdMap);
-        setStatus(`Grupo visible: ${bucket.value}.`);
-      } else {
-        await modules.visibility.hide(modelIdMap);
-        setStatus(`Grupo oculto: ${bucket.value}.`);
+      const elementCount = countModelIdMapElements(modelIdMap);
+      if (elementCount > MODEL_ID_MAP_RENDER_CHUNK_SIZE) {
+        setStatus(`${visible ? "Mostrando" : "Ocultando"} ${bucket.value} por lotes...`);
       }
 
+      const completed = await applyChunkedVisibility(modelIdMap, visible, token);
+      if (!completed || !isRenderOperationCurrent(token)) return;
+
+      setStatus(visible ? `Grupo visible: ${bucket.value}.` : `Grupo oculto: ${bucket.value}.`);
       requestViewerRefresh();
     } catch (error) {
       console.error("[viewer-ifc] Error cambiando visibilidad de parametro:", error);
@@ -8667,8 +9136,11 @@ export function IfcViewerCanvas({
     const modules = modulesRef.current;
     if (!modules) return;
 
+    beginRenderOperation();
+
     try {
       await modules.visibility.showAll();
+      await waitForNextFrame();
       setStatus("Todos los grupos del analisis estan visibles.");
       requestViewerRefresh();
     } catch (error) {
@@ -8678,6 +9150,7 @@ export function IfcViewerCanvas({
   }
 
   async function handleClearParameterAnalysis() {
+    beginRenderOperation();
     await handleClearSmartView();
     setStatus("Analisis de parametros limpiado.");
   }
@@ -9040,11 +9513,15 @@ export function IfcViewerCanvas({
     const modelIdMap = getTreeNodeModelIdMap(modelKey, node);
     if (!modelIdMap) return;
 
+    const token = beginRenderOperation();
+
     try {
       const elementCount = countModelIdMapElements(modelIdMap);
       const universeMap = await buildLoadedUniverseModelIdMap();
+      if (!isRenderOperationCurrent(token)) return;
       await resetContextGhostOpacity();
       await modules.visibility.showOnly(modelIdMap, universeMap);
+      if (!isRenderOperationCurrent(token)) return;
 
       if (elementCount <= TREE_ACTION_HIGHLIGHT_LIMIT) {
         await modules.selection.highlighter.highlightByID(
@@ -9081,13 +9558,17 @@ export function IfcViewerCanvas({
     const sourceMap = getTreeNodeModelIdMap(modelKey, node);
     if (!sourceMap) return;
 
+    const token = beginRenderOperation();
+
     try {
       const modelIdMap = sourceMap;
-      if (hidden) {
-        await modules.visibility.hide(modelIdMap);
-      } else {
-        await modules.visibility.show(modelIdMap);
+      const elementCount = countModelIdMapElements(modelIdMap);
+      if (elementCount > MODEL_ID_MAP_RENDER_CHUNK_SIZE) {
+        setStatus(`${hidden ? "Ocultando" : "Mostrando"} ${node.name} por lotes...`);
       }
+
+      const completed = await applyChunkedVisibility(modelIdMap, !hidden, token);
+      if (!completed || !isRenderOperationCurrent(token)) return;
 
       setStatus(hidden ? `Rama oculta: ${node.name}` : `Rama visible: ${node.name}`);
       requestViewerRefresh();
@@ -9491,8 +9972,11 @@ async function handleIsolateModel(key: string) {
     const modules = modulesRef.current;
     if (!modules) return;
 
+    beginRenderOperation();
+
     try {
       await modules.visibility.showAll();
+      await waitForNextFrame();
 
       for (const model of models) {
         await model.runtimeModel.resetOpacity?.(undefined);
@@ -12894,52 +13378,3 @@ async function handleIsolateModel(key: string) {
     </section>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

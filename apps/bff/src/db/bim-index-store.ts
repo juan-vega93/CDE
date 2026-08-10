@@ -110,6 +110,34 @@ export type BimPropertyCatalog = {
   valueCount: number;
 };
 
+
+export type BimPropertySummaryInput = {
+  projectCode: string;
+  modelIds?: string[];
+  modelKeys?: string[];
+  propertySetName: string;
+  propertyName: string;
+  className?: string;
+  levelName?: string;
+  text?: string;
+  maxBuckets?: number;
+  maxIdsPerBucket?: number;
+};
+
+export type BimPropertySummaryBucket = {
+  value: string;
+  count: number;
+  localIdsByModelKey: Record<string, number[]>;
+  truncated: boolean;
+};
+
+export type BimPropertySummaryResult = {
+  projectCode: string;
+  totalElements: number;
+  missingValueCount: number;
+  bucketCount: number;
+  buckets: BimPropertySummaryBucket[];
+};
 export type BimPropertyRef = {
   setName: string;
   propertyName: string;
@@ -124,6 +152,14 @@ export type BimCost5DAggregationInput = {
   itemUnit?: BimPropertyRef;
   quantity?: BimPropertyRef;
   limit?: number;
+};
+export type BimPropertyLocalIdsQueryInput = {
+  projectCode: string;
+  modelIds?: string[];
+  modelKeys?: string[];
+  property: BimPropertyRef;
+  propertyValue?: string;
+  maxIdsPerModel?: number;
 };
 
 export type BimCost5DAggregationRow = {
@@ -1171,6 +1207,263 @@ export async function getBimPropertyIndex(input: {
   };
 }
 
+export async function getBimPropertySummary(
+  input: BimPropertySummaryInput
+): Promise<BimPropertySummaryResult> {
+  ensureBimDatabaseEnabled();
+
+  const projectCode = input.projectCode.trim().toUpperCase();
+  const propertySetName = normalizeText(input.propertySetName);
+  const propertyName = normalizeText(input.propertyName);
+  if (!projectCode || !propertySetName || !propertyName) {
+    throw new Error("projectCode, propertySetName y propertyName son obligatorios");
+  }
+
+  const modelIds = input.modelIds?.map((value) => value.trim()).filter(Boolean) ?? [];
+  const modelKeys = input.modelKeys?.map((value) => value.trim()).filter(Boolean) ?? [];
+  const className = normalizeText(input.className) ?? "";
+  const classNameWithoutIfc = className.replace(/^ifc/i, "");
+  const levelName = normalizeText(input.levelName) ?? "";
+  const text = (normalizeText(input.text) ?? "").toLowerCase();
+  const maxBuckets = Math.max(1, Math.min(input.maxBuckets ?? 120, 300));
+  const maxIdsPerBucket = Math.max(1, Math.min(input.maxIdsPerBucket ?? 12000, 50000));
+
+  const result = await getDatabasePool().query<{
+    value_key: string;
+    total_count: string;
+    model_key: string | null;
+    local_ids: number[] | null;
+    model_truncated: boolean | null;
+    total_elements: string;
+    missing_value_count: string;
+    bucket_count: string;
+  }>(
+    `
+      with selected_models as (
+        select id, model_key
+        from cde_bim_models
+        where project_code = $1
+          and ($2::uuid[] is null or id = any($2::uuid[]))
+          and ($3::text[] is null or model_key = any($3::text[]))
+      ),
+      candidate_elements as (
+        select
+          elements.id,
+          elements.local_id,
+          elements.ifc_class,
+          elements.name,
+          elements.type_name,
+          elements.level_name,
+          elements.element_identity,
+          models.model_key
+        from cde_bim_elements elements
+        join selected_models models on models.id = elements.bim_model_id
+        where (
+            $6::text = ''
+            or lower(elements.ifc_class) = lower($6)
+            or lower(regexp_replace(elements.ifc_class, '^IFC', '', 'i')) = lower($7)
+          )
+          and ($8::text = '' or elements.level_name = $8)
+          and (
+            $9::text = ''
+            or lower(coalesce(elements.name, '')) like '%' || $9 || '%'
+            or lower(coalesce(elements.type_name, '')) like '%' || $9 || '%'
+            or lower(coalesce(elements.element_identity, '')) like '%' || $9 || '%'
+            or exists (
+              select 1
+              from cde_bim_property_values pvx
+              where pvx.bim_element_id = elements.id
+                and lower(coalesce(
+                  pvx.value_text,
+                  pvx.value_number::text,
+                  pvx.value_bool::text,
+                  pvx.value_json::text,
+                  ''
+                )) like '%' || $9 || '%'
+            )
+          )
+      ),
+      element_values as (
+        select
+          candidate_elements.model_key,
+          candidate_elements.local_id,
+          coalesce(nullif(trim(coalesce(
+            matched_value.value_text,
+            matched_value.value_number::text,
+            matched_value.value_bool::text,
+            matched_value.value_json::text,
+            ''
+          )), ''), '') as value_key
+        from candidate_elements
+        left join lateral (
+          select pv.value_text, pv.value_number, pv.value_bool, pv.value_json
+          from cde_bim_property_values pv
+          join cde_bim_properties properties on properties.id = pv.property_id
+          join cde_bim_property_sets sets on sets.id = properties.property_set_id
+          where pv.bim_element_id = candidate_elements.id
+            and properties.normalized_name = lower(regexp_replace(trim($5), '\\s+', ' ', 'g'))
+            and sets.normalized_name = lower(regexp_replace(trim($4), '\\s+', ' ', 'g'))
+          order by pv.id
+          limit 1
+        ) matched_value on true
+      ),
+      bucket_counts as (
+        select value_key, count(*)::int as total_count
+        from element_values
+        group by value_key
+      ),
+      limited_values as (
+        select value_key, total_count
+        from bucket_counts
+        order by total_count desc, value_key asc
+        limit $10
+      ),
+      ranked_ids as (
+        select
+          element_values.value_key,
+          element_values.model_key,
+          element_values.local_id,
+          row_number() over (
+            partition by element_values.value_key, element_values.model_key
+            order by element_values.local_id
+          ) as rn
+        from element_values
+        join limited_values on limited_values.value_key = element_values.value_key
+      ),
+      ids_by_model as (
+        select
+          value_key,
+          model_key,
+          array_agg(local_id order by local_id) filter (where rn <= $11) as local_ids,
+          count(*) > $11 as model_truncated
+        from ranked_ids
+        group by value_key, model_key
+      )
+      select
+        limited_values.value_key,
+        limited_values.total_count::text,
+        ids_by_model.model_key,
+        coalesce(ids_by_model.local_ids, '{}'::int[]) as local_ids,
+        coalesce(ids_by_model.model_truncated, false) as model_truncated,
+        (select count(*)::int from candidate_elements)::text as total_elements,
+        coalesce((select total_count from bucket_counts where value_key = ''), 0)::text as missing_value_count,
+        (select count(*)::int from bucket_counts)::text as bucket_count
+      from limited_values
+      left join ids_by_model on ids_by_model.value_key = limited_values.value_key
+      order by limited_values.total_count desc, limited_values.value_key asc, ids_by_model.model_key asc
+    `,
+    [
+      projectCode,
+      modelIds.length ? modelIds : null,
+      modelKeys.length ? modelKeys : null,
+      propertySetName,
+      propertyName,
+      className,
+      classNameWithoutIfc,
+      levelName,
+      text,
+      maxBuckets,
+      maxIdsPerBucket
+    ]
+  );
+
+  const bucketMap = new Map<string, BimPropertySummaryBucket>();
+  let totalElements = 0;
+  let missingValueCount = 0;
+  let bucketCount = 0;
+
+  for (const row of result.rows) {
+    totalElements = Number(row.total_elements) || totalElements;
+    missingValueCount = Number(row.missing_value_count) || missingValueCount;
+    bucketCount = Number(row.bucket_count) || bucketCount;
+
+    const value = row.value_key || "";
+    const bucket = bucketMap.get(value) ?? {
+      value,
+      count: Number(row.total_count) || 0,
+      localIdsByModelKey: {},
+      truncated: false
+    };
+
+    if (row.model_key) {
+      bucket.localIdsByModelKey[row.model_key] = (row.local_ids ?? []).map(Number).filter(Number.isFinite);
+    }
+    bucket.truncated = bucket.truncated || Boolean(row.model_truncated);
+    bucketMap.set(value, bucket);
+  }
+
+  return {
+    projectCode,
+    totalElements,
+    missingValueCount,
+    bucketCount,
+    buckets: Array.from(bucketMap.values())
+  };
+}
+export async function queryBimPropertyLocalIds(
+  input: BimPropertyLocalIdsQueryInput
+): Promise<Record<string, number[]>> {
+  ensureBimDatabaseEnabled();
+
+  const maxIdsPerModel = Math.max(1, Math.min(input.maxIdsPerModel ?? 100000, 250000));
+  const propertyValue = normalizeText(input.propertyValue);
+
+  const result = await getDatabasePool().query<{
+    model_key: string;
+    local_ids: number[];
+  }>(
+    `
+      with matches as (
+        select
+          models.model_key,
+          elements.local_id,
+          row_number() over (
+            partition by models.model_key
+            order by elements.local_id
+          ) as rn
+        from cde_bim_property_values pv
+        join cde_bim_properties properties on properties.id = pv.property_id
+        join cde_bim_property_sets sets on sets.id = properties.property_set_id
+        join cde_bim_elements elements on elements.id = pv.bim_element_id
+        join cde_bim_models models on models.id = elements.bim_model_id
+        where models.project_code = $1
+          and ($2::uuid[] is null or models.id = any($2::uuid[]))
+          and ($3::text[] is null or models.model_key = any($3::text[]))
+          and lower(trim(sets.name)) = lower(trim($4))
+          and lower(trim(properties.name)) = lower(trim($5))
+          and (
+            $6::text is null
+            or lower(coalesce(
+              pv.value_text,
+              pv.value_number::text,
+              pv.value_bool::text,
+              pv.value_json::text,
+              ''
+            )) = lower($6)
+          )
+      )
+      select
+        model_key,
+        array_agg(local_id order by local_id) as local_ids
+      from matches
+      where rn <= $7
+      group by model_key
+    `,
+    [
+      input.projectCode,
+      input.modelIds?.length ? input.modelIds : null,
+      input.modelKeys?.length ? input.modelKeys : null,
+      input.property.setName,
+      input.property.propertyName,
+      propertyValue,
+      maxIdsPerModel
+    ]
+  );
+
+  return Object.fromEntries(
+    result.rows.map((row) => [row.model_key, row.local_ids.map(Number)])
+  );
+}
 export async function getBimPropertyIndexSnapshot(input: {
   projectCode: string;
   signature: string;

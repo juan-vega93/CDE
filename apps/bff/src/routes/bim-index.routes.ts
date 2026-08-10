@@ -6,6 +6,8 @@ import {
   getBimCost5DAggregation,
   getBimPropertyCatalog,
   getBimPropertyIndex,
+  getBimPropertySummary,
+  queryBimPropertyLocalIds,
   getBimPropertyIndexSnapshot,
   listBimIndexJobs,
   listBimModels,
@@ -417,6 +419,74 @@ router.get("/properties/catalog", async (req, res) => {
   }
 });
 
+
+router.post("/properties/summary", async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    const projectCode = toProjectCode(body.projectCode);
+    const propertySetName = toText(body.propertySetName);
+    const propertyName = toText(body.propertyName);
+
+    if (!projectCode || !propertySetName || !propertyName) {
+      return res.status(400).json({
+        success: false,
+        message: "projectCode, propertySetName y propertyName son obligatorios"
+      });
+    }
+
+    const maxBuckets = typeof body.maxBuckets === "number" ? body.maxBuckets : Number(body.maxBuckets);
+    const maxIdsPerBucket =
+      typeof body.maxIdsPerBucket === "number" ? body.maxIdsPerBucket : Number(body.maxIdsPerBucket);
+
+    const data = await getBimPropertySummary({
+      projectCode,
+      modelIds: toStringArray(body.modelIds),
+      modelKeys: toStringArray(body.modelKeys),
+      propertySetName,
+      propertyName,
+      className: toText(body.className),
+      levelName: toText(body.levelName),
+      text: toText(body.text),
+      maxBuckets: Number.isFinite(maxBuckets) ? maxBuckets : undefined,
+      maxIdsPerBucket: Number.isFinite(maxIdsPerBucket) ? maxIdsPerBucket : undefined
+    });
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    return sendRouteError(res, error);
+  }
+});
+router.post("/properties/query", async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    const projectCode = toProjectCode(body.projectCode);
+    const property = parsePropertyRef(body.property);
+
+    if (!projectCode || !property) {
+      return res.status(400).json({
+        success: false,
+        message: "projectCode y property son obligatorios"
+      });
+    }
+
+    const maxIdsPerModel =
+      typeof body.maxIdsPerModel === "number" ? body.maxIdsPerModel : Number(body.maxIdsPerModel);
+
+    const data = await queryBimPropertyLocalIds({
+      projectCode,
+      modelIds: toStringArray(body.modelIds),
+      modelKeys: toStringArray(body.modelKeys),
+      property,
+      propertyValue: toText(body.propertyValue),
+      maxIdsPerModel: Number.isFinite(maxIdsPerModel) ? maxIdsPerModel : undefined
+    });
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    return sendRouteError(res, error);
+  }
+});
+
 router.get("/properties", async (req, res) => {
   try {
     const projectCode = toProjectCode(req.query.projectCode);
@@ -445,9 +515,3 @@ router.get("/properties", async (req, res) => {
 });
 
 export default router;
-
-
-
-
-
-
