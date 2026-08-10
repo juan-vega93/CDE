@@ -36,6 +36,37 @@ const ENABLE_PROJECT_HARD_DELETE =
 
 const DISCIPLINE_OPTIONS = ["ARQ", "EST", "IME", "IEL", "SAN", "COM"];
 
+const MOJIBAKE_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\u00c3\u00a1|\u00c3\u0192\u00c2\u00a1/g, "a"],
+  [/\u00c3\u00a9|\u00c3\u0192\u00c2\u00a9/g, "e"],
+  [/\u00c3\u00ad|\u00c3\u0192\u00c2\u00ad/g, "i"],
+  [/\u00c3\u00b3|\u00c3\u0192\u00c2\u00b3/g, "o"],
+  [/\u00c3\u00ba|\u00c3\u0192\u00c2\u00ba/g, "u"],
+  [/\u00c3\u00b1|\u00c3\u0192\u00c2\u00b1/g, "n"],
+  [/\u00c3\u0081|\u00c3\u0192\u00c2\u0081/g, "A"],
+  [/\u00c3\u0089|\u00c3\u0192\u00c2\u0089/g, "E"],
+  [/\u00c3\u008d|\u00c3\u0192\u00c2\u008d/g, "I"],
+  [/\u00c3\u0093|\u00c3\u0192\u00c2\u0093/g, "O"],
+  [/\u00c3\u009a|\u00c3\u0192\u00c2\u009a/g, "U"],
+  [/\u00c3\u0091|\u00c3\u0192\u00c2\u0091/g, "N"],
+  [/\u00c2\u00bf|\u00c2\u00a1|\u00c2/g, ""]
+];
+
+function normalizeDisplayText(value: string | null | undefined): string {
+  if (!value) return "";
+  return MOJIBAKE_REPLACEMENTS.reduce(
+    (current, [pattern, replacement]) => current.replace(pattern, replacement),
+    value
+  );
+}
+
+function normalizeStatusKey(status: ProjectCard["status"] | string | null | undefined): ProjectStatus {
+  const normalized = normalizeDisplayText(status).trim().toLowerCase();
+  if (normalized === "active" || normalized === "activo") return "active";
+  if (normalized === "paused" || normalized === "pausado") return "paused";
+  if (normalized === "closed" || normalized === "cerrado" || normalized === "archivado") return "closed";
+  return "planning";
+}
 type MemberFormState = {
   email: string;
   username: string;
@@ -124,19 +155,19 @@ function ProjectCardsAdminPageContent() {
         projectStatusFilter === "all"
           ? true
           : projectStatusFilter === "visible"
-            ? projectCard.status !== "closed"
-            : projectCard.status === projectStatusFilter;
+            ? normalizeStatusKey(projectCard.status) !== "closed"
+            : normalizeStatusKey(projectCard.status) === projectStatusFilter;
 
       const matchesQuery =
         !query ||
-        projectCard.code.toLowerCase().includes(query) ||
-        projectCard.name.toLowerCase().includes(query);
+        normalizeDisplayText(projectCard.code).toLowerCase().includes(query) ||
+        normalizeDisplayText(projectCard.name).toLowerCase().includes(query);
 
       return matchesStatus && matchesQuery;
     });
   }, [projectCards, projectSearch, projectStatusFilter]);
 
-  function getStatusLabel(status?: ProjectCard["status"]) {
+  function getStatusLabel(status: ProjectCard["status"] | string | null | undefined) {
     const labels: Record<string, string> = {
       planning: "Planificacion",
       active: "Activo",
@@ -144,7 +175,7 @@ function ProjectCardsAdminPageContent() {
       closed: "Cerrado"
     };
 
-    return labels[status || "planning"] || "Planificacion";
+    return labels[normalizeStatusKey(status)] || "Planificacion";
   }
 
   function formatDate(value?: string) {
@@ -454,7 +485,7 @@ function ProjectCardsAdminPageContent() {
     if (!email) {
       errors.email = "El correo es obligatorio.";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errors.email = "Ingresa un correo válido.";
+      errors.email = "Ingresa un correo valido.";
     }
 
     if (!username) {
@@ -641,7 +672,7 @@ function ProjectCardsAdminPageContent() {
           {projectCard.coverImageUrl ? (
             <img
               src={projectCard.coverImageUrl}
-              alt={projectCard.name}              
+              alt={normalizeDisplayText(projectCard.name)}              
               className="h-full w-full object-cover"              
             />
             
@@ -705,7 +736,7 @@ function ProjectCardsAdminPageContent() {
               {projectCard.code}
             </div>
             <div className="mt-1 line-clamp-2 text-sm text-slate-600">
-              {projectCard.name}
+              {normalizeDisplayText(projectCard.name)}
             </div>
           </div>
 
@@ -863,7 +894,7 @@ function ProjectCardsAdminPageContent() {
 
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-slate-900">
-                    Juan Jesús Vega More
+                    Juan Jesus Vega More
                   </div>
                   <div className="truncate text-xs text-slate-500">
                     jjvega@typsa.es
@@ -889,7 +920,7 @@ function ProjectCardsAdminPageContent() {
                   onClick={handleLogout}
                   className="w-full rounded bg-red-700 px-3 py-2 text-left text-sm font-semibold text-white hover:bg-red-800"
                 >
-                  Cerrar sesión
+                  Cerrar sesion
                 </button>
               </div>
             </div>
@@ -1049,13 +1080,13 @@ function ProjectCardsAdminPageContent() {
                 <section className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-5">
                   {sessionStatus === "loading" ? (
                     <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-                      Verificando sesión...
+                      Verificando sesion...
                     </div>
                   ) : sessionStatus === "unauthenticated" ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-sm text-amber-900">
-                      <div className="font-semibold">Sesión requerida</div>
+                      <div className="font-semibold">Sesion requerida</div>
                       <p className="mt-1 text-amber-800">
-                        Inicia sesión para cargar los proyectos y aplicar permisos por proyecto.
+                        Inicia sesion para cargar los proyectos y aplicar permisos por proyecto.
                       </p>
                     </div>
                   ) : null}
@@ -1372,7 +1403,7 @@ function ProjectCardsAdminPageContent() {
                   description: event.target.value
                 }))
               }
-              placeholder="Descripción"
+              placeholder="Descripcion"
               className="min-h-24 rounded border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-600 md:col-span-2"
             />
           </div>
@@ -1434,7 +1465,7 @@ function ProjectCardsAdminPageContent() {
                     prev.username || event.target.value.split("@")[0] || ""
                 }))
               }
-              placeholder="Correo electrónico"
+              placeholder="Correo electronico"
               className="rounded border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-600"
             />
             {memberFormErrors.email && (
@@ -1553,8 +1584,8 @@ function ProjectCardsAdminPageContent() {
               Archivar proyecto
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              El proyecto dejará de aparecer en la vista principal, pero su
-              información no será eliminada.
+              El proyecto dejara de aparecer en la vista principal, pero su
+              informacion no sera eliminada.
             </p>
           </div>
 
@@ -1570,8 +1601,8 @@ function ProjectCardsAdminPageContent() {
             </div>
 
             <p className="mt-4 text-sm text-slate-600">
-              Podrás conservar sus documentos, usuarios históricos y datos
-              asociados. Esta acción no borra carpetas ni información.
+              Podras conservar sus documentos, usuarios historicos y datos
+              asociados. Esta accion no borra carpetas ni informacion.
             </p>
           </div>
 
@@ -1605,8 +1636,8 @@ function ProjectCardsAdminPageContent() {
               Eliminar definitivamente
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Esta acción eliminará el proyecto y sus recursos asociados. No se
-              debe usar en proyectos reales salvo autorización administrativa.
+              Esta accion eliminara el proyecto y sus recursos asociados. No se
+              debe usar en proyectos reales salvo autorizacion administrativa.
             </p>
           </div>
 
@@ -1679,7 +1710,7 @@ function ProjectCardsAdminPageContent() {
 
 export default function ProjectCardsAdminPage() {
   return (
-    <Suspense fallback={<main style={{ padding: 24 }}>Cargando administración de proyectos...</main>}>
+    <Suspense fallback={<main style={{ padding: 24 }}>Cargando administracion de proyectos...</main>}>
       <ProjectCardsAdminPageContent />
     </Suspense>
   );
