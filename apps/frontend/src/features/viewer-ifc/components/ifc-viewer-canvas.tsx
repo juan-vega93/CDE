@@ -5083,6 +5083,10 @@ function Cost5DPanel({
   const [chartLimit, setChartLimit] = useState<"10" | "15" | "25" | "all">(
     "15"
   );
+  const [meteringPage, setMeteringPage] = useState(0);
+  const [meteringPageSize, setMeteringPageSize] = useState(
+    METERING_RENDER_ROW_LIMIT
+  );
   const [serverAggregation, setServerAggregation] =
     useState<Cost5DServerAggregation | null>(null);
   const [serverAggregationLoading, setServerAggregationLoading] = useState(false);
@@ -5180,9 +5184,29 @@ function Cost5DPanel({
         .includes(normalized)
     );
   }, [meteringRows, search]);
+  const meteringTotalPages = Math.max(
+    1,
+    Math.ceil(filteredMeteringRows.length / meteringPageSize)
+  );
+  const safeMeteringPage = Math.min(meteringPage, meteringTotalPages - 1);
+  const meteringPageStart = safeMeteringPage * meteringPageSize;
+  const visibleMeteringRows = filteredMeteringRows.slice(
+    meteringPageStart,
+    meteringPageStart + meteringPageSize
+  );
   const activeMeteringColumns = meteringColumns.filter(
     (column) => column.set && column.property
   );
+
+  useEffect(() => {
+    setMeteringPage(0);
+  }, [meteringPageSize, meteringRows.length, search]);
+
+  useEffect(() => {
+    setMeteringPage((current) =>
+      Math.min(current, Math.max(0, meteringTotalPages - 1))
+    );
+  }, [meteringTotalPages]);
 
   function handleExportMeteringCsv() {
     if (filteredMeteringRows.length === 0) return;
@@ -5328,13 +5352,55 @@ function Cost5DPanel({
                 <span className="font-semibold uppercase text-zinc-300">
                   Tabla de metrados
                 </span>
-                <span className="text-zinc-500">
-                  {meteringRows.length >= MAX_METERING_ROWS
-                    ? `Limite frontend: ${MAX_METERING_ROWS} filas`
-                    : filteredMeteringRows.length > METERING_RENDER_ROW_LIMIT
-                      ? `Primeras ${METERING_RENDER_ROW_LIMIT} de ${filteredMeteringRows.length}`
-                    : `${filteredMeteringRows.length} filas`}
-                </span>
+                <div className="flex flex-wrap items-center justify-end gap-2 text-zinc-500">
+                  <span>
+                    {meteringRows.length >= MAX_METERING_ROWS
+                      ? `Limite frontend: ${MAX_METERING_ROWS} filas`
+                      : filteredMeteringRows.length === 0
+                        ? "Sin filas"
+                        : `${meteringPageStart + 1}-${Math.min(
+                            meteringPageStart + meteringPageSize,
+                            filteredMeteringRows.length
+                          )} de ${filteredMeteringRows.length}`}
+                  </span>
+                  <select
+                    value={meteringPageSize}
+                    onChange={(event) =>
+                      setMeteringPageSize(Number(event.target.value))
+                    }
+                    className="min-h-7 rounded bg-zinc-800 px-2 text-xs text-zinc-200 outline-none ring-1 ring-zinc-700"
+                  >
+                    <option value={100}>100</option>
+                    <option value={150}>150</option>
+                    <option value={300}>300</option>
+                    <option value={500}>500</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMeteringPage((current) => Math.max(0, current - 1))
+                    }
+                    disabled={safeMeteringPage === 0}
+                    className="min-h-7 rounded bg-zinc-800 px-2 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <span className="min-w-12 text-center text-[11px] text-zinc-500">
+                    {safeMeteringPage + 1}/{meteringTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMeteringPage((current) =>
+                        Math.min(meteringTotalPages - 1, current + 1)
+                      )
+                    }
+                    disabled={safeMeteringPage >= meteringTotalPages - 1}
+                    className="min-h-7 rounded bg-zinc-800 px-2 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
+                  >
+                    Siguiente
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-xs">
@@ -5351,9 +5417,7 @@ function Cost5DPanel({
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredMeteringRows
-                      .slice(0, METERING_RENDER_ROW_LIMIT)
-                      .map((row) => (
+                    {visibleMeteringRows.map((row) => (
                       <tr
                         key={row.key}
                         className="border-t border-zinc-800 hover:bg-zinc-900"
