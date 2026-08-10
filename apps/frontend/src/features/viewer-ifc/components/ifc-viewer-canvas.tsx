@@ -1005,11 +1005,26 @@ function cloneModelIdMap(modelIdMap: OBC.ModelIdMap): OBC.ModelIdMap {
   return clone;
 }
 
+const MODEL_ID_MAP_CACHE_MAX_IDS = 25000;
+
 function getSelectionCacheKey(modelIdMap: OBC.ModelIdMap) {
   return Object.entries(modelIdMap)
     .map(([modelId, ids]) => {
-      const sortedIds = Array.from(ids).sort((a, b) => a - b);
-      return `${modelId}:${sortedIds.join(",")}`;
+      let count = 0;
+      let min = Number.POSITIVE_INFINITY;
+      let max = Number.NEGATIVE_INFINITY;
+      let hash = 2166136261;
+
+      for (const id of ids) {
+        count += 1;
+        min = Math.min(min, id);
+        max = Math.max(max, id);
+        hash ^= id;
+        hash = Math.imul(hash, 16777619);
+      }
+
+      if (count === 0) return `${modelId}:0`;
+      return `${modelId}:${count}:${min}:${max}:${hash >>> 0}`;
     })
     .sort()
     .join("|");
@@ -1021,6 +1036,14 @@ function setBoundedModelIdMapCache(
   modelIdMap: OBC.ModelIdMap,
   maxEntries = 24
 ) {
+  let elementCount = 0;
+  for (const ids of Object.values(modelIdMap)) elementCount += ids.size;
+
+  if (elementCount > MODEL_ID_MAP_CACHE_MAX_IDS) {
+    cache.delete(key);
+    return;
+  }
+
   cache.set(key, cloneModelIdMap(modelIdMap));
 
   while (cache.size > maxEntries) {
@@ -3828,8 +3851,8 @@ function mergeModelIdMap(target: OBC.ModelIdMap, source: OBC.ModelIdMap) {
   }
 }
 
-const MODEL_ID_MAP_RENDER_CHUNK_SIZE = 1200;
-const MODEL_ID_MAP_COLOR_CHUNK_SIZE = 900;
+const MODEL_ID_MAP_RENDER_CHUNK_SIZE = 450;
+const MODEL_ID_MAP_COLOR_CHUNK_SIZE = 350;
 
 
 function splitModelIdMap(
