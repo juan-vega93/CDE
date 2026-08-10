@@ -4381,15 +4381,40 @@ function ParameterAnalysisPanel({
         .join("|"),
     [models]
   );
+  const databaseBucketsRequestKey = useMemo(() => {
+    const normalizedProjectCode = projectCode?.trim().toUpperCase();
+    if (!normalizedProjectCode || !propertySet || !propertyName || !modelKeySignature) {
+      return "";
+    }
+
+    return JSON.stringify({
+      projectCode: normalizedProjectCode,
+      modelKeySignature,
+      propertySet,
+      propertyName
+    });
+  }, [modelKeySignature, projectCode, propertyName, propertySet]);
+  const [databaseBucketsResolvedKey, setDatabaseBucketsResolvedKey] = useState("");
+  const shouldBuildLocalBuckets = Boolean(
+    propertySet &&
+      propertyName &&
+      propertyIndex.sets.length > 0 &&
+      (!databaseBucketsRequestKey ||
+        (!databaseBucketsLoading &&
+          databaseBucketsResolvedKey === databaseBucketsRequestKey &&
+          databaseBuckets === null))
+  );
   const localBuckets = useMemo(
     () =>
-      buildParameterAnalysisBuckets({
-        models,
-        propertyIndex,
-        propertySet,
-        propertyName
-      }),
-    [models, propertyIndex, propertySet, propertyName]
+      shouldBuildLocalBuckets
+        ? buildParameterAnalysisBuckets({
+            models,
+            propertyIndex,
+            propertySet,
+            propertyName
+          })
+        : [],
+    [models, propertyIndex, propertySet, propertyName, shouldBuildLocalBuckets]
   );
   const buckets = databaseBuckets ?? localBuckets;
   const displayBuckets = useMemo(
@@ -4411,14 +4436,17 @@ function ParameterAnalysisPanel({
   useEffect(() => {
     let active = true;
     setDatabaseBuckets(null);
+    setDatabaseBucketsResolvedKey("");
 
     const modelKeys = models.map((model) => model.key).filter(Boolean);
     if (
       !projectCode?.trim() ||
       modelKeys.length === 0 ||
       !propertySet ||
-      !propertyName
+      !propertyName ||
+      !databaseBucketsRequestKey
     ) {
+      setDatabaseBucketsLoading(false);
       return () => {
         active = false;
       };
@@ -4438,6 +4466,7 @@ function ParameterAnalysisPanel({
             ? buildParameterAnalysisBucketsFromSummary({ models, summary })
             : null
         );
+        setDatabaseBucketsResolvedKey(databaseBucketsRequestKey);
       })
       .finally(() => {
         if (active) setDatabaseBucketsLoading(false);
@@ -4446,7 +4475,7 @@ function ParameterAnalysisPanel({
     return () => {
       active = false;
     };
-  }, [models, modelKeySignature, projectCode, propertyName, propertySet]);
+  }, [databaseBucketsRequestKey, models, projectCode, propertyName, propertySet]);
   useEffect(() => {
     if (!propertySet && selectorSource.sets.length > 0) {
       setPropertySet(selectorSource.sets[0]);
@@ -8365,6 +8394,14 @@ export function IfcViewerCanvas({
     for (const model of analysisModels) {
       if (criteria.modelKey && model.key !== criteria.modelKey) continue;
       if (!model.modelId) continue;
+
+      if (dbLocalIdsByModelKey && !normalizedType && !normalizedLevel) {
+        const dbIds = dbLocalIdsByModelKey[model.key] ?? [];
+        if (dbIds.length > 0) {
+          result[model.modelId] = new Set(dbIds);
+        }
+        continue;
+      }
 
       const levelByLocalId = getCachedModelLevelMap(model);
       const candidateNodes = getCachedModelTreeNodes(model).filter((node) => {
