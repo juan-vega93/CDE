@@ -3,7 +3,15 @@ import { useSession } from "next-auth/react";
 import type { BcfTopic } from "@/features/viewer-ifc/types/bcf-topic";
 import { captureViewerSnapshot } from "@/features/viewer-ifc/lib/viewpoint-snapshot";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties
+} from "react";
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as FRAGS from "@thatopen/fragments";
@@ -5090,6 +5098,7 @@ function Cost5DPanel({
   const [serverAggregation, setServerAggregation] =
     useState<Cost5DServerAggregation | null>(null);
   const [serverAggregationLoading, setServerAggregationLoading] = useState(false);
+  const deferredSearch = useDeferredValue(search);
   const loadedModelKeys = useMemo(
     () => models.map((model) => model.key).filter(Boolean),
     [models]
@@ -5142,7 +5151,7 @@ function Cost5DPanel({
   );
   const rows = serverRows ?? localRows;
   const filteredRows = useMemo(() => {
-    const normalized = search.trim().toLowerCase();
+    const normalized = deferredSearch.trim().toLowerCase();
     if (!normalized) return rows;
 
     return rows.filter((row) =>
@@ -5151,7 +5160,7 @@ function Cost5DPanel({
         .toLowerCase()
         .includes(normalized)
     );
-  }, [rows, search]);
+  }, [rows, deferredSearch]);
   const totalQuantity = filteredRows.reduce((sum, row) => sum + row.quantity, 0);
   const totalElements = filteredRows.reduce((sum, row) => sum + row.elementCount, 0);
   const maxQuantity = Math.max(...filteredRows.map((row) => row.quantity), 1);
@@ -5164,17 +5173,23 @@ function Cost5DPanel({
     color: getParameterAnalysisColor(index),
     modelIdMap: row.modelIdMap
   }));
+  const activeMeteringColumns = useMemo(
+    () => meteringColumns.filter((column) => column.set && column.property),
+    [meteringColumns]
+  );
   const meteringRows = useMemo(
     () =>
-      buildMeteringRows({
-        models,
-        propertyIndex,
-        columns: meteringColumns.filter((column) => column.set && column.property)
-      }),
-    [models, propertyIndex, meteringColumns]
+      mode === "metrados"
+        ? buildMeteringRows({
+            models,
+            propertyIndex,
+            columns: activeMeteringColumns
+          })
+        : [],
+    [activeMeteringColumns, mode, models, propertyIndex]
   );
   const filteredMeteringRows = useMemo(() => {
-    const normalized = search.trim().toLowerCase();
+    const normalized = deferredSearch.trim().toLowerCase();
     if (!normalized) return meteringRows;
 
     return meteringRows.filter((row) =>
@@ -5183,7 +5198,7 @@ function Cost5DPanel({
         .toLowerCase()
         .includes(normalized)
     );
-  }, [meteringRows, search]);
+  }, [meteringRows, deferredSearch]);
   const meteringTotalPages = Math.max(
     1,
     Math.ceil(filteredMeteringRows.length / meteringPageSize)
@@ -5194,13 +5209,9 @@ function Cost5DPanel({
     meteringPageStart,
     meteringPageStart + meteringPageSize
   );
-  const activeMeteringColumns = meteringColumns.filter(
-    (column) => column.set && column.property
-  );
-
   useEffect(() => {
     setMeteringPage(0);
-  }, [meteringPageSize, meteringRows.length, search]);
+  }, [deferredSearch, meteringPageSize, meteringRows.length]);
 
   useEffect(() => {
     setMeteringPage((current) =>
