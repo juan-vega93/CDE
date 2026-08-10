@@ -16,6 +16,7 @@ import type {
   CreateProjectCardInput,
   DeleteProjectCardInput,
   ProjectCard,
+  ProjectStatus,
   UpdateProjectCardInput
 } from "../types/project-card.types";
 import { OpenProjectProjectsService } from "./openproject-projects.service";
@@ -77,6 +78,55 @@ const NEXTCLOUD_PROJECT_SHARE_RULES: NextcloudShareRule[] = [
 ];
 const PROJECT_CARDS_FILE = getBffDataPath("project-cards.json");
 
+const MOJIBAKE_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\u00c3\u00a1|\u00c3\u0192\u00c2\u00a1/g, "a"],
+  [/\u00c3\u00a9|\u00c3\u0192\u00c2\u00a9/g, "e"],
+  [/\u00c3\u00ad|\u00c3\u0192\u00c2\u00ad/g, "i"],
+  [/\u00c3\u00b3|\u00c3\u0192\u00c2\u00b3/g, "o"],
+  [/\u00c3\u00ba|\u00c3\u0192\u00c2\u00ba/g, "u"],
+  [/\u00c3\u00b1|\u00c3\u0192\u00c2\u00b1/g, "n"],
+  [/\u00c3\u0081|\u00c3\u0192\u00c2\u0081/g, "A"],
+  [/\u00c3\u0089|\u00c3\u0192\u00c2\u0089/g, "E"],
+  [/\u00c3\u008d|\u00c3\u0192\u00c2\u008d/g, "I"],
+  [/\u00c3\u0093|\u00c3\u0192\u00c2\u0093/g, "O"],
+  [/\u00c3\u009a|\u00c3\u0192\u00c2\u009a/g, "U"],
+  [/\u00c3\u0091|\u00c3\u0192\u00c2\u0091/g, "N"],
+  [/\u00c2\u00bf|\u00c2\u00a1|\u00c2/g, ""]
+];
+
+function normalizeMojibakeText(value: string | undefined): string | undefined {
+  if (!value) return value;
+
+  return MOJIBAKE_REPLACEMENTS.reduce(
+    (current, [pattern, replacement]) => current.replace(pattern, replacement),
+    value
+  );
+}
+
+function normalizeProjectStatus(status: ProjectCard["status"] | string | undefined): ProjectStatus {
+  const normalized = normalizeMojibakeText(status)?.trim().toLowerCase() ?? "";
+
+  if (normalized === "active" || normalized === "activo") return "active";
+  if (normalized === "paused" || normalized === "pausado") return "paused";
+  if (normalized === "closed" || normalized === "cerrado" || normalized === "archivado") return "closed";
+  return "planning";
+}
+
+function normalizeProjectCard(projectCard: ProjectCard): ProjectCard {
+  return {
+    ...projectCard,
+    code: normalizeMojibakeText(projectCard.code) ?? projectCard.code,
+    name: normalizeMojibakeText(projectCard.name) ?? projectCard.name,
+    description: normalizeMojibakeText(projectCard.description),
+    status: normalizeProjectStatus(projectCard.status)
+  };
+}
+
+function normalizeProjectCards(projectCards: ProjectCard[]): ProjectCard[] {
+  return projectCards.map(normalizeProjectCard);
+}
+
+
 function normalizeProjectCode(code: string): string {
   const normalized = code.trim().toUpperCase();
 
@@ -112,7 +162,7 @@ export class ProjectCardsService {
     await ensureDataFile();
 
     const raw = await fs.readFile(PROJECT_CARDS_FILE, "utf-8");
-    return JSON.parse(raw) as ProjectCard[];
+    return normalizeProjectCards(JSON.parse(raw) as ProjectCard[]);
   }
   async archiveProjectCard(code: string): Promise<ProjectCard> {
     const normalizedCode = normalizeProjectCode(code);
@@ -192,7 +242,7 @@ export class ProjectCardsService {
 
     await fs.writeFile(
       PROJECT_CARDS_FILE,
-      JSON.stringify(projectCards, null, 2),
+      JSON.stringify(normalizeProjectCards(projectCards), null, 2),
       "utf-8"
     );
   }

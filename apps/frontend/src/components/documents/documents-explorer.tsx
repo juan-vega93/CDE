@@ -1124,6 +1124,10 @@ export function DocumentsExplorer({
                             {row.kind === "folder" ? (
                               <a
                                 href={buildFolderHref(row.path)}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  openFolder(row.path);
+                                }}
                                 onDoubleClick={(event) => {
                                   event.preventDefault();
                                   openFolder(row.path);

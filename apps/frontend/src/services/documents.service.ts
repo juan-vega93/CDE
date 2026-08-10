@@ -101,6 +101,31 @@ function writeSessionCachedExplorer(
   }
 }
 
+async function buildBffErrorMessage(res: Response, fallback: string) {
+  let detail = "";
+
+  try {
+    const text = await res.text();
+
+    if (text) {
+      try {
+        const parsed = JSON.parse(text) as {
+          message?: unknown;
+          error?: unknown;
+        };
+        const message = typeof parsed.message === "string" ? parsed.message : "";
+        const error = typeof parsed.error === "string" ? parsed.error : "";
+        detail = message || error || text;
+      } catch {
+        detail = text;
+      }
+    }
+  } catch {
+    // Mantiene el mensaje base si el cuerpo no se puede leer.
+  }
+
+  return `${fallback} (${res.status})${detail ? `: ${detail.slice(0, 280)}` : ""}`;
+}
 export function clearDocumentExplorerCache() {
   documentExplorerCache.clear();
   foldersCache.clear();
@@ -133,7 +158,9 @@ export async function getDocuments(
   const res = await bffFetch(`/api/documents?${params.toString()}`);
 
   if (!res.ok) {
-    throw new Error("No se pudo obtener la lista de documentos");
+    throw new Error(
+      await buildBffErrorMessage(res, "No se pudo obtener la lista de documentos")
+    );
   }
 
   return res.json();
@@ -156,7 +183,9 @@ export async function getFolders(
   const res = await bffFetch(`/api/folders?${params.toString()}`);
 
   if (!res.ok) {
-    throw new Error("No se pudo obtener la lista de carpetas");
+    throw new Error(
+      await buildBffErrorMessage(res, "No se pudo obtener la lista de carpetas")
+    );
   }
 
   const payload = (await res.json()) as FoldersApiResponse;
@@ -189,7 +218,9 @@ export async function getFolderTree(
   const res = await bffFetch(`/api/folders/tree?${params.toString()}`);
 
   if (!res.ok) {
-    throw new Error("No se pudo obtener el arbol de carpetas");
+    throw new Error(
+      await buildBffErrorMessage(res, "No se pudo obtener el arbol de carpetas")
+    );
   }
 
   const json = (await res.json()) as FolderTreeApiResponse;
@@ -229,7 +260,9 @@ export async function getDocumentExplorer(
   const res = await bffFetch(`/api/documents/explorer?${params.toString()}`);
 
   if (!res.ok) {
-    throw new Error("No se pudo obtener el explorador documental");
+    throw new Error(
+      await buildBffErrorMessage(res, "No se pudo obtener el explorador documental")
+    );
   }
 
   const json = (await res.json()) as DocumentExplorerApiResponse;
