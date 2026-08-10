@@ -215,7 +215,8 @@ async function loadSmartViewPropertyCatalogFromDatabase(input: {
     const params = new URLSearchParams({
       projectCode: normalizedProjectCode,
       modelKeys: modelKeys.join(","),
-      maxValuesPerProperty: String(MAX_INDEXED_VALUES_PER_PROPERTY)
+      maxValuesPerProperty: String(MAX_INDEXED_VALUES_PER_PROPERTY),
+      includeLocalIds: "false"
     });
     const response = await bffFetch(
       "/api/bim-index/properties/catalog?" + params.toString()
@@ -316,7 +317,8 @@ async function loadSmartViewPropertyIndexFromDatabase(input: {
     const params = new URLSearchParams({
       projectCode: normalizedProjectCode,
       modelKeys: modelKeys.join(","),
-      maxValuesPerProperty: String(MAX_INDEXED_VALUES_PER_PROPERTY)
+      maxValuesPerProperty: String(MAX_INDEXED_VALUES_PER_PROPERTY),
+      includeLocalIds: "false"
     });
     const response = await bffFetch(`/api/bim-index/properties?${params.toString()}`);
     if (!response.ok) return null;
@@ -7982,18 +7984,6 @@ export function IfcViewerCanvas({
         return;
       }
 
-      const persistedIndex = await loadSmartViewPropertyIndexSnapshot(
-        projectCode,
-        analysisSignature
-      );
-
-      if (persistedIndex && smartViewIndexRunRef.current === runId) {
-        setSmartViewPropertyIndex(persistedIndex);
-        setSmartViewPropertyIndexSignature(analysisSignature);
-        setStatus(`Indice BIM recuperado desde base de datos: ${persistedIndex.sets.length} conjuntos.`);
-        return;
-      }
-
       const normalizedDbIndex = await loadSmartViewPropertyIndexFromDatabase({
         projectCode,
         modelKeys: analysisModels.map((model) => model.key)
@@ -8002,19 +7992,22 @@ export function IfcViewerCanvas({
       if (normalizedDbIndex && smartViewIndexRunRef.current === runId) {
         setSmartViewPropertyIndex(normalizedDbIndex);
         setSmartViewPropertyIndexSignature(analysisSignature);
-        setStatus(`Indice BIM recuperado desde tablas normalizadas: ${normalizedDbIndex.sets.length} conjuntos.`);
-        void saveSmartViewPropertyIndexSnapshot({
-          projectCode,
-          signature: analysisSignature,
-          modelKeys: analysisModels.map((model) => model.key),
-          elementCount: Object.values(normalizedDbIndex.localIdsByModelKey ?? {}).reduce(
-            (total, ids) => total + ids.length,
-            0
-          ),
-          index: normalizedDbIndex
-        });
+        setStatus(`Indice BIM recuperado desde catalogo normalizado: ${normalizedDbIndex.sets.length} conjuntos.`);
         return;
       }
+
+      const persistedIndex = await loadSmartViewPropertyIndexSnapshot(
+        projectCode,
+        analysisSignature
+      );
+
+      if (persistedIndex && smartViewIndexRunRef.current === runId) {
+        setSmartViewPropertyIndex(persistedIndex);
+        setSmartViewPropertyIndexSignature(analysisSignature);
+        setStatus(`Indice BIM recuperado desde snapshot: ${persistedIndex.sets.length} conjuntos.`);
+        return;
+      }
+
       const propertyMap = new Map<string, Map<string, Set<string>>>();
       const localIdsBySetPropertyValue: SmartViewPropertyIndex["localIdsBySetPropertyValue"] = {};
       const localIdsByModelKey: Record<string, number[]> = {};

@@ -32,6 +32,29 @@ function isDatabaseDisabled(error: unknown): boolean {
 function toProjectCode(value: unknown): string {
   return typeof value === "string" ? value.trim().toUpperCase() : "";
 }
+function catalogToPropertyIndex(data: Awaited<ReturnType<typeof getBimPropertyCatalog>>) {
+  const valuesBySetAndProperty: Record<string, Record<string, string[]>> = {};
+
+  for (const [setName, properties] of Object.entries(data.valuesBySetAndProperty)) {
+    valuesBySetAndProperty[setName] = {};
+
+    for (const [propertyName, values] of Object.entries(properties)) {
+      valuesBySetAndProperty[setName][propertyName] = values
+        .map((item) => item.value)
+        .filter((value) => value.length > 0);
+    }
+  }
+
+  return {
+    sets: data.sets,
+    propertiesBySet: data.propertiesBySet,
+    valuesBySetAndProperty,
+    localIdsBySetPropertyValue: {},
+    localIdsByModelKey: {},
+    elementIdentityByKey: {},
+    levelLocalIdsByModelKey: {}
+  };
+}
 
 function toText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -501,6 +524,16 @@ router.get("/properties", async (req, res) => {
       typeof req.query.maxValuesPerProperty === "string"
         ? Number(req.query.maxValuesPerProperty)
         : undefined;
+
+    if (req.query.includeLocalIds === "false") {
+      const catalog = await getBimPropertyCatalog({
+        projectCode,
+        modelIds,
+        modelKeys,
+        maxValuesPerProperty: Number.isFinite(maxValues) ? maxValues : undefined
+      });
+      return res.json({ success: true, data: catalogToPropertyIndex(catalog) });
+    }
 
     const data = await getBimPropertyIndex({
       projectCode,
