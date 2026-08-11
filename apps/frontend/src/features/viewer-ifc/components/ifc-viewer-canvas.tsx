@@ -645,6 +645,19 @@ async function upsertBimIndexModel(input: {
 }
 
 type BimIndexJobStatus = "pending" | "processing" | "ready" | "failed" | "cancelled";
+type BimIndexedModelRecord = {
+  id?: string;
+  projectCode?: string;
+  documentPath?: string;
+  documentName?: string;
+  modelKey?: string;
+  runtimeModelId?: string | null;
+  status?: string;
+  elementCount?: number;
+  propertyCount?: number;
+  updatedAt?: string;
+  lastIndexedAt?: string | null;
+};
 
 type BimIndexOverview = {
   projectCode: string;
@@ -674,6 +687,49 @@ type BimIndexOverview = {
   };
 };
 
+function getIndexedModelRecordKey(record: BimIndexedModelRecord) {
+  return typeof record.modelKey === "string" ? record.modelKey.trim() : "";
+}
+
+function isIndexedModelRecordReady(record: BimIndexedModelRecord) {
+  const status = String(record.status ?? "").toLowerCase();
+  return (
+    getIndexedModelRecordKey(record).length > 0 &&
+    status !== "failed" &&
+    status !== "cancelled" &&
+    Number(record.elementCount ?? 0) > 0
+  );
+}
+
+async function loadIndexedBimModels(
+  projectCode?: string
+): Promise<BimIndexedModelRecord[]> {
+  const normalizedProjectCode = projectCode?.trim().toUpperCase();
+  if (!normalizedProjectCode) return [];
+
+  try {
+    const response = await bffFetch(
+      `/api/bim-index/models?projectCode=${encodeURIComponent(normalizedProjectCode)}`
+    );
+
+    if (!response.ok) return [];
+
+    const payload = (await response.json()) as {
+      success?: boolean;
+      data?: unknown;
+    };
+
+    if (!payload.success || !Array.isArray(payload.data)) return [];
+
+    return payload.data.filter(
+      (item): item is BimIndexedModelRecord =>
+        Boolean(item) && typeof item === "object"
+    );
+  } catch (error) {
+    console.warn("[viewer-ifc] No se pudo leer catalogo BIM en BD:", error);
+    return [];
+  }
+}
 async function loadBimIndexOverview(
   projectCode?: string
 ): Promise<BimIndexOverview | null> {
@@ -8275,6 +8331,17 @@ export function IfcViewerCanvas({
         return;
       }
 
+      const indexedModelRecords = await loadIndexedBimModels(projectCode);
+      const readyIndexedModelKeys = new Set(
+        indexedModelRecords
+          .filter(isIndexedModelRecordReady)
+          .map(getIndexedModelRecordKey)
+      );
+      const indexedModelKeysForCurrentLoad = modelKeys.filter((key) =>
+        readyIndexedModelKeys.has(key)
+      );
+      const allLoadedModelsIndexed =
+        modelKeys.length > 0 && indexedModelKeysForCurrentLoad.length === modelKeys.length;
       const normalizedDbIndex = await loadSmartViewPropertyIndexFromDatabase({
         projectCode,
         modelKeys
@@ -8283,8 +8350,17 @@ export function IfcViewerCanvas({
       if (normalizedDbIndex && smartViewIndexRunRef.current === runId) {
         setSmartViewPropertyIndex(normalizedDbIndex);
         setSmartViewPropertyIndexSignature(lightweightSignature);
-        setStatus(`Indice BIM recuperado desde PostgreSQL: ${normalizedDbIndex.sets.length} conjuntos.`);
-        return;
+
+        if (allLoadedModelsIndexed) {
+          setStatus(
+            `Indice BIM recuperado desde PostgreSQL: ${normalizedDbIndex.sets.length} conjuntos.`
+          );
+          return;
+        }
+
+        setStatus(
+          `Indice BIM parcial: ${indexedModelKeysForCurrentLoad.length}/${modelKeys.length} modelos listos. Completando faltantes...`
+        );
       }
 
       const lightweightPersistedIndex = await loadSmartViewPropertyIndexSnapshot(
@@ -8302,7 +8378,12 @@ export function IfcViewerCanvas({
       setStatus("Indexando propiedades para SmartView...");
       const analysisModels = await ensureSpatialTreesForAnalysis();
       const analysisSignature = getFederatedModelsAnalysisSignature(analysisModels);
-      indexingJobModels = analysisModels;
+      const analysisModelKeys = analysisModels.map((model) => model.key).filter(Boolean);
+      const readyIndexedModelKeysForAnalysis = new Set(readyIndexedModelKeys);
+      const modelsToIndex = analysisModels.filter(
+        (model) => !readyIndexedModelKeysForAnalysis.has(model.key)
+      );
+      indexingJobModels = modelsToIndex;
       indexingJobSignature = analysisSignature;
 
       if (
@@ -8334,20 +8415,36 @@ export function IfcViewerCanvas({
         return;
       }
 
+      if (modelsToIndex.length === 0) {
+        const combinedDbIndex = await loadSmartViewPropertyIndexFromDatabase({
+          projectCode,
+          modelKeys: analysisModelKeys
+        });
+
+        if (combinedDbIndex && smartViewIndexRunRef.current === runId) {
+          setSmartViewPropertyIndex(combinedDbIndex);
+          setSmartViewPropertyIndexSignature(analysisSignature);
+          setStatus(
+            `Indice BIM listo desde PostgreSQL: ${combinedDbIndex.sets.length} conjuntos.`
+          );
+          return;
+        }
+      }
+
       const propertyMap = new Map<string, Map<string, Set<string>>>();
       const localIdsBySetPropertyValue: SmartViewPropertyIndex["localIdsBySetPropertyValue"] = {};
       const localIdsByModelKey: Record<string, number[]> = {};
       const elementIdentityByKey: Record<string, string> = {};
       const levelLocalIdsByModelKey: Record<string, Record<string, Set<number>>> = {};
-      const maxLocalIdsPerModel = getDynamicPropertyIndexLimit(analysisModels.length);
+      const maxLocalIdsPerModel = getDynamicPropertyIndexLimit(modelsToIndex.length);
       let indexedItems = 0;
       let skippedHighCardinalityValues = 0;
       let indexPartial = false;
       let lastYieldAt = typeof performance !== "undefined" ? performance.now() : 0;
 
-      for (let modelIndex = 0; modelIndex < analysisModels.length; modelIndex += 1) {
+      for (let modelIndex = 0; modelIndex < modelsToIndex.length; modelIndex += 1) {
         if (smartViewIndexRunRef.current !== runId) return;
-        const model = analysisModels[modelIndex];
+        const model = modelsToIndex[modelIndex];
         const treeLocalIds = flattenModelTreeNodes(model.spatialTree ?? [])
           .filter(
             (node) => isModelTreeElement(node) && typeof node.localId === "number"
@@ -8563,7 +8660,7 @@ export function IfcViewerCanvas({
             }
 
             setStatus(
-              `Indexando parametros ${modelIndex + 1}/${analysisModels.length}: ${Math.min(
+              `Indexando parametros ${modelIndex + 1}/${modelsToIndex.length}: ${Math.min(
                 index + PROPERTY_INDEX_BATCH_SIZE,
                 indexedLocalIds.length
               ).toLocaleString()}/${indexedLocalIds.length.toLocaleString()}`
@@ -8636,18 +8733,24 @@ export function IfcViewerCanvas({
         levelLocalIdsByModelKey: levelLocalIdsByModel
       };
 
-      setSmartViewPropertyIndex(nextPropertyIndex);
+      const combinedDbIndex = await loadSmartViewPropertyIndexFromDatabase({
+        projectCode,
+        modelKeys: analysisModelKeys
+      });
+      const finalPropertyIndex = combinedDbIndex ?? nextPropertyIndex;
+
+      setSmartViewPropertyIndex(finalPropertyIndex);
       setSmartViewPropertyIndexSignature(analysisSignature);
       void saveSmartViewPropertyIndexSnapshot({
         projectCode,
         signature: analysisSignature,
-        modelKeys: analysisModels.map((model) => model.key),
+        modelKeys: analysisModelKeys,
         elementCount: indexedItems,
-        index: nextPropertyIndex
+        index: finalPropertyIndex
       });
       setStatus(
-        sets.length > 0
-          ? `Conjuntos indexados: ${sets.length}.`
+        finalPropertyIndex.sets.length > 0
+          ? `Conjuntos indexados: ${finalPropertyIndex.sets.length}.`
           : "No se encontraron conjuntos de propiedades indexables en los modelos cargados."
       );
     } catch (error) {
