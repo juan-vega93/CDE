@@ -1542,6 +1542,7 @@ const MAX_MODEL_ID_MAP_EXPANSION_IDS = 1500;
 const MAX_NATIVE_LEVEL_INDEX_LOCAL_IDS = 80000;
 const NATIVE_LEVEL_INDEX_BATCH_SIZE = 80;
 const TREE_ACTION_HIGHLIGHT_LIMIT = 1200;
+const CONTEXT_GHOST_MAX_DIM_IDS = 12000;
 const MAX_SMART_VIEW_PROPERTY_SETS_PER_ITEM = 48;
 const MAX_SMART_VIEW_PROPERTIES_PER_SET = 140;
 const MAX_SMART_VIEW_NESTED_ARRAY_SCAN = 160;
@@ -9496,41 +9497,64 @@ export function IfcViewerCanvas({
   ) {
     const modules = modulesRef.current;
 
-    if (!modules) return;
+    if (!modules) return false;
 
     await modules.visibility.showAll();
     await waitForNextFrame();
-    if (!isRenderOperationCurrent(token)) return;
+    if (!isRenderOperationCurrent(token)) return false;
     await resetContextGhostOpacity();
 
+    const dimWork: Array<{ model: (typeof models)[number]; ids: number[] }> = [];
+    let totalDimIds = 0;
+
     for (const model of models) {
-      if (!isRenderOperationCurrent(token)) return;
+      if (!isRenderOperationCurrent(token)) return false;
 
       const modelId = model.modelId;
-      if (!modelId || !model.runtimeModel.setOpacity) continue;
+      const selectedIds = modelId ? modelIdMap[modelId] : undefined;
+      if (!modelId || !selectedIds?.size || !model.runtimeModel.setOpacity) continue;
 
       const contextIds = await getModelContextLocalIds(model);
-      const selectedIds = modelIdMap[modelId];
-      const selectedIdSet = selectedIds ?? new Set<number>();
       const contextIdsToDim = contextIds.filter(
-        (localId) => !selectedIdSet.has(localId)
+        (localId) => !selectedIds.has(localId)
       );
 
       if (contextIdsToDim.length > 0) {
-        for (let index = 0; index < contextIdsToDim.length; index += MODEL_ID_MAP_RENDER_CHUNK_SIZE) {
-          if (!isRenderOperationCurrent(token)) return;
-          await model.runtimeModel.setOpacity(
-            contextIdsToDim.slice(index, index + MODEL_ID_MAP_RENDER_CHUNK_SIZE),
-            0.16
-          );
-          await waitForNextFrame();
+        totalDimIds += contextIdsToDim.length;
+        dimWork.push({ model, ids: contextIdsToDim });
+      }
+    }
+
+    if (totalDimIds > CONTEXT_GHOST_MAX_DIM_IDS) {
+      for (const [modelId, selectedIds] of Object.entries(modelIdMap)) {
+        const model = models.find((entry) => entry.modelId === modelId);
+        if (model?.runtimeModel.resetOpacity && selectedIds?.size) {
+          await model.runtimeModel.resetOpacity(Array.from(selectedIds));
         }
       }
+      lastGhostedSelectionRef.current = null;
+      return false;
+    }
 
+    for (const { model, ids } of dimWork) {
+      if (!isRenderOperationCurrent(token)) return false;
+
+      for (let index = 0; index < ids.length; index += MODEL_ID_MAP_RENDER_CHUNK_SIZE) {
+        if (!isRenderOperationCurrent(token)) return false;
+        await model.runtimeModel.setOpacity(
+          ids.slice(index, index + MODEL_ID_MAP_RENDER_CHUNK_SIZE),
+          0.16
+        );
+        await waitForNextFrame();
+      }
+
+      const modelId = model.modelId;
+      const selectedIds = modelId ? modelIdMap[modelId] : undefined;
       if (selectedIds?.size) await model.runtimeModel.resetOpacity?.(Array.from(selectedIds));
     }
 
     lastGhostedSelectionRef.current = cloneModelIdMap(modelIdMap);
+    return true;
   }
 
   async function handleSelectModelIdMap(
@@ -9569,9 +9593,13 @@ export function IfcViewerCanvas({
       }
 
       if (!isRenderOperationCurrent(token)) return;
-      await applySelectionFocusMode(modelIdMap, token);
+      const ghostApplied = await applySelectionFocusMode(modelIdMap, token);
       setHasSelection(true);
-      setStatus(successStatus);
+      setStatus(
+        ghostApplied
+          ? successStatus
+          : successStatus + " Contexto atenuado omitido por tamano para proteger rendimiento."
+      );
       requestViewerRefresh();
     } catch (error) {
       console.error("[viewer-ifc] Error seleccionando elementos tabulares:", error);
