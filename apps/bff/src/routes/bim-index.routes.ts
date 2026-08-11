@@ -4,6 +4,7 @@ import {
   getBimModelByDocument,
   getBimIndexOverview,
   getBimCost5DAggregation,
+  getBimCost5DMeteringRows,
   getBimPropertyCatalog,
   getBimPropertyIndex,
   getBimPropertySummary,
@@ -16,6 +17,7 @@ import {
   upsertBimPropertyIndexSnapshot,
   type BimElementInput,
   type BimElementPropertyInput,
+  type BimCost5DMeteringColumnInput,
   type BimPropertyRef,
   type BimIndexJobStatus,
   type UpsertBimModelInput
@@ -190,6 +192,24 @@ function parseCsvQuery(value: unknown): string[] | undefined {
         .map((item) => item.trim())
         .filter(Boolean)
     : undefined;
+}
+
+function parseMeteringColumns(value: unknown): BimCost5DMeteringColumnInput[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.reduce<BimCost5DMeteringColumnInput[]>((columns, item, index) => {
+    if (!item || typeof item !== "object") return columns;
+    const data = item as Record<string, unknown>;
+    const ref = parsePropertyRef(data.ref);
+    if (!ref) return columns;
+
+    columns.push({
+      id: toText(data.id) ?? `col-${index}`,
+      label: toText(data.label),
+      ref
+    });
+    return columns;
+  }, []);
 }
 
 
@@ -407,6 +427,37 @@ router.post("/cost5d/aggregate", async (req, res) => {
       itemUnit: parsePropertyRef(body.itemUnit),
       quantity: parsePropertyRef(body.quantity),
       limit: Number.isFinite(limit) ? limit : undefined
+    });
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    return sendRouteError(res, error);
+  }
+});
+
+router.post("/cost5d/metering-rows", async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    const projectCode = toProjectCode(body.projectCode);
+    const columns = parseMeteringColumns(body.columns);
+
+    if (!projectCode || columns.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "projectCode y columns son obligatorios"
+      });
+    }
+
+    const limit = typeof body.limit === "number" ? body.limit : Number(body.limit);
+    const offset = typeof body.offset === "number" ? body.offset : Number(body.offset);
+    const data = await getBimCost5DMeteringRows({
+      projectCode,
+      modelIds: toStringArray(body.modelIds),
+      modelKeys: toStringArray(body.modelKeys),
+      columns,
+      search: toText(body.search),
+      limit: Number.isFinite(limit) ? limit : undefined,
+      offset: Number.isFinite(offset) ? offset : undefined
     });
 
     return res.json({ success: true, data });

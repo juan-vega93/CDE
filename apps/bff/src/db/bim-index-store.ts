@@ -182,6 +182,40 @@ export type BimCost5DAggregation = {
   };
 };
 
+export type BimCost5DMeteringColumnInput = {
+  id: string;
+  label?: string;
+  ref: BimPropertyRef;
+};
+
+export type BimCost5DMeteringRowsInput = {
+  projectCode: string;
+  modelIds?: string[];
+  modelKeys?: string[];
+  columns: BimCost5DMeteringColumnInput[];
+  search?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type BimCost5DMeteringRow = {
+  key: string;
+  modelId: string;
+  modelKey: string;
+  modelName: string;
+  className: string;
+  elementName: string;
+  localId: number;
+  values: string[];
+};
+
+export type BimCost5DMeteringRowsResult = {
+  projectCode: string;
+  total: number;
+  limit: number;
+  offset: number;
+  rows: BimCost5DMeteringRow[];
+};
 type BimModelRow = {
   id: string;
   project_code: string;
@@ -1060,6 +1094,185 @@ export async function getBimCost5DAggregation(
   };
 }
 
+export async function getBimCost5DMeteringRows(
+  input: BimCost5DMeteringRowsInput
+): Promise<BimCost5DMeteringRowsResult> {
+  ensureBimDatabaseEnabled();
+
+  const columns = input.columns
+    .map((column, index) => {
+      const ref = normalizePropertyRef(column.ref);
+      if (!ref) return null;
+      return {
+        id: normalizeText(column.id) || `col-${index}`,
+        label: normalizeText(column.label) || `${ref.setName}.${ref.propertyName}`,
+        ref
+      };
+    })
+    .filter((column): column is { id: string; label: string; ref: BimPropertyRef } =>
+      Boolean(column)
+    )
+    .slice(0, 12);
+
+  const limit = Math.max(1, Math.min(input.limit ?? 150, 500));
+  const offset = Math.max(0, input.offset ?? 0);
+  const search = normalizeText(input.search);
+  const searchPattern = search ? `%${search}%` : null;
+  const commonParams = [
+    input.projectCode,
+    input.modelIds?.length ? input.modelIds : null,
+    input.modelKeys?.length ? input.modelKeys : null,
+    searchPattern
+  ];
+  const whereSql = `
+        models.project_code = $1
+          and ($2::uuid[] is null or models.id = any($2::uuid[]))
+          and ($3::text[] is null or models.model_key = any($3::text[]))
+          and (
+            $4::text is null
+            or elements.element_name ilike $4
+            or elements.element_type ilike $4
+            or models.document_name ilike $4
+            or exists (
+              select 1
+              from cde_bim_property_values pv_search
+              where pv_search.bim_element_id = elements.id
+                and coalesce(
+                  pv_search.value_text,
+                  pv_search.value_number::text,
+                  pv_search.value_bool::text,
+                  pv_search.value_json::text
+                ) ilike $4
+            )
+          )
+  `;
+
+  const countResult = await getDatabasePool().query<{ total: string }>(
+    `
+      select count(*)::text as total
+      from cde_bim_elements elements
+      join cde_bim_models models on models.id = elements.bim_model_id
+      where ${whereSql}
+    `,
+    commonParams
+  );
+
+  const total = Number(countResult.rows[0]?.total ?? 0);
+  if (columns.length === 0) {
+    return { projectCode: input.projectCode, total, limit, offset, rows: [] };
+  }
+
+  const columnPayload = columns.map((column) => ({
+    id: column.id,
+    setName: column.ref.setName,
+    propertyName: column.ref.propertyName
+  }));
+
+  const result = await getDatabasePool().query<{
+    model_id: string;
+    model_key: string;
+    document_name: string;
+    local_id: number;
+    class_name: string;
+    element_name: string;
+    values: string[] | string;
+  }>(
+    `
+      with requested_columns as (
+        select
+          row_number() over () as ordinal,
+          column_data->>'id' as column_id,
+          column_data->>'setName' as set_name,
+          column_data->>'propertyName' as property_name
+        from jsonb_array_elements($7::jsonb) as columns(column_data)
+      ), page as (
+        select
+          elements.id,
+          elements.local_id,
+          coalesce(elements.element_type, '-') as class_name,
+          coalesce(elements.element_name, concat('Elemento ', elements.local_id::text)) as element_name,
+          models.id as model_id,
+          models.model_key,
+          models.document_name
+        from cde_bim_elements elements
+        join cde_bim_models models on models.id = elements.bim_model_id
+        where ${whereSql}
+        order by
+          models.document_name asc,
+          elements.element_type asc nulls last,
+          elements.element_name asc nulls last,
+          elements.local_id asc
+        limit $5 offset $6
+      ), property_values as (
+        select
+          page.id as element_id,
+          requested_columns.ordinal,
+          coalesce(property_value.value_key, '-') as value_key
+        from page
+        cross join requested_columns
+        left join lateral (
+          select coalesce(
+            values.value_text,
+            values.value_number::text,
+            values.value_bool::text,
+            values.value_json::text
+          ) as value_key
+          from cde_bim_property_values values
+          join cde_bim_properties properties on properties.id = values.property_id
+          join cde_bim_property_sets sets on sets.id = properties.property_set_id
+          where values.bim_element_id = page.id
+            and sets.name = requested_columns.set_name
+            and properties.name = requested_columns.property_name
+          limit 1
+        ) property_value on true
+      )
+      select
+        page.model_id::text as model_id,
+        page.model_key,
+        page.document_name,
+        page.local_id,
+        page.class_name,
+        page.element_name,
+        coalesce(jsonb_agg(property_values.value_key order by property_values.ordinal), '[]'::jsonb) as values
+      from page
+      left join property_values on property_values.element_id = page.id
+      group by
+        page.id,
+        page.model_id,
+        page.model_key,
+        page.document_name,
+        page.local_id,
+        page.class_name,
+        page.element_name
+      order by
+        page.document_name asc,
+        page.class_name asc,
+        page.element_name asc,
+        page.local_id asc
+    `,
+    [...commonParams, limit, offset, JSON.stringify(columnPayload)]
+  );
+
+  return {
+    projectCode: input.projectCode,
+    total,
+    limit,
+    offset,
+    rows: result.rows.map((row) => {
+      const rawValues = Array.isArray(row.values) ? row.values : JSON.parse(row.values || "[]");
+      return {
+        key: `${row.model_key}:${row.local_id}`,
+        modelId: row.model_id,
+        modelKey: row.model_key,
+        modelName: row.document_name,
+        className: row.class_name,
+        elementName: row.element_name,
+        localId: Number(row.local_id),
+        values: rawValues.map((value: unknown) => normalizeText(String(value ?? "")) || "-")
+      };
+    })
+  };
+}
 export async function getBimPropertyIndex(input: {
   projectCode: string;
   modelIds?: string[];

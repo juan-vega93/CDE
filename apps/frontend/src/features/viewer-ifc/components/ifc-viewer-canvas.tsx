@@ -313,6 +313,74 @@ function serverCostRowsToCost5DRows(data: Cost5DServerAggregation | null): Cost5
   }));
 }
 
+type Cost5DServerMeteringRows = {
+  projectCode: string;
+  total: number;
+  limit: number;
+  offset: number;
+  rows: Array<{
+    key: string;
+    modelId: string;
+    modelKey: string;
+    modelName: string;
+    className: string;
+    elementName: string;
+    localId: number;
+    values: string[];
+  }>;
+};
+
+async function loadCost5DMeteringRowsFromDatabase(input: {
+  projectCode?: string;
+  modelKeys: string[];
+  columns: MeteringColumn[];
+  search: string;
+  limit: number;
+  offset: number;
+}): Promise<Cost5DServerMeteringRows | null> {
+  const normalizedProjectCode = input.projectCode?.trim().toUpperCase();
+  const modelKeys = input.modelKeys.map((key) => key.trim()).filter(Boolean);
+  const columns = input.columns
+    .map((column) => ({
+      id: column.id,
+      label: column.label,
+      ref: toBimPropertyRefPayload({ set: column.set, property: column.property })
+    }))
+    .filter(
+      (column): column is {
+        id: string;
+        label: string;
+        ref: { setName: string; propertyName: string };
+      } => Boolean(column.ref)
+    );
+
+  if (!normalizedProjectCode || modelKeys.length === 0 || columns.length === 0) return null;
+
+  try {
+    const response = await bffFetch("/api/bim-index/cost5d/metering-rows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectCode: normalizedProjectCode,
+        modelKeys,
+        columns,
+        search: input.search,
+        limit: input.limit,
+        offset: input.offset
+      })
+    });
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as {
+      success?: boolean;
+      data?: Cost5DServerMeteringRows;
+    };
+    return payload.success && payload.data ? payload.data : null;
+  } catch (error) {
+    console.warn("[viewer-ifc] No se pudo leer tabla 5D paginada:", error);
+    return null;
+  }
+}
 async function loadSmartViewPropertyIndexFromDatabase(input: {
   projectCode?: string;
   modelKeys: string[];
@@ -5098,9 +5166,19 @@ function Cost5DPanel({
   const [serverAggregation, setServerAggregation] =
     useState<Cost5DServerAggregation | null>(null);
   const [serverAggregationLoading, setServerAggregationLoading] = useState(false);
+  const [serverMeteringRows, setServerMeteringRows] =
+    useState<Cost5DServerMeteringRows | null>(null);
+  const [serverMeteringLoading, setServerMeteringLoading] = useState(false);
   const deferredSearch = useDeferredValue(search);
   const loadedModelKeys = useMemo(
-    () => models.map((model) => model.key).filter(Boolean),
+    () =>
+      models
+        .map((model) => model.key)
+        .filter((key): key is string => Boolean(key)),
+    [models]
+  );
+  const runtimeModelIdByKey = useMemo(
+    () => new Map(models.map((model) => [model.key, model.modelId])),
     [models]
   );
   const selectorSource = useMemo(
@@ -5177,18 +5255,38 @@ function Cost5DPanel({
     () => meteringColumns.filter((column) => column.set && column.property),
     [meteringColumns]
   );
+  const shouldUseServerMetering =
+    mode === "metrados" &&
+    Boolean(projectCode) &&
+    loadedModelKeys.length > 0 &&
+    activeMeteringColumns.length > 0;
+  const serverVisibleMeteringRows = useMemo<MeteringRow[]>(
+    () =>
+      serverMeteringRows?.rows.map((row) => ({
+        key: row.key,
+        modelId: runtimeModelIdByKey.get(row.modelKey) ?? row.modelKey,
+        modelName: row.modelName,
+        localId: row.localId,
+        type: row.className,
+        name: row.elementName,
+        values: row.values
+      })) ?? [],
+    [runtimeModelIdByKey, serverMeteringRows]
+  );
   const meteringRows = useMemo(
     () =>
-      mode === "metrados"
+      mode === "metrados" && !shouldUseServerMetering
         ? buildMeteringRows({
             models,
             propertyIndex,
             columns: activeMeteringColumns
           })
         : [],
-    [activeMeteringColumns, mode, models, propertyIndex]
+    [activeMeteringColumns, mode, models, propertyIndex, shouldUseServerMetering]
   );
   const filteredMeteringRows = useMemo(() => {
+    if (shouldUseServerMetering) return serverVisibleMeteringRows;
+
     const normalized = deferredSearch.trim().toLowerCase();
     if (!normalized) return meteringRows;
 
@@ -5198,20 +5296,27 @@ function Cost5DPanel({
         .toLowerCase()
         .includes(normalized)
     );
-  }, [meteringRows, deferredSearch]);
+  }, [deferredSearch, meteringRows, serverVisibleMeteringRows, shouldUseServerMetering]);
+  const meteringTotalCount = shouldUseServerMetering
+    ? serverMeteringRows?.total ?? 0
+    : filteredMeteringRows.length;
   const meteringTotalPages = Math.max(
     1,
-    Math.ceil(filteredMeteringRows.length / meteringPageSize)
+    Math.ceil(meteringTotalCount / meteringPageSize)
   );
   const safeMeteringPage = Math.min(meteringPage, meteringTotalPages - 1);
-  const meteringPageStart = safeMeteringPage * meteringPageSize;
-  const visibleMeteringRows = filteredMeteringRows.slice(
-    meteringPageStart,
-    meteringPageStart + meteringPageSize
-  );
+  const meteringPageStart = shouldUseServerMetering
+    ? serverMeteringRows?.offset ?? safeMeteringPage * meteringPageSize
+    : safeMeteringPage * meteringPageSize;
+  const visibleMeteringRows = shouldUseServerMetering
+    ? serverVisibleMeteringRows
+    : filteredMeteringRows.slice(
+        meteringPageStart,
+        meteringPageStart + meteringPageSize
+      );
   useEffect(() => {
     setMeteringPage(0);
-  }, [deferredSearch, meteringPageSize, meteringRows.length]);
+  }, [activeMeteringColumns, deferredSearch, meteringPageSize, mode]);
 
   useEffect(() => {
     setMeteringPage((current) =>
@@ -5219,12 +5324,50 @@ function Cost5DPanel({
     );
   }, [meteringTotalPages]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshServerMeteringRows() {
+      if (!shouldUseServerMetering || !projectCode) {
+        setServerMeteringRows(null);
+        return;
+      }
+
+      setServerMeteringLoading(true);
+      const data = await loadCost5DMeteringRowsFromDatabase({
+        projectCode,
+        modelKeys: loadedModelKeys,
+        columns: activeMeteringColumns,
+        search: deferredSearch,
+        limit: meteringPageSize,
+        offset: safeMeteringPage * meteringPageSize
+      });
+      if (!cancelled) {
+        setServerMeteringRows(data);
+        setServerMeteringLoading(false);
+      }
+    }
+
+    void refreshServerMeteringRows();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeMeteringColumns,
+    deferredSearch,
+    loadedModelKeys,
+    meteringPageSize,
+    projectCode,
+    safeMeteringPage,
+    shouldUseServerMetering
+  ]);
+
   function handleExportMeteringCsv() {
-    if (filteredMeteringRows.length === 0) return;
+    if (visibleMeteringRows.length === 0) return;
 
     downloadTextFile(
       `metrados-${Date.now()}.csv`,
-      buildMeteringCsv(filteredMeteringRows, activeMeteringColumns),
+      buildMeteringCsv(visibleMeteringRows, activeMeteringColumns),
       "text/csv;charset=utf-8"
     );
   }
@@ -5273,7 +5416,8 @@ function Cost5DPanel({
             bimIndexOverviewLoading ||
             propertiesIndexLoading ||
             propertyCatalogLoading ||
-            serverAggregationLoading
+            serverAggregationLoading ||
+            serverMeteringLoading
           }
         />
         {serverRows && propertyIndex.sets.length === 0 ? (
@@ -5296,7 +5440,7 @@ function Cost5DPanel({
                 <button
                   type="button"
                   onClick={handleExportMeteringCsv}
-                  disabled={filteredMeteringRows.length === 0}
+                  disabled={visibleMeteringRows.length === 0}
                   className="min-h-8 rounded bg-zinc-800 px-3 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
                 >
                   CSV
@@ -5365,14 +5509,14 @@ function Cost5DPanel({
                 </span>
                 <div className="flex flex-wrap items-center justify-end gap-2 text-zinc-500">
                   <span>
-                    {meteringRows.length >= MAX_METERING_ROWS
-                      ? `Limite frontend: ${MAX_METERING_ROWS} filas`
-                      : filteredMeteringRows.length === 0
+                    {serverMeteringLoading
+                      ? "Cargando pagina..."
+                      : meteringTotalCount === 0
                         ? "Sin filas"
                         : `${meteringPageStart + 1}-${Math.min(
-                            meteringPageStart + meteringPageSize,
-                            filteredMeteringRows.length
-                          )} de ${filteredMeteringRows.length}`}
+                            meteringPageStart + visibleMeteringRows.length,
+                            meteringTotalCount
+                          )} de ${meteringTotalCount}`}
                   </span>
                   <select
                     value={meteringPageSize}
