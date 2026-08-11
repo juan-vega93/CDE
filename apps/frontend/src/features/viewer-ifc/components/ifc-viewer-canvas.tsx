@@ -381,6 +381,61 @@ async function loadCost5DMeteringRowsFromDatabase(input: {
     return null;
   }
 }
+async function exportCost5DMeteringRowsFromDatabase(input: {
+  projectCode?: string;
+  modelKeys: string[];
+  columns: MeteringColumn[];
+  search: string;
+}): Promise<boolean> {
+  const normalizedProjectCode = input.projectCode?.trim().toUpperCase();
+  const modelKeys = input.modelKeys.map((key) => key.trim()).filter(Boolean);
+  const columns = input.columns
+    .map((column) => ({
+      id: column.id,
+      label: column.label,
+      ref: toBimPropertyRefPayload({ set: column.set, property: column.property })
+    }))
+    .filter(
+      (column): column is {
+        id: string;
+        label: string;
+        ref: { setName: string; propertyName: string };
+      } => Boolean(column.ref)
+    );
+
+  if (!normalizedProjectCode || modelKeys.length === 0 || columns.length === 0) return false;
+
+  try {
+    const response = await bffFetch("/api/bim-index/cost5d/metering-rows/export.csv", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectCode: normalizedProjectCode,
+        modelKeys,
+        columns,
+        search: input.search
+      })
+    });
+    if (!response.ok) return false;
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const filenameMatch = /filename="?([^";]+)"?/i.exec(disposition);
+    const filename = filenameMatch?.[1] ?? `metrados-${normalizedProjectCode}-${Date.now()}.csv`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    return true;
+  } catch (error) {
+    console.warn("[viewer-ifc] No se pudo exportar metrados desde DB:", error);
+    return false;
+  }
+}
 async function loadSmartViewPropertyIndexFromDatabase(input: {
   projectCode?: string;
   modelKeys: string[];
@@ -5169,6 +5224,7 @@ function Cost5DPanel({
   const [serverMeteringRows, setServerMeteringRows] =
     useState<Cost5DServerMeteringRows | null>(null);
   const [serverMeteringLoading, setServerMeteringLoading] = useState(false);
+  const [meteringExporting, setMeteringExporting] = useState(false);
   const deferredSearch = useDeferredValue(search);
   const loadedModelKeys = useMemo(
     () =>
@@ -5362,7 +5418,22 @@ function Cost5DPanel({
     shouldUseServerMetering
   ]);
 
-  function handleExportMeteringCsv() {
+  async function handleExportMeteringCsv() {
+    if (shouldUseServerMetering) {
+      setMeteringExporting(true);
+      try {
+        const exported = await exportCost5DMeteringRowsFromDatabase({
+          projectCode,
+          modelKeys: loadedModelKeys,
+          columns: activeMeteringColumns,
+          search: deferredSearch
+        });
+        if (exported) return;
+      } finally {
+        setMeteringExporting(false);
+      }
+    }
+
     if (visibleMeteringRows.length === 0) return;
 
     downloadTextFile(
@@ -5440,11 +5511,9 @@ function Cost5DPanel({
                 <button
                   type="button"
                   onClick={handleExportMeteringCsv}
-                  disabled={visibleMeteringRows.length === 0}
+                  disabled={meteringExporting || activeMeteringColumns.length === 0 || (!shouldUseServerMetering && visibleMeteringRows.length === 0)}
                   className="min-h-8 rounded bg-zinc-800 px-3 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
-                >
-                  CSV
-                </button>
+                >{meteringExporting ? "Exportando" : "CSV"}</button>
               </div>
               <div className="space-y-2">
                 {meteringColumns.map((column, index) => (
@@ -6245,9 +6314,7 @@ function AuditPanel({
             onClick={onExportCsv}
             disabled={results.length === 0}
             className="min-h-8 rounded bg-zinc-800 px-3 text-sm text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
-          >
-            CSV
-          </button>
+          >{"CSV"}</button>
           <button
             type="button"
             onClick={onPrintReport}
@@ -8179,17 +8246,69 @@ export function IfcViewerCanvas({
     const runId = smartViewIndexRunRef.current + 1;
     smartViewIndexRunRef.current = runId;
     setSmartViewPropertiesIndexLoading(true);
-    setStatus("Indexando propiedades para SmartView...");
+    setStatus("Buscando indice BIM en base de datos...");
     let indexingJobModels: FederatedModelEntry[] = [];
     let indexingJobSignature = "";
 
     try {
+      const modelKeys = models.map((model) => model.key).filter(Boolean);
+      const lightweightSignature =
+        loadedModelsSignature || modelKeys.join("|") || "no-models";
+
+      if (modelKeys.length === 0) {
+        setStatus("Carga un modelo para indexar parametros BIM.");
+        return;
+      }
+
+      if (smartViewIndexInFlightSignatureRef.current === lightweightSignature) {
+        setStatus("Indice BIM ya esta en proceso para los modelos cargados.");
+        return;
+      }
+      smartViewIndexInFlightSignatureRef.current = lightweightSignature;
+      indexingJobSignature = lightweightSignature;
+
+      if (
+        smartViewPropertyIndexSignature === lightweightSignature &&
+        smartViewPropertyIndex.sets.length > 0
+      ) {
+        setStatus("Indice de parametros vigente para los modelos cargados.");
+        return;
+      }
+
+      const normalizedDbIndex = await loadSmartViewPropertyIndexFromDatabase({
+        projectCode,
+        modelKeys
+      });
+
+      if (normalizedDbIndex && smartViewIndexRunRef.current === runId) {
+        setSmartViewPropertyIndex(normalizedDbIndex);
+        setSmartViewPropertyIndexSignature(lightweightSignature);
+        setStatus(`Indice BIM recuperado desde PostgreSQL: ${normalizedDbIndex.sets.length} conjuntos.`);
+        return;
+      }
+
+      const lightweightPersistedIndex = await loadSmartViewPropertyIndexSnapshot(
+        projectCode,
+        lightweightSignature
+      );
+
+      if (lightweightPersistedIndex && smartViewIndexRunRef.current === runId) {
+        setSmartViewPropertyIndex(lightweightPersistedIndex);
+        setSmartViewPropertyIndexSignature(lightweightSignature);
+        setStatus(`Indice BIM recuperado desde snapshot: ${lightweightPersistedIndex.sets.length} conjuntos.`);
+        return;
+      }
+
+      setStatus("Indexando propiedades para SmartView...");
       const analysisModels = await ensureSpatialTreesForAnalysis();
       const analysisSignature = getFederatedModelsAnalysisSignature(analysisModels);
       indexingJobModels = analysisModels;
       indexingJobSignature = analysisSignature;
 
-      if (smartViewIndexInFlightSignatureRef.current === analysisSignature) {
+      if (
+        smartViewIndexInFlightSignatureRef.current === analysisSignature &&
+        analysisSignature !== lightweightSignature
+      ) {
         setStatus("Indice BIM ya esta en proceso para los modelos cargados.");
         return;
       }
@@ -8200,18 +8319,6 @@ export function IfcViewerCanvas({
         smartViewPropertyIndex.sets.length > 0
       ) {
         setStatus("Indice de parametros vigente para los modelos cargados.");
-        return;
-      }
-
-      const normalizedDbIndex = await loadSmartViewPropertyIndexFromDatabase({
-        projectCode,
-        modelKeys: analysisModels.map((model) => model.key)
-      });
-
-      if (normalizedDbIndex && smartViewIndexRunRef.current === runId) {
-        setSmartViewPropertyIndex(normalizedDbIndex);
-        setSmartViewPropertyIndexSignature(analysisSignature);
-        setStatus(`Indice BIM recuperado desde catalogo normalizado: ${normalizedDbIndex.sets.length} conjuntos.`);
         return;
       }
 

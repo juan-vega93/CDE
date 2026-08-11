@@ -26,6 +26,8 @@ import {
 const router = Router();
 
 const MAX_ELEMENTS_PER_BATCH = 1200;
+const METERING_EXPORT_PAGE_SIZE = 500;
+const METERING_EXPORT_MAX_ROWS = 50000;
 
 function isDatabaseDisabled(error: unknown): boolean {
   return error instanceof Error && error.name === "DatabaseDisabledError";
@@ -212,6 +214,32 @@ function parseMeteringColumns(value: unknown): BimCost5DMeteringColumnInput[] {
   }, []);
 }
 
+function csvEscape(value: unknown): string {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function buildMeteringCsv(input: {
+  columns: BimCost5DMeteringColumnInput[];
+  rows: Awaited<ReturnType<typeof getBimCost5DMeteringRows>>["rows"];
+}): string {
+  const headers = [
+    "Modelo",
+    "LocalId",
+    "Clase IFC",
+    "Nombre",
+    ...input.columns.map((column) => column.label || column.ref.propertyName)
+  ];
+  const body = input.rows.map((row) => [
+    row.modelName,
+    row.localId,
+    row.className,
+    row.elementName,
+    ...row.values
+  ]);
+
+  return [headers, ...body].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
 
 router.get("/overview", async (req, res) => {
   try {
@@ -466,6 +494,53 @@ router.post("/cost5d/metering-rows", async (req, res) => {
   }
 });
 
+router.post("/cost5d/metering-rows/export.csv", async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    const projectCode = toProjectCode(body.projectCode);
+    const columns = parseMeteringColumns(body.columns);
+
+    if (!projectCode || columns.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "projectCode y columns son obligatorios"
+      });
+    }
+
+    const rows: Awaited<ReturnType<typeof getBimCost5DMeteringRows>>["rows"] = [];
+    let total = 0;
+    let offset = 0;
+
+    while (rows.length < METERING_EXPORT_MAX_ROWS) {
+      const page = await getBimCost5DMeteringRows({
+        projectCode,
+        modelIds: toStringArray(body.modelIds),
+        modelKeys: toStringArray(body.modelKeys),
+        columns,
+        search: toText(body.search),
+        limit: Math.min(METERING_EXPORT_PAGE_SIZE, METERING_EXPORT_MAX_ROWS - rows.length),
+        offset
+      });
+
+      total = page.total;
+      rows.push(...page.rows);
+
+      if (page.rows.length === 0 || rows.length >= total) break;
+      offset += page.rows.length;
+    }
+
+    const filename = `metrados-${projectCode}-${Date.now()}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("X-CDE-Export-Total", String(total));
+    res.setHeader("X-CDE-Export-Rows", String(rows.length));
+    res.setHeader("X-CDE-Export-Truncated", rows.length < total ? "true" : "false");
+
+    return res.send(`\uFEFF${buildMeteringCsv({ columns, rows })}`);
+  } catch (error) {
+    return sendRouteError(res, error);
+  }
+});
 router.get("/properties/catalog", async (req, res) => {
   try {
     const projectCode = toProjectCode(req.query.projectCode);
