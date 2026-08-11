@@ -4262,6 +4262,84 @@ function buildParameterDonutGradient(buckets: ParameterValueBucket[]) {
 }
 
 const EMPTY_COST_5D_REF: Cost5DPropertyRef = { set: "", property: "" };
+function normalizeCost5DToken(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasCost5DRef(ref: Cost5DPropertyRef) {
+  return Boolean(ref.set.trim() && ref.property.trim());
+}
+
+function findCost5DPropertyRef(
+  source: SmartViewSelectorSource,
+  matcher: (setName: string, propertyName: string, combined: string) => boolean
+): Cost5DPropertyRef {
+  for (const setName of source.sets) {
+    const properties = source.propertiesBySet[setName] ?? [];
+    for (const propertyName of properties) {
+      if (isSmartViewInternalPropertyKey(propertyName)) continue;
+
+      const normalizedSet = normalizeCost5DToken(setName);
+      const normalizedProperty = normalizeCost5DToken(propertyName);
+      const combined = `${normalizedSet} ${normalizedProperty}`;
+
+      if (matcher(normalizedSet, normalizedProperty, combined)) {
+        return { set: setName, property: propertyName };
+      }
+    }
+  }
+
+  return EMPTY_COST_5D_REF;
+}
+
+function getSuggestedCost5DMapping(
+  source: SmartViewSelectorSource
+): Cost5DMapping {
+  return {
+    itemId: findCost5DPropertyRef(source, (setName, propertyName, combined) =>
+      combined.includes("id partida") ||
+      combined.includes("codigo partida") ||
+      ((setName.includes("datos actividad") ||
+        setName.includes("datos partida") ||
+        setName.includes("conjunto")) &&
+        propertyName.includes("id") &&
+        propertyName.includes("partida"))
+    ),
+    itemName: findCost5DPropertyRef(source, (setName, propertyName, combined) =>
+      combined.includes("nombre partida") ||
+      combined.includes("descripcion partida") ||
+      ((setName.includes("datos actividad") ||
+        setName.includes("datos partida") ||
+        setName.includes("conjunto")) &&
+        propertyName.includes("partida") &&
+        !propertyName.includes("id") &&
+        !propertyName.includes("unidad"))
+    ),
+    itemUnit: findCost5DPropertyRef(source, (_setName, propertyName, combined) =>
+      combined.includes("unidad medida") ||
+      propertyName === "unidad" ||
+      propertyName === "und" ||
+      propertyName.includes("unidad")
+    ),
+    quantity: findCost5DPropertyRef(source, (_setName, propertyName, _combined) =>
+      propertyName === "metrado" ||
+      propertyName.includes("metrado") ||
+      propertyName === "volume" ||
+      propertyName === "volumen" ||
+      propertyName === "area" ||
+      propertyName.includes("superficie") ||
+      propertyName.includes("cantidad") ||
+      propertyName === "length" ||
+      propertyName === "longitud"
+    )
+  };
+}
 
 function buildCost5DValueLookup(
   propertyIndex: SmartViewPropertyIndex,
@@ -5329,16 +5407,40 @@ function Cost5DPanel({
   );
 
   useEffect(() => {
+    setMapping((current) => {
+      const suggested = getSuggestedCost5DMapping(selectorSource);
+      const next = { ...current };
+      let changed = false;
+
+      if (!hasCost5DRef(next.itemId) && hasCost5DRef(suggested.itemId)) {
+        next.itemId = suggested.itemId;
+        changed = true;
+      }
+      if (!hasCost5DRef(next.itemName) && hasCost5DRef(suggested.itemName)) {
+        next.itemName = suggested.itemName;
+        changed = true;
+      }
+      if (!hasCost5DRef(next.itemUnit) && hasCost5DRef(suggested.itemUnit)) {
+        next.itemUnit = suggested.itemUnit;
+        changed = true;
+      }
+      if (!hasCost5DRef(next.quantity) && hasCost5DRef(suggested.quantity)) {
+        next.quantity = suggested.quantity;
+        changed = true;
+      }
+
+      return changed ? next : current;
+    });
+  }, [selectorSource]);
+  const shouldUseServerCost5D = Boolean(
+    projectCode && loadedModelKeys.length > 0 && hasCost5DRef(mapping.itemId)
+  );
+
+  useEffect(() => {
     let cancelled = false;
 
     async function refreshServerAggregation() {
-      if (
-        !projectCode ||
-        loadedModelKeys.length === 0 ||
-        !mapping.itemId.set ||
-        !mapping.itemId.property ||
-        propertyIndex.sets.length > 0
-      ) {
+      if (!shouldUseServerCost5D || !projectCode) {
         setServerAggregation(null);
         return;
       }
@@ -5359,12 +5461,16 @@ function Cost5DPanel({
     return () => {
       cancelled = true;
     };
-  }, [loadedModelKeys, mapping, projectCode, propertyIndex.sets.length]);
+  }, [loadedModelKeys, mapping, projectCode, shouldUseServerCost5D]);
 
   const localRows = useMemo(
-    () => buildCost5DRows({ models, propertyIndex, mapping }),
-    [models, propertyIndex, mapping]
+    () =>
+      shouldUseServerCost5D
+        ? []
+        : buildCost5DRows({ models, propertyIndex, mapping }),
+    [models, propertyIndex, mapping, shouldUseServerCost5D]
   );
+
   const serverRows = useMemo(
     () => serverCostRowsToCost5DRows(serverAggregation),
     [serverAggregation]
@@ -5577,7 +5683,7 @@ function Cost5DPanel({
             serverMeteringLoading
           }
         />
-        {serverRows && propertyIndex.sets.length === 0 ? (
+        {serverRows ? (
           <div className="rounded border border-emerald-800/60 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">
             Partidas cargadas desde base de datos. Carga parametros solo si necesitas seleccionar elementos exactos en el visor.
           </div>
@@ -13917,3 +14023,6 @@ async function handleIsolateModel(key: string) {
     </section>
   );
 }
+
+
+

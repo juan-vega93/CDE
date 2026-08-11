@@ -36,6 +36,42 @@ function getParentFolder(path: string) {
   parts.pop();
   return parts.length ? `/${parts.join("/")}` : "/";
 }
+function mergeFolderTrees(
+  current: FolderTreeNode | null,
+  incoming: FolderTreeNode | null
+): FolderTreeNode | null {
+  if (!incoming) return current;
+  if (!current) return incoming;
+
+  const currentPath = normalizeExplorerPath(current.path);
+  const incomingPath = normalizeExplorerPath(incoming.path);
+
+  if (currentPath !== incomingPath) {
+    return incoming;
+  }
+
+  const childMap = new Map<string, FolderTreeNode>();
+
+  current.children.forEach((child) => {
+    childMap.set(normalizeExplorerPath(child.path), child);
+  });
+
+  incoming.children.forEach((child) => {
+    const key = normalizeExplorerPath(child.path);
+    const existing = childMap.get(key) ?? null;
+    childMap.set(key, mergeFolderTrees(existing, child) ?? child);
+  });
+
+  return {
+    ...incoming,
+    children: Array.from(childMap.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "es", {
+        numeric: true,
+        sensitivity: "base"
+      })
+    )
+  };
+}
 
 function getMenuPosition(rect: DOMRect, width = 256, estimatedHeight = 180) {
   const left = Math.min(
@@ -80,7 +116,7 @@ export function DocumentsExplorerPanel({
   );
 
   useEffect(() => {
-    setLocalFolderTree(folderTree);
+    setLocalFolderTree((current) => mergeFolderTrees(current, folderTree));
   }, [folderTree]);
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -693,4 +729,6 @@ export function DocumentsExplorerPanel({
     </section>
   );
 }
+
+
 
