@@ -1538,6 +1538,7 @@ const BIM_INDEX_PERSIST_BATCH_SIZE = 80;
 const BIM_INDEX_PERSIST_MAX_CONCURRENT = 1;
 const MAX_INDEXED_VALUES_PER_PROPERTY = 450;
 const MAX_LOCAL_IDS_PER_VALUE_BUCKET = 8000;
+const PARAMETER_ANALYSIS_LOCAL_BUCKET_MAX_IDS = 25000;
 const MAX_MODEL_ID_MAP_EXPANSION_IDS = 1500;
 const MAX_NATIVE_LEVEL_INDEX_LOCAL_IDS = 80000;
 const NATIVE_LEVEL_INDEX_BATCH_SIZE = 80;
@@ -4608,14 +4609,34 @@ function ParameterAnalysisPanel({
     });
   }, [modelKeySignature, projectCode, propertyName, propertySet]);
   const [databaseBucketsResolvedKey, setDatabaseBucketsResolvedKey] = useState("");
+  const parameterAnalysisLocalIdCount = useMemo(
+    () =>
+      Object.values(propertyIndex.localIdsByModelKey ?? {}).reduce(
+        (sum, ids) => sum + ids.length,
+        0
+      ),
+    [propertyIndex.localIdsByModelKey]
+  );
+  const localBucketsWouldBeHeavy =
+    parameterAnalysisLocalIdCount > PARAMETER_ANALYSIS_LOCAL_BUCKET_MAX_IDS;
   const shouldBuildLocalBuckets = Boolean(
     propertySet &&
       propertyName &&
       propertyIndex.sets.length > 0 &&
+      !localBucketsWouldBeHeavy &&
       (!databaseBucketsRequestKey ||
         (!databaseBucketsLoading &&
           databaseBucketsResolvedKey === databaseBucketsRequestKey &&
           databaseBuckets === null))
+  );
+  const localBucketsSkippedForPerformance = Boolean(
+    propertySet &&
+      propertyName &&
+      propertyIndex.sets.length > 0 &&
+      localBucketsWouldBeHeavy &&
+      !databaseBucketsLoading &&
+      databaseBucketsResolvedKey === databaseBucketsRequestKey &&
+      databaseBuckets === null
   );
   const localBuckets = useMemo(
     () =>
@@ -4850,6 +4871,14 @@ function ParameterAnalysisPanel({
             </div>
           </div>
         </div>
+
+        {localBucketsSkippedForPerformance ? (
+          <div className="rounded border border-amber-800/70 bg-amber-950/40 p-3 text-xs text-amber-100">
+            El indice local tiene {parameterAnalysisLocalIdCount.toLocaleString()} elementos.
+            Para evitar pausas del navegador, este analisis se debe resolver desde PostgreSQL.
+            Pulsa Cargar parametros y vuelve a aplicar el analisis cuando el indice quede listo.
+          </div>
+        ) : null}
 
         <div className="flex gap-2">
           <button
