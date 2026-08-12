@@ -627,6 +627,8 @@ router.post("/properties/query", async (req, res) => {
       modelKeys: toStringArray(body.modelKeys),
       property,
       propertyValue: toText(body.propertyValue),
+      ifcClass: toText(body.ifcClass),
+      levelName: toText(body.levelName),
       maxIdsPerModel: Number.isFinite(maxIdsPerModel) ? maxIdsPerModel : undefined
     });
 

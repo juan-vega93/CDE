@@ -148,15 +148,6 @@ function getSmartViewSelectorSource(
   propertyIndex: SmartViewPropertyIndex,
   propertyCatalog: SmartViewPropertyCatalog | null
 ): SmartViewSelectorSource {
-  if (propertyIndex.sets.length > 0) {
-    return {
-      sets: propertyIndex.sets,
-      propertiesBySet: propertyIndex.propertiesBySet,
-      valuesBySetAndProperty: propertyIndex.valuesBySetAndProperty,
-      source: "index"
-    };
-  }
-
   if (propertyCatalog && propertyCatalog.sets.length > 0) {
     const valuesBySetAndProperty: Record<string, Record<string, string[]>> = {};
 
@@ -175,6 +166,15 @@ function getSmartViewSelectorSource(
       propertiesBySet: propertyCatalog.propertiesBySet,
       valuesBySetAndProperty,
       source: "catalog"
+    };
+  }
+
+  if (propertyIndex.sets.length > 0) {
+    return {
+      sets: propertyIndex.sets,
+      propertiesBySet: propertyIndex.propertiesBySet,
+      valuesBySetAndProperty: propertyIndex.valuesBySetAndProperty,
+      source: "index"
     };
   }
 
@@ -470,12 +470,16 @@ async function loadSmartViewPropertyLocalIdsFromDatabase(input: {
   propertySet: string;
   propertyName: string;
   propertyValue?: string;
+  ifcClass?: string;
+  levelName?: string;
 }): Promise<Record<string, number[]> | null> {
   const normalizedProjectCode = input.projectCode?.trim().toUpperCase();
   const modelKeys = input.modelKeys.map((key) => key.trim()).filter(Boolean);
   const propertySet = input.propertySet.trim();
   const propertyName = input.propertyName.trim();
   const propertyValue = input.propertyValue?.trim();
+  const ifcClass = input.ifcClass?.trim();
+  const levelName = input.levelName?.trim();
 
   if (!normalizedProjectCode || modelKeys.length === 0 || !propertySet || !propertyName) return null;
 
@@ -487,6 +491,8 @@ async function loadSmartViewPropertyLocalIdsFromDatabase(input: {
         modelKeys,
         property: { setName: propertySet, propertyName },
         propertyValue: propertyValue || undefined,
+        ifcClass: ifcClass || undefined,
+        levelName: levelName || undefined,
         maxIdsPerModel: 250000
       })
     });
@@ -9020,7 +9026,9 @@ export function IfcViewerCanvas({
             : analysisModels.map((model) => model.key),
           propertySet: criteria.propertySet,
           propertyName: criteria.propertyName,
-          propertyValue: criteria.propertyValue
+          propertyValue: criteria.propertyValue,
+          ifcClass: normalizedType || undefined,
+          levelName: criteria.level || undefined
         })
       : null;
 
@@ -9028,7 +9036,7 @@ export function IfcViewerCanvas({
       if (criteria.modelKey && model.key !== criteria.modelKey) continue;
       if (!model.modelId) continue;
 
-      if (dbLocalIdsByModelKey && !normalizedType && !normalizedLevel) {
+      if (dbLocalIdsByModelKey) {
         const dbIds = dbLocalIdsByModelKey[model.key] ?? [];
         if (dbIds.length > 0) {
           result[model.modelId] = new Set(dbIds);

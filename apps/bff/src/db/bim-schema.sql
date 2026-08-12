@@ -228,6 +228,9 @@ create index if not exists cde_bim_properties_set_normalized_idx
 create index if not exists cde_bim_property_values_element_property_idx
   on cde_bim_property_values (bim_element_id, property_id);
 
+create index if not exists cde_bim_property_values_property_element_idx
+  on cde_bim_property_values (property_id, bim_element_id);
+
 create index if not exists cde_bim_property_values_property_nonempty_text_idx
   on cde_bim_property_values (property_id, value_text)
   where value_text is not null and value_text <> '';

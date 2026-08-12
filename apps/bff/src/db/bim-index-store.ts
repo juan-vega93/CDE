@@ -159,6 +159,8 @@ export type BimPropertyLocalIdsQueryInput = {
   modelKeys?: string[];
   property: BimPropertyRef;
   propertyValue?: string;
+  ifcClass?: string;
+  levelName?: string;
   maxIdsPerModel?: number;
 };
 
@@ -1620,6 +1622,8 @@ export async function queryBimPropertyLocalIds(
 
   const maxIdsPerModel = Math.max(1, Math.min(input.maxIdsPerModel ?? 100000, 250000));
   const propertyValue = normalizeText(input.propertyValue);
+  const ifcClass = normalizeText(input.ifcClass);
+  const levelName = normalizeText(input.levelName);
 
   const result = await getDatabasePool().query<{
     model_key: string;
@@ -1654,12 +1658,18 @@ export async function queryBimPropertyLocalIds(
               ''
             )) = lower($6)
           )
+          and (
+            $7::text is null
+            or upper(elements.ifc_class) = upper($7)
+            or (upper($7) not like 'IFC%' and upper(elements.ifc_class) = upper('IFC' || $7))
+          )
+          and ($8::text is null or lower(coalesce(elements.level_name, '')) = lower($8))
       )
       select
         model_key,
         array_agg(local_id order by local_id) as local_ids
       from matches
-      where rn <= $7
+      where rn <= $9
       group by model_key
     `,
     [
@@ -1669,6 +1679,8 @@ export async function queryBimPropertyLocalIds(
       input.property.setName,
       input.property.propertyName,
       propertyValue,
+      ifcClass,
+      levelName,
       maxIdsPerModel
     ]
   );
