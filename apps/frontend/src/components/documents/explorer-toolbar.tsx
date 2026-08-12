@@ -110,8 +110,8 @@ export function ExplorerToolbar({
   }
 
   return (
-    <section className="overflow-hidden rounded border border-slate-300 bg-white">
-      <div className="flex flex-col gap-2 border-b border-slate-200 px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
+    <section className="w-full max-w-full overflow-hidden rounded border border-slate-300 bg-white">
+      <div className="flex min-w-0 flex-col gap-2 border-b border-slate-200 px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <span className="font-semibold uppercase tracking-wide">
@@ -128,7 +128,7 @@ export function ExplorerToolbar({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
           {canGoUp ? (
             <Link
               href={parentHref}
@@ -171,7 +171,7 @@ export function ExplorerToolbar({
           isDragging ? "bg-red-50" : "bg-slate-50"
         }`}
       >
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-sm text-slate-500">
               Arrastra varios archivos aqui o usa el boton de carga. Los IFC se
@@ -179,7 +179,7 @@ export function ExplorerToolbar({
             </p>
           </div>
 
-          <div className="flex min-w-[320px] flex-wrap items-center gap-2">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:min-w-[320px] lg:w-auto">
             <input
               type="text"
               value={newFolderName}

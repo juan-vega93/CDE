@@ -822,9 +822,9 @@ export function DocumentsExplorer({
   }
 
   return (
-    <div className="overflow-hidden border-t border-slate-200 bg-white">
-      <div className="flex flex-col gap-2 border-b border-slate-200 px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+    <div className="min-w-0 max-w-full overflow-hidden border-t border-slate-200 bg-white">
+      <div className="flex min-w-0 flex-col gap-2 border-b border-slate-200 px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
           <label className="inline-flex items-center gap-2 font-medium text-slate-700">
             <input
               type="checkbox"
@@ -1052,8 +1052,8 @@ export function DocumentsExplorer({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse">
+      <div className="w-full max-w-full overflow-x-auto overscroll-x-contain">
+        <table className="w-full min-w-[1180px] table-fixed border-collapse">
           <thead className="bg-slate-50">
             <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
               <th className="w-10 border-b border-slate-200 px-3 py-2"></th>
@@ -1070,7 +1070,7 @@ export function DocumentsExplorer({
                   {attribute.label}
                 </th>
               ))}
-              <th className="w-20 border-b border-slate-200 px-3 py-2 text-right">
+              <th className="w-36 border-b border-slate-200 px-3 py-2 text-right">
                 Acciones
               </th>
             </tr>
@@ -1119,7 +1119,7 @@ export function DocumentsExplorer({
                         return (
                           <td
                             key={column.key}
-                            className="min-w-[320px] border-b border-slate-200 px-3 py-2"
+                            className="w-[320px] max-w-[320px] truncate border-b border-slate-200 px-3 py-2"
                           >
                             {row.kind === "folder" ? (
                               <a
@@ -1225,8 +1225,8 @@ export function DocumentsExplorer({
                       );
                     })}
 
-                    <td className="border-b border-slate-200 px-3 py-2 text-right">
-                      <div className="inline-flex items-center gap-1">
+                    <td className="w-36 border-b border-slate-200 px-3 py-2 text-right">
+                      <div className="inline-flex min-w-max items-center gap-1">
                       {isBimDocument(row) ? (
                         row.kind === "document" &&
                         row.extension?.toLowerCase() === "ifc" &&

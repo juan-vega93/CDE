@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -341,8 +341,8 @@ export function DocumentsPageClient() {
 
   return (
     <PortalShell>
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="min-w-0 max-w-full space-y-2 overflow-x-hidden">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           <a
             href="/admin/project-cards"
             className="inline-flex h-8 items-center rounded border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
