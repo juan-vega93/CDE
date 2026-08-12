@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -13,6 +13,11 @@ import {
 import type { ExplorerRow, FolderTreeNode, WorkPackageLink } from "@/types/documents";
 import { enrichDocumentsWithLinks } from "@/lib/enrich-documents-with-links";
 import { DOCUMENT_EXPLORER_REFRESH_EVENT } from "@/lib/document-explorer-events";
+import {
+  buildFolderTreePatch,
+  mergeFolderTrees as mergeFolderTreeNodes,
+  normalizeTreePath
+} from "@/lib/folder-tree";
 
 function normalizeProjectCode(value: string | null): string {
   return value?.trim().toUpperCase() || "";
@@ -20,7 +25,7 @@ function normalizeProjectCode(value: string | null): string {
 
 function normalizePath(value: string | null): string {
   if (!value) return "";
-  return value.startsWith("/") ? value : `/${value}`;
+  return normalizeTreePath(value);
 }
 
 function getProjectCodeFromPath(path: string): string {
@@ -54,6 +59,13 @@ function getParentPath(
   }
 
   return parent || "/";
+}
+
+function mergeFolderTrees(
+  current: FolderTreeNode | null,
+  incoming: FolderTreeNode | null
+): FolderTreeNode | null {
+  return mergeFolderTreeNodes(current, incoming);
 }
 
 export function DocumentsPageClient() {
@@ -157,7 +169,17 @@ export function DocumentsPageClient() {
             cachedExplorer.workPackageLinks as WorkPackageLink[]
           )
         );
-        setFolderTree(cachedExplorer.folderTree ?? null);
+        const cachedVisibleTree = buildFolderTreePatch(
+          effectiveProjectRootPath,
+          currentPath,
+          cachedBaseRows
+        );
+        setFolderTree((current) =>
+          mergeFolderTrees(
+            mergeFolderTrees(current, cachedExplorer.folderTree ?? null),
+            cachedVisibleTree
+          )
+        );
         renderedExplorerKeyRef.current = explorerKey;
       }
 
@@ -208,11 +230,21 @@ export function DocumentsPageClient() {
           )
         );
         renderedExplorerKeyRef.current = explorerKey;
-        setFolderTree(explorer.folderTree ?? null);
+        const visibleTree = buildFolderTreePatch(
+          effectiveProjectRootPath,
+          currentPath,
+          baseRows
+        );
+        setFolderTree((current) =>
+          mergeFolderTrees(
+            mergeFolderTrees(current, explorer.folderTree ?? null),
+            visibleTree
+          )
+        );
       } catch (err) {
         if (!cancelled) {
           setRows([]);
-          setFolderTree(null);
+          setFolderTree((current) => current);
           setError(
             err instanceof Error
               ? err.message

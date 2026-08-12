@@ -10,6 +10,7 @@ import {
   PORTAL_ROLE_MAPPING,
   buildProjectRoleGroupName
 } from "../config/role-mapping.config";
+import { getProjectFolderTemplatePaths } from "../config/project-folder-template";
 import { getBffDataPath } from "../utils/data-dir";
 import type {
   CreateProjectCardFromPortalInput,
@@ -28,14 +29,14 @@ type NextcloudShareRule = {
 };
 
 const NEXTCLOUD_PROJECT_SHARE_RULES: NextcloudShareRule[] = [
-  // Control total sobre raíz del proyecto
+  // Control total sobre raÃ­z del proyecto
   {
     relativePath: "",
     roleSuffix: "BIM_MANAGER",
     permissions: NEXTCLOUD_PERMISSIONS.FULL
   },
 
-  // Coordinación y control documental
+  // CoordinaciÃ³n y control documental
   {
     relativePath: "",
     roleSuffix: "BIM_COORDINATOR",
@@ -47,31 +48,31 @@ const NEXTCLOUD_PROJECT_SHARE_RULES: NextcloudShareRule[] = [
     permissions: NEXTCLOUD_PERMISSIONS.READ_WRITE
   },
 
-  // Líder de disciplina: escritura en WIP y lectura en coordinación/publicación
+  // LÃ­der de disciplina: escritura en WIP y lectura en coordinaciÃ³n/publicaciÃ³n
   {
-    relativePath: "03-WIPR",
+    relativePath: "3-WIPR",
     roleSuffix: "DISCIPLINE_LEAD",
     permissions: NEXTCLOUD_PERMISSIONS.READ_WRITE
   },
   {
-    relativePath: "04-SHRD",
+    relativePath: "4-SHRD",
     roleSuffix: "DISCIPLINE_LEAD",
     permissions: NEXTCLOUD_PERMISSIONS.READ
   },
   {
-    relativePath: "05-PUBL",
+    relativePath: "5-PUBL",
     roleSuffix: "DISCIPLINE_LEAD",
     permissions: NEXTCLOUD_PERMISSIONS.READ
   },
 
-  // Viewer: solo lectura en información compartida/publicada
+  // Viewer: solo lectura en informaciÃ³n compartida/publicada
   {
-    relativePath: "04-SHRD",
+    relativePath: "4-SHRD",
     roleSuffix: "VIEWER",
     permissions: NEXTCLOUD_PERMISSIONS.READ
   },
   {
-    relativePath: "05-PUBL",
+    relativePath: "5-PUBL",
     roleSuffix: "VIEWER",
     permissions: NEXTCLOUD_PERMISSIONS.READ
   }
@@ -131,7 +132,7 @@ function normalizeProjectCode(code: string): string {
   const normalized = code.trim().toUpperCase();
 
   if (!normalized) {
-    throw new Error("El código del proyecto es obligatorio");
+    throw new Error("El cÃ³digo del proyecto es obligatorio");
   }
 
   return normalized;
@@ -279,7 +280,7 @@ export class ProjectCardsService {
     }
 
     if (!Number.isFinite(input.openProject.projectId)) {
-      throw new Error("openProject.projectId debe ser numérico");
+      throw new Error("openProject.projectId debe ser numÃ©rico");
     }
 
     const projectCards = await this.getAll();
@@ -345,6 +346,17 @@ export class ProjectCardsService {
 
     await this.saveAll(projectCards);
 
+    if (!existing) {
+      try {
+        await this.ensureProjectFolderTemplate(projectCard);
+      } catch (error) {
+        console.warn(
+          `[project-cards.service] Could not ensure document folders for ${projectCard.code}:`,
+          error
+        );
+      }
+    }
+
     return projectCard;
   }
 
@@ -362,7 +374,7 @@ export class ProjectCardsService {
     const code = input.code.trim().toUpperCase();
 
     if (!code) {
-      throw new Error("El código del proyecto es obligatorio");
+      throw new Error("El cÃ³digo del proyecto es obligatorio");
     }
 
     if (!input.name?.trim()) {
@@ -489,6 +501,37 @@ export class ProjectCardsService {
     };
   }
 
+  private getProjectRootPath(projectCard: ProjectCard) {
+    const rootPath =
+      projectCard.nextcloud.rootPath === "/"
+        ? ""
+        : projectCard.nextcloud.rootPath.replace(/\/$/, "");
+    const projectFolder = projectCard.nextcloud.projectFolder.replace(/^\/|\/$/g, "");
+
+    return (`${rootPath}/${projectFolder}` || `/${projectFolder}`).replace(/\/+/g, "/");
+  }
+
+  private getProjectFolderPaths(projectCard: ProjectCard) {
+    const projectRootPath = this.getProjectRootPath(projectCard);
+
+    return [
+      projectRootPath,
+      ...getProjectFolderTemplatePaths().map((relativePath) =>
+        `${projectRootPath}/${relativePath}`.replace(/\/+/g, "/")
+      )
+    ];
+  }
+
+  private async ensureProjectFolderTemplate(projectCard: ProjectCard) {
+    let createdOrEnsuredFolders: string[] = [];
+
+    for (const folderPath of this.getProjectFolderPaths(projectCard)) {
+      await this.nextcloudAdapter.ensureFolderExists(folderPath);
+      createdOrEnsuredFolders.push(folderPath);
+    }
+
+    return createdOrEnsuredFolders;
+  }
   async provisionProjectInfrastructure(code: string): Promise<{
     projectCard: ProjectCard;
     keycloak: {
@@ -514,7 +557,7 @@ export class ProjectCardsService {
     }> {
     const projectCard = await this.requireByCode(code);
 
-    const createdOrEnsuredFolders: string[] = [];
+    let createdOrEnsuredFolders: string[] = [];
     const nextcloudCreatedOrEnsuredGroups: string[] = [];
     const keycloakCreatedOrEnsuredGroups: string[] = [];
 
@@ -525,7 +568,7 @@ export class ProjectCardsService {
             synced: false,
             createdOrEnsuredGroups: keycloakCreatedOrEnsuredGroups,
             skipped: true,
-            reason: "Provisionamiento omitido porque Nextcloud está deshabilitado en esta Project Card"
+            reason: "Provisionamiento omitido porque Nextcloud estÃ¡ deshabilitado en esta Project Card"
             },
             nextcloud: {
             synced: false,
@@ -533,34 +576,13 @@ export class ProjectCardsService {
             createdOrEnsuredGroups: nextcloudCreatedOrEnsuredGroups,
             createdOrEnsuredShares: [],
             skipped: true,
-            reason: "Nextcloud está deshabilitado para esta Project Card"
+            reason: "Nextcloud estÃ¡ deshabilitado para esta Project Card"
             }
         };
     }
 
-    const rootPath =
-        projectCard.nextcloud.rootPath === "/"
-        ? ""
-        : projectCard.nextcloud.rootPath.replace(/\/$/, "");
-
-    const projectFolder = projectCard.nextcloud.projectFolder.replace(/^\/|\/$/g, "");
-
-    const projectRootPath = `${rootPath}/${projectFolder}` || `/${projectFolder}`;
-
-    const foldersToEnsure = [
-        projectRootPath,        
-        `${projectRootPath}/1-DATA`,
-        `${projectRootPath}/2-PLAN`,
-        `${projectRootPath}/3-WIPR`,
-        `${projectRootPath}/4-SHRD`,
-        `${projectRootPath}/5-PUBL`,
-        `${projectRootPath}/6-JPRO`
-    ].map((folderPath) => folderPath.replace(/\/+/g, "/"));
-
-    for (const folderPath of foldersToEnsure) {
-        await this.nextcloudAdapter.ensureFolderExists(folderPath);
-        createdOrEnsuredFolders.push(folderPath);
-    }
+    const projectRootPath = this.getProjectRootPath(projectCard);
+    createdOrEnsuredFolders = await this.ensureProjectFolderTemplate(projectCard);
     for (const roleKey of Object.keys(PORTAL_ROLE_MAPPING)) {
         const groupName = buildProjectRoleGroupName(
             projectCard.keycloak.groupPrefix,
@@ -634,7 +656,7 @@ export class ProjectCardsService {
   }> {
     if (process.env.ENABLE_PROJECT_HARD_DELETE !== "true") {
       throw new Error(
-        "La eliminación definitiva está deshabilitada en la configuración del BFF"
+        "La eliminaciÃ³n definitiva estÃ¡ deshabilitada en la configuraciÃ³n del BFF"
       );
     }
 
@@ -656,7 +678,7 @@ export class ProjectCardsService {
 
     if (receivedConfirmation !== expectedConfirmation) {
       throw new Error(
-        `Confirmación inválida. Debes escribir exactamente el nombre del proyecto: ${expectedConfirmation}`
+        `ConfirmaciÃ³n invÃ¡lida. Debes escribir exactamente el nombre del proyecto: ${expectedConfirmation}`
       );
     }
 

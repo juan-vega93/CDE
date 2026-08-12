@@ -1279,6 +1279,32 @@ function waitForNextFrame() {
   });
 }
 
+type WindowWithIdleCallback = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+};
+
+function waitForIdleBudget(timeout = 80) {
+  return new Promise<void>((resolve) => {
+    if (typeof window === "undefined") {
+      globalThis.setTimeout(resolve, 0);
+      return;
+    }
+
+    const requestIdleCallback = (window as WindowWithIdleCallback).requestIdleCallback;
+    if (requestIdleCallback) {
+      requestIdleCallback(() => resolve(), { timeout });
+      return;
+    }
+
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(() => globalThis.setTimeout(resolve, 0));
+      return;
+    }
+
+    globalThis.setTimeout(resolve, 0);
+  });
+}
+
 function shouldYieldPropertyIndex(lastYieldAt: number) {
   if (typeof performance === "undefined") return false;
   return performance.now() - lastYieldAt > PROPERTY_INDEX_YIELD_MS;
@@ -1529,10 +1555,10 @@ type ViewerPerformanceStats = {
 
 const MAX_TREE_ELEMENT_NODES = 25000;
 const MAX_RENDERED_TREE_GROUP_CHILDREN = 350;
-const MAX_PROPERTY_INDEX_LOCAL_IDS = 6500;
-const MAX_PROPERTY_INDEX_TOTAL_LOCAL_IDS = 20000;
-const PROPERTY_INDEX_BATCH_SIZE = 12;
-const PROPERTY_INDEX_YIELD_MS = 24;
+const MAX_PROPERTY_INDEX_LOCAL_IDS = 5200;
+const MAX_PROPERTY_INDEX_TOTAL_LOCAL_IDS = 16000;
+const PROPERTY_INDEX_BATCH_SIZE = 8;
+const PROPERTY_INDEX_YIELD_MS = 14;
 const PROPERTY_INDEX_HEAP_WARN_RATIO = 0.66;
 const BIM_INDEX_PERSIST_BATCH_SIZE = 80;
 const BIM_INDEX_PERSIST_MAX_CONCURRENT = 1;
@@ -4562,6 +4588,7 @@ function BimIndexStatusCard({
   const issueCount = (models?.failed ?? 0) + (jobs?.failed ?? 0);
   const isWorking =
     loading || (jobs?.processing ?? 0) > 0 || (jobs?.pending ?? 0) > 0;
+  const pendingModels = Math.max((models?.total ?? 0) - (models?.ready ?? 0), 0);
 
   return (
     <div className="rounded border border-zinc-800 bg-zinc-900/80 p-3 text-xs text-zinc-300">
@@ -4601,6 +4628,15 @@ function BimIndexStatusCard({
           <div className="font-semibold text-red-300">{issueCount}</div>
         </div>
       </div>
+      {isWorking ? (
+        <p className="mt-2 border-t border-zinc-800 pt-2 text-[11px] leading-snug text-amber-200">
+          El indice BIM se esta preparando. Los modelos sin indice se procesan una vez y luego quedan cacheados en PostgreSQL.
+        </p>
+      ) : pendingModels > 0 ? (
+        <p className="mt-2 border-t border-zinc-800 pt-2 text-[11px] leading-snug text-zinc-400">
+          Hay {pendingModels.toLocaleString()} modelo(s) pendiente(s) de indexar. Abrelos o pulsa Cargar parametros para completar el cache.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -5405,6 +5441,13 @@ function Cost5DPanel({
     () => getSmartViewSelectorSource(propertyIndex, propertyCatalog),
     [propertyCatalog, propertyIndex]
   );
+  const selectorSourceReady = selectorSource.sets.length > 0;
+  const indexStillPreparing =
+    propertiesIndexLoading ||
+    propertyCatalogLoading ||
+    bimIndexOverviewLoading ||
+    (bimIndexOverview?.jobs.processing ?? 0) > 0 ||
+    (bimIndexOverview?.jobs.pending ?? 0) > 0;
 
   useEffect(() => {
     setMapping((current) => {
@@ -5651,9 +5694,18 @@ function Cost5DPanel({
             disabled={propertiesIndexLoading}
             className="min-h-8 shrink-0 rounded bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {propertiesIndexLoading ? "Indexando" : "Cargar parametros"}
+            {propertiesIndexLoading
+              ? "Indexando"
+              : selectorSourceReady
+                ? "Actualizar indice"
+                : "Cargar parametros"}
           </button>
         </div>
+        {!selectorSourceReady && indexStillPreparing ? (
+          <div className="mt-3 rounded border border-amber-900/70 bg-amber-950/25 px-3 py-2 text-xs text-amber-100">
+            Los parametros y valores apareceran cuando termine la indexacion inicial. No recargues la pagina.
+          </div>
+        ) : null}
         <div className="mt-3 flex gap-2">
           {(["partidas", "metrados"] as const).map((item) => (
             <button
@@ -8801,7 +8853,7 @@ export function IfcViewerCanvas({
                 indexedLocalIds.length
               ).toLocaleString()}/${indexedLocalIds.length.toLocaleString()}`
             );
-            await waitForNextFrame();
+            await waitForIdleBudget();
             lastYieldAt = typeof performance !== "undefined" ? performance.now() : lastYieldAt;
           }
 
@@ -13624,7 +13676,7 @@ async function handleIsolateModel(key: string) {
                                 </div>
                               </button>
 
-                              <div className="mt-3 flex gap-2">
+                              <div className="mt-3 grid grid-cols-3 gap-2">
                                 <button
                                   type="button"
                                   onClick={() => void handleOpenTopicDetail(topic)}

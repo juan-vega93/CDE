@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -10,6 +10,13 @@ import {
   renameFolder
 } from "@/services/documents.service";
 import { requestDocumentExplorerRefresh } from "@/lib/document-explorer-events";
+import {
+  buildFolderTreePatch,
+  getTreeAncestors,
+  getTreeParentPath,
+  mergeFolderTrees as mergeFolderTreeNodes,
+  normalizeTreePath
+} from "@/lib/folder-tree";
 import type { ExplorerRow, FolderTreeNode } from "@/types/documents";
 
 type DocumentsExplorerPanelProps = {
@@ -27,50 +34,17 @@ type FolderActionTarget = {
 type FolderDialogMode = "rename" | "move" | "delete" | null;
 
 function normalizeExplorerPath(path: string) {
-  const parts = path.split("/").filter(Boolean);
-  return parts.length ? `/${parts.join("/")}` : "/";
+  return normalizeTreePath(path);
 }
 
 function getParentFolder(path: string) {
-  const parts = normalizeExplorerPath(path).split("/").filter(Boolean);
-  parts.pop();
-  return parts.length ? `/${parts.join("/")}` : "/";
+  return getTreeParentPath(path);
 }
 function mergeFolderTrees(
   current: FolderTreeNode | null,
   incoming: FolderTreeNode | null
 ): FolderTreeNode | null {
-  if (!incoming) return current;
-  if (!current) return incoming;
-
-  const currentPath = normalizeExplorerPath(current.path);
-  const incomingPath = normalizeExplorerPath(incoming.path);
-
-  if (currentPath !== incomingPath) {
-    return incoming;
-  }
-
-  const childMap = new Map<string, FolderTreeNode>();
-
-  current.children.forEach((child) => {
-    childMap.set(normalizeExplorerPath(child.path), child);
-  });
-
-  incoming.children.forEach((child) => {
-    const key = normalizeExplorerPath(child.path);
-    const existing = childMap.get(key) ?? null;
-    childMap.set(key, mergeFolderTrees(existing, child) ?? child);
-  });
-
-  return {
-    ...incoming,
-    children: Array.from(childMap.values()).sort((a, b) =>
-      a.name.localeCompare(b.name, "es", {
-        numeric: true,
-        sensitivity: "base"
-      })
-    )
-  };
+  return mergeFolderTreeNodes(current, incoming);
 }
 
 function getMenuPosition(rect: DOMRect, width = 256, estimatedHeight = 180) {
@@ -118,6 +92,28 @@ export function DocumentsExplorerPanel({
   useEffect(() => {
     setLocalFolderTree((current) => mergeFolderTrees(current, folderTree));
   }, [folderTree]);
+
+
+  const projectRootPath = useMemo(() => {
+    const normalizedCurrentPath = normalizeExplorerPath(currentPath);
+    const firstPathPart =
+      normalizedCurrentPath.split("/").filter(Boolean)[0] || projectCode;
+    return firstPathPart ? `/${firstPathPart}` : "/";
+  }, [currentPath, projectCode]);
+
+  useEffect(() => {
+    const visiblePatch = buildFolderTreePatch(projectRootPath, currentPath, rows);
+    setLocalFolderTree((current) => mergeFolderTrees(current, visiblePatch));
+  }, [projectRootPath, currentPath, rows]);
+
+  useEffect(() => {
+    const ancestors = getTreeAncestors(currentPath);
+    setExpandedFolders((current) => {
+      const next = new Set(current);
+      ancestors.forEach((ancestor) => next.add(ancestor));
+      return next;
+    });
+  }, [currentPath]);
 
   const normalizedQuery = query.trim().toLowerCase();
 
@@ -385,6 +381,46 @@ export function DocumentsExplorerPanel({
     return null;
   }
 
+  function sortFolderTreeChildren(children: FolderTreeNode[]) {
+    return [...children].sort((left, right) =>
+      left.name.localeCompare(right.name, undefined, {
+        numeric: true,
+        sensitivity: "base"
+      })
+    );
+  }
+
+  function mergeFolderNodeChildren(
+    existingChildren: FolderTreeNode[],
+    incomingChildren: FolderTreeNode[]
+  ) {
+    const existingByPath = new Map(
+      existingChildren.map((child) => [normalizeExplorerPath(child.path), child])
+    );
+    const incomingPaths = new Set(
+      incomingChildren.map((child) => normalizeExplorerPath(child.path))
+    );
+
+    const mergedIncoming = incomingChildren.map((child) => {
+      const normalizedPath = normalizeExplorerPath(child.path);
+      const existing = existingByPath.get(normalizedPath);
+
+      if (!existing) return child;
+
+      return {
+        ...existing,
+        ...child,
+        children: existing.children.length > 0 ? existing.children : child.children
+      };
+    });
+
+    const retainedExisting = existingChildren.filter(
+      (child) => !incomingPaths.has(normalizeExplorerPath(child.path))
+    );
+
+    return sortFolderTreeChildren([...mergedIncoming, ...retainedExisting]);
+  }
+
   async function loadTreeChildren(path: string) {
     const normalizedPath = normalizeExplorerPath(path);
 
@@ -405,10 +441,7 @@ export function DocumentsExplorerPanel({
 
         function updateNode(node: FolderTreeNode): FolderTreeNode {
           if (normalizeExplorerPath(node.path) === normalizedPath) {
-            return {
-              ...node,
-              children
-            };
+            return { ...node, children: mergeFolderNodeChildren(node.children, children) };
           }
 
           return {
@@ -456,9 +489,9 @@ export function DocumentsExplorerPanel({
   }
 
   return (
-    <section className="overflow-hidden rounded border border-slate-300 bg-white shadow-sm">
-      <div className="grid min-h-[520px] grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="border-b border-slate-200 bg-slate-50 lg:border-b-0 lg:border-r">
+    <section className="h-[calc(100vh-140px)] min-h-[640px] overflow-hidden rounded border border-slate-300 bg-white shadow-sm">
+      <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="flex h-full min-h-0 flex-col border-b border-slate-200 bg-slate-50 lg:border-b-0 lg:border-r">
           <div className="border-b border-slate-200 px-3 py-2">
             <h2 className="text-sm font-semibold text-slate-900">Archivos</h2>
             <p className="mt-1 text-xs text-slate-500">
@@ -466,7 +499,7 @@ export function DocumentsExplorerPanel({
             </p>
           </div>
 
-          <nav className="max-h-[calc(100vh-205px)] overflow-y-auto px-2 py-2 text-sm">
+          <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 text-sm">
             {activeFolderTree && hasTreeChildren ? (
               renderTreeNode(activeFolderTree, 0)
             ) : (
@@ -523,7 +556,7 @@ export function DocumentsExplorerPanel({
           </nav>
         </aside>
 
-        <div className="min-w-0">
+        <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
           <div className="grid gap-2 border-b border-slate-200 p-3 md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <h2 className="text-base font-semibold text-slate-900">
@@ -580,11 +613,13 @@ export function DocumentsExplorerPanel({
             </div>
           </div>
 
-          <DocumentsExplorer
-            rows={filteredRows}
-            currentPath={currentPath}
-            projectCode={projectCode}
-          />
+          <div className="min-h-0 flex-1 overflow-auto">
+            <DocumentsExplorer
+              rows={filteredRows}
+              currentPath={currentPath}
+              projectCode={projectCode}
+            />
+          </div>
         </div>
       </div>
 
@@ -729,6 +764,3 @@ export function DocumentsExplorerPanel({
     </section>
   );
 }
-
-
-
