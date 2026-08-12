@@ -1642,8 +1642,8 @@ export async function queryBimPropertyLocalIds(
         where models.project_code = $1
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
           and ($3::text[] is null or models.model_key = any($3::text[]))
-          and lower(trim(sets.name)) = lower(trim($4))
-          and lower(trim(properties.name)) = lower(trim($5))
+          and sets.normalized_name = lower(regexp_replace(trim($4), '[[:space:]]+', '', 'g'))
+          and properties.normalized_name = lower(regexp_replace(trim($5), '[[:space:]]+', '', 'g'))
           and (
             $6::text is null
             or lower(coalesce(

@@ -198,6 +198,43 @@ create index if not exists cde_bim_properties_set_name_idx
 create index if not exists cde_bim_property_values_property_bool_idx
   on cde_bim_property_values (property_id, value_bool)
   where value_bool is not null;
+create index if not exists cde_bim_property_index_snapshots_signature_idx
+  on cde_bim_property_index_snapshots (signature, updated_at desc);
+
+create index if not exists cde_bim_models_project_status_updated_idx
+  on cde_bim_models (project_code, status, updated_at desc);
+
+create index if not exists cde_bim_models_project_runtime_idx
+  on cde_bim_models (project_code, runtime_model_id);
+
+create index if not exists cde_bim_elements_model_class_level_idx
+  on cde_bim_elements (bim_model_id, ifc_class, level_name);
+
+create index if not exists cde_bim_elements_model_level_class_idx
+  on cde_bim_elements (bim_model_id, level_name, ifc_class);
+
+create index if not exists cde_bim_elements_model_type_idx
+  on cde_bim_elements (bim_model_id, type_name);
+
+create index if not exists cde_bim_elements_model_identity_idx
+  on cde_bim_elements (bim_model_id, element_identity);
+
+create index if not exists cde_bim_property_sets_model_normalized_idx
+  on cde_bim_property_sets (bim_model_id, normalized_name);
+
+create index if not exists cde_bim_properties_set_normalized_idx
+  on cde_bim_properties (property_set_id, normalized_name);
+
+create index if not exists cde_bim_property_values_element_property_idx
+  on cde_bim_property_values (bim_element_id, property_id);
+
+create index if not exists cde_bim_property_values_property_nonempty_text_idx
+  on cde_bim_property_values (property_id, value_text)
+  where value_text is not null and value_text <> '';
+
+create index if not exists cde_bim_property_values_property_unit_idx
+  on cde_bim_property_values (property_id, unit)
+  where unit is not null and unit <> '';
 create unique index if not exists cde_bim_index_jobs_project_path_hash_uidx
   on cde_bim_index_jobs (project_code, document_path, coalesce(source_hash, ''));
 
@@ -252,4 +289,3 @@ create table if not exists cde_pma_mappings (
 
 create index if not exists cde_pma_mappings_project_idx
   on cde_pma_mappings (project_code, active);
-
