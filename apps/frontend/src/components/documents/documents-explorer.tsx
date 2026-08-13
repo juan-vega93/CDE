@@ -1052,25 +1052,25 @@ export function DocumentsExplorer({
         </div>
       </div>
 
-      <div className="w-full max-w-full overflow-x-auto overscroll-x-contain">
-        <table className="w-full min-w-[1180px] table-fixed border-collapse">
+      <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
+        <table className="w-max min-w-[1480px] border-collapse">
           <thead className="bg-slate-50">
             <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-              <th className="w-10 border-b border-slate-200 px-3 py-2"></th>
+              <th className="w-12 min-w-12 border-b border-slate-200 px-3 py-2"></th>
               {renderedColumns.map((column) => (
-                <th key={column.key} className="border-b border-slate-200 px-3 py-2">
+                <th key={column.key} className={`border-b border-slate-200 px-3 py-2 ${column.key === "name" ? "min-w-[560px]" : "min-w-[150px] whitespace-nowrap"}`}>
                   {column.label}
                 </th>
               ))}
               {customAttributes.map((attribute) => (
                 <th
                   key={attribute.id}
-                  className="border-b border-slate-200 px-3 py-2"
+                  className="min-w-[190px] whitespace-nowrap border-b border-slate-200 px-3 py-2"
                 >
                   {attribute.label}
                 </th>
               ))}
-              <th className="w-36 border-b border-slate-200 px-3 py-2 text-right">
+              <th className="min-w-[170px] whitespace-nowrap border-b border-slate-200 px-3 py-2 text-right">
                 Acciones
               </th>
             </tr>
@@ -1119,7 +1119,7 @@ export function DocumentsExplorer({
                         return (
                           <td
                             key={column.key}
-                            className="w-[320px] max-w-[320px] truncate border-b border-slate-200 px-3 py-2"
+                            className="min-w-[560px] border-b border-slate-200 px-3 py-2"
                           >
                             {row.kind === "folder" ? (
                               <a
@@ -1140,7 +1140,7 @@ export function DocumentsExplorer({
                               <Link
                                 href={buildDocumentHref(row)}
                                 prefetch={false}
-                                className="font-medium text-blue-700 hover:underline"
+                                className="block whitespace-nowrap font-medium text-blue-700 hover:underline"
                               >
                                 <span>{row.name}</span>
                               </Link>
@@ -1203,7 +1203,7 @@ export function DocumentsExplorer({
                       return (
                         <td
                           key={column.key}
-                          className="max-w-[360px] truncate border-b border-slate-200 px-3 py-2 text-slate-700"
+                          className="min-w-[150px] whitespace-nowrap border-b border-slate-200 px-3 py-2 text-slate-700"
                           title={String(value)}
                         >
                           {value}
@@ -1217,7 +1217,7 @@ export function DocumentsExplorer({
                       return (
                         <td
                           key={attribute.id}
-                          className="max-w-[320px] truncate border-b border-slate-200 px-3 py-2 text-slate-700"
+                          className="min-w-[190px] max-w-[320px] overflow-hidden text-ellipsis whitespace-nowrap border-b border-slate-200 px-3 py-2 text-slate-700"
                           title={String(value)}
                         >
                           {value}
@@ -1225,7 +1225,7 @@ export function DocumentsExplorer({
                       );
                     })}
 
-                    <td className="w-36 border-b border-slate-200 px-3 py-2 text-right">
+                    <td className="min-w-[170px] border-b border-slate-200 px-3 py-2 text-right">
                       <div className="inline-flex min-w-max items-center gap-1">
                       {isBimDocument(row) ? (
                         row.kind === "document" &&
@@ -1636,3 +1636,4 @@ export function DocumentsExplorer({
     </div>
   );
 }
+
