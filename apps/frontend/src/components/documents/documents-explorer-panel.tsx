@@ -394,7 +394,7 @@ export function DocumentsExplorerPanel({
               event.preventDefault();
               router.push(href);
             }}
-            className="min-w-0 flex-1 truncate text-left"
+            className="min-w-max flex-1 whitespace-nowrap text-left"
           >
             {label}
           </a>
@@ -540,9 +540,9 @@ export function DocumentsExplorerPanel({
   }
 
   return (
-    <section className="h-[calc(100vh-140px)] min-h-[640px] w-full max-w-full overflow-hidden rounded border border-slate-300 bg-white shadow-sm">
-      <div className="grid h-full min-h-0 min-w-0 grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-b border-slate-200 bg-slate-50 lg:border-b-0 lg:border-r">
+    <section className="h-[calc(100vh-140px)] min-h-[640px] w-full max-w-none overflow-hidden rounded border border-slate-300 bg-white shadow-sm">
+      <div className="grid h-full min-h-0 min-w-[1320px] grid-cols-1 lg:grid-cols-[320px_minmax(1000px,1fr)]">
+        <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-b border-slate-200 bg-slate-50 lg:w-[320px] lg:min-w-[320px] lg:max-w-[320px] lg:border-b-0 lg:border-r">
           <div className="border-b border-slate-200 px-3 py-2">
             <h2 className="text-sm font-semibold text-slate-900">Archivos</h2>
             <p className="mt-1 text-xs text-slate-500">
@@ -550,7 +550,7 @@ export function DocumentsExplorerPanel({
             </p>
           </div>
 
-          <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 text-sm">
+          <nav className="min-h-0 flex-1 overflow-auto px-2 py-2 text-sm [scrollbar-gutter:stable]">
             {activeFolderTree && hasTreeChildren ? (
               renderTreeNode(activeFolderTree, 0)
             ) : (

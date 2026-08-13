@@ -1053,12 +1053,12 @@ export function DocumentsExplorer({
       </div>
 
       <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2">
-        <table className="w-max min-w-[1720px] border-collapse">
+        <table className="w-max min-w-[1880px] border-collapse">
           <thead className="bg-slate-50">
             <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
               <th className="w-12 min-w-12 border-b border-slate-200 px-3 py-2"></th>
               {renderedColumns.map((column) => (
-                <th key={column.key} className={`border-b border-slate-200 px-3 py-2 ${column.key === "name" ? "min-w-[680px]" : "min-w-[150px] whitespace-nowrap"}`}>
+                <th key={column.key} className={`border-b border-slate-200 px-3 py-2 ${column.key === "name" ? "min-w-[760px]" : "min-w-[150px] whitespace-nowrap"}`}>
                   {column.label}
                 </th>
               ))}
@@ -1119,7 +1119,7 @@ export function DocumentsExplorer({
                         return (
                           <td
                             key={column.key}
-                            className="min-w-[560px] border-b border-slate-200 px-3 py-2"
+                            className="min-w-[760px] border-b border-slate-200 px-3 py-2"
                           >
                             {row.kind === "folder" ? (
                               <a
@@ -1140,7 +1140,7 @@ export function DocumentsExplorer({
                               <Link
                                 href={buildDocumentHref(row)}
                                 prefetch={false}
-                                className="block whitespace-normal break-words font-medium leading-5 text-blue-700 hover:underline"
+                                className="block max-w-none whitespace-nowrap font-medium leading-5 text-blue-700 hover:underline"
                               >
                                 <span>{row.name}</span>
                               </Link>

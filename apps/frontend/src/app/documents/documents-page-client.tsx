@@ -121,7 +121,7 @@ export function DocumentsPageClient() {
         includeTree: true,
         treeRootPath: effectiveProjectRootPath,
         treeFocusPath: currentPath,
-        treeDepth: 1
+        treeDepth: 2
       };
 
       if (!effectiveProjectCode) {
@@ -341,7 +341,7 @@ export function DocumentsPageClient() {
 
   return (
     <PortalShell>
-      <div className="min-w-0 max-w-full space-y-2 overflow-x-hidden">
+      <div className="min-w-0 max-w-none space-y-2 overflow-visible">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <a
             href="/admin/project-cards"
