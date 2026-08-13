@@ -47,6 +47,39 @@ function mergeFolderTrees(
   return mergeFolderTreeNodes(current, incoming);
 }
 
+const FOLDER_TREE_CACHE_PREFIX = "typsa-cde:folder-tree";
+
+function getFolderTreeCacheKey(projectCode: string, rootPath: string) {
+  return `${FOLDER_TREE_CACHE_PREFIX}:${projectCode || "global"}:${rootPath || "/"}`;
+}
+
+function readFolderTreeCache(projectCode: string, rootPath: string) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(
+      getFolderTreeCacheKey(projectCode, rootPath)
+    );
+    return raw ? (JSON.parse(raw) as FolderTreeNode) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeFolderTreeCache(
+  projectCode: string,
+  rootPath: string,
+  tree: FolderTreeNode | null
+) {
+  if (typeof window === "undefined" || !tree) return;
+  try {
+    window.sessionStorage.setItem(
+      getFolderTreeCacheKey(projectCode, rootPath),
+      JSON.stringify(tree)
+    );
+  } catch {
+    // The tree is only a navigation cache; ignore quota/privacy failures.
+  }
+}
 function getMenuPosition(rect: DOMRect, width = 256, estimatedHeight = 180) {
   const left = Math.min(
     Math.max(12, rect.right - width),
@@ -67,9 +100,18 @@ export function DocumentsExplorerPanel({
   projectCode = ""
 }: DocumentsExplorerPanelProps) {
   const router = useRouter();
+  const normalizedCurrentPath = useMemo(
+    () => normalizeExplorerPath(currentPath),
+    [currentPath]
+  );
+  const projectRootPath = useMemo(() => {
+    const firstPathPart =
+      normalizedCurrentPath.split("/").filter(Boolean)[0] || projectCode;
+    return firstPathPart ? `/${firstPathPart}` : "/";
+  }, [normalizedCurrentPath, projectCode]);
   const [query, setQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    () => new Set([normalizeExplorerPath(currentPath)])
+    () => new Set([normalizedCurrentPath])
   );
   const [folderActionTarget, setFolderActionTarget] =
     useState<FolderActionTarget>(null);
@@ -82,39 +124,48 @@ export function DocumentsExplorerPanel({
   const [folderInputValue, setFolderInputValue] = useState("");
   const [folderActionError, setFolderActionError] = useState("");
   const [isFolderSubmitting, setIsFolderSubmitting] = useState(false);
-  const [localFolderTree, setLocalFolderTree] = useState<FolderTreeNode | null>(
-    folderTree
+  const [localFolderTree, setLocalFolderTree] = useState<FolderTreeNode | null>(() =>
+    readFolderTreeCache(projectCode, projectRootPath) ?? folderTree
   );
   const [loadingTreePaths, setLoadingTreePaths] = useState<Set<string>>(
     () => new Set()
   );
 
   useEffect(() => {
-    setLocalFolderTree((current) => mergeFolderTrees(current, folderTree));
-  }, [folderTree]);
-
-
-  const projectRootPath = useMemo(() => {
-    const normalizedCurrentPath = normalizeExplorerPath(currentPath);
-    const firstPathPart =
-      normalizedCurrentPath.split("/").filter(Boolean)[0] || projectCode;
-    return firstPathPart ? `/${firstPathPart}` : "/";
-  }, [currentPath, projectCode]);
+    setLocalFolderTree((current) =>
+      mergeFolderTrees(
+        current ?? readFolderTreeCache(projectCode, projectRootPath),
+        folderTree
+      )
+    );
+  }, [folderTree, projectCode, projectRootPath]);
 
   useEffect(() => {
-    const visiblePatch = buildFolderTreePatch(projectRootPath, currentPath, rows);
-    setLocalFolderTree((current) => mergeFolderTrees(current, visiblePatch));
-  }, [projectRootPath, currentPath, rows]);
+    writeFolderTreeCache(projectCode, projectRootPath, localFolderTree);
+  }, [localFolderTree, projectCode, projectRootPath]);
 
   useEffect(() => {
-    const ancestors = getTreeAncestors(currentPath);
+    const visiblePatch = buildFolderTreePatch(
+      projectRootPath,
+      normalizedCurrentPath,
+      rows
+    );
+    setLocalFolderTree((current) =>
+      mergeFolderTrees(
+        current ?? readFolderTreeCache(projectCode, projectRootPath),
+        visiblePatch
+      )
+    );
+  }, [projectRootPath, projectCode, normalizedCurrentPath, rows]);
+
+  useEffect(() => {
+    const ancestors = getTreeAncestors(normalizedCurrentPath);
     setExpandedFolders((current) => {
       const next = new Set(current);
       ancestors.forEach((ancestor) => next.add(ancestor));
       return next;
     });
-  }, [currentPath]);
-
+  }, [normalizedCurrentPath]);
   const normalizedQuery = query.trim().toLowerCase();
 
   const filteredRows = useMemo(() => {
@@ -158,7 +209,7 @@ export function DocumentsExplorerPanel({
     [rows]
   );
 
-  const pathParts = currentPath.split("/").filter(Boolean);
+  const pathParts = normalizedCurrentPath.split("/").filter(Boolean);
   const activeFolderTree = localFolderTree ?? folderTree;
   const hasTreeChildren = Boolean(activeFolderTree?.children.length);
 

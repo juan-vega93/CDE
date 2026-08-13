@@ -822,7 +822,7 @@ export function DocumentsExplorer({
   }
 
   return (
-    <div className="min-w-0 max-w-full overflow-hidden border-t border-slate-200 bg-white">
+    <div className="min-w-0 max-w-full overflow-visible border-t border-slate-200 bg-white">
       <div className="flex min-w-0 flex-col gap-2 border-b border-slate-200 px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
           <label className="inline-flex items-center gap-2 font-medium text-slate-700">
@@ -1052,13 +1052,13 @@ export function DocumentsExplorer({
         </div>
       </div>
 
-      <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
-        <table className="w-max min-w-[1480px] border-collapse">
+      <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2">
+        <table className="w-max min-w-[1720px] border-collapse">
           <thead className="bg-slate-50">
             <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
               <th className="w-12 min-w-12 border-b border-slate-200 px-3 py-2"></th>
               {renderedColumns.map((column) => (
-                <th key={column.key} className={`border-b border-slate-200 px-3 py-2 ${column.key === "name" ? "min-w-[560px]" : "min-w-[150px] whitespace-nowrap"}`}>
+                <th key={column.key} className={`border-b border-slate-200 px-3 py-2 ${column.key === "name" ? "min-w-[680px]" : "min-w-[150px] whitespace-nowrap"}`}>
                   {column.label}
                 </th>
               ))}
@@ -1140,7 +1140,7 @@ export function DocumentsExplorer({
                               <Link
                                 href={buildDocumentHref(row)}
                                 prefetch={false}
-                                className="block whitespace-nowrap font-medium text-blue-700 hover:underline"
+                                className="block whitespace-normal break-words font-medium leading-5 text-blue-700 hover:underline"
                               >
                                 <span>{row.name}</span>
                               </Link>
@@ -1636,4 +1636,3 @@ export function DocumentsExplorer({
     </div>
   );
 }
-
