@@ -1132,9 +1132,9 @@ export function DocumentsExplorer({
                                   event.preventDefault();
                                   openFolder(row.path);
                                 }}
-                                className="font-medium text-blue-700 hover:underline"
+                                className="block max-w-none whitespace-nowrap font-medium leading-5 text-blue-700 hover:underline"
                               >
-                                <span>{row.name}</span>
+                                <span title={row.name}>{row.name}</span>
                               </a>
                             ) : (
                               <Link
@@ -1142,7 +1142,7 @@ export function DocumentsExplorer({
                                 prefetch={false}
                                 className="block max-w-none whitespace-nowrap font-medium leading-5 text-blue-700 hover:underline"
                               >
-                                <span>{row.name}</span>
+                                <span title={row.name}>{row.name}</span>
                               </Link>
                             )}
                           </td>
@@ -1177,7 +1177,7 @@ export function DocumentsExplorer({
                                   : ""
                               }`}
                               prefetch={false}
-                              className="font-medium text-blue-700 hover:underline"
+                              className="block max-w-none whitespace-nowrap font-medium leading-5 text-blue-700 hover:underline"
                             >
                               {value}
                             </Link>

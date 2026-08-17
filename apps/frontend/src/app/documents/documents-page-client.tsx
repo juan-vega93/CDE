@@ -10,6 +10,8 @@ import {
   getCachedDocumentExplorerSnapshot,
   getDocumentExplorer
 } from "@/services/documents.service";
+
+const DOCUMENT_TREE_DEPTH = 16;
 import type { ExplorerRow, FolderTreeNode, WorkPackageLink } from "@/types/documents";
 import { enrichDocumentsWithLinks } from "@/lib/enrich-documents-with-links";
 import { DOCUMENT_EXPLORER_REFRESH_EVENT } from "@/lib/document-explorer-events";
@@ -120,8 +122,8 @@ export function DocumentsPageClient() {
       const explorerOptions = {
         includeTree: true,
         treeRootPath: effectiveProjectRootPath,
-        treeFocusPath: currentPath,
-        treeDepth: 2
+        treeFocusPath: effectiveProjectRootPath || currentPath,
+        treeDepth: DOCUMENT_TREE_DEPTH
       };
 
       if (!effectiveProjectCode) {

@@ -47,7 +47,7 @@ function mergeFolderTrees(
   return mergeFolderTreeNodes(current, incoming);
 }
 
-const FOLDER_TREE_CACHE_PREFIX = "typsa-cde:folder-tree";
+const FOLDER_TREE_CACHE_PREFIX = "typsa-cde:folder-tree:v10";
 
 function getFolderTreeCacheKey(projectCode: string, rootPath: string) {
   return `${FOLDER_TREE_CACHE_PREFIX}:${projectCode || "global"}:${rootPath || "/"}`;
@@ -541,7 +541,7 @@ export function DocumentsExplorerPanel({
 
   return (
     <section className="h-[calc(100vh-140px)] min-h-[640px] w-full max-w-none overflow-hidden rounded border border-slate-300 bg-white shadow-sm">
-      <div className="grid h-full min-h-0 min-w-[1320px] grid-cols-1 lg:grid-cols-[320px_minmax(1000px,1fr)]">
+      <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-b border-slate-200 bg-slate-50 lg:w-[320px] lg:min-w-[320px] lg:max-w-[320px] lg:border-b-0 lg:border-r">
           <div className="border-b border-slate-200 px-3 py-2">
             <h2 className="text-sm font-semibold text-slate-900">Archivos</h2>
