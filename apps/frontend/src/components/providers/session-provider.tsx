@@ -7,5 +7,9 @@ export function AppSessionProvider({
 }: {
   children: React.ReactNode;
 }) {
-  return <SessionProvider>{children}</SessionProvider>;
+  return (
+    <SessionProvider refetchInterval={240} refetchOnWindowFocus>
+      {children}
+    </SessionProvider>
+  );
 }

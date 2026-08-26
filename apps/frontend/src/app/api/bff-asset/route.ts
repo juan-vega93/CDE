@@ -1,5 +1,6 @@
-import { getToken } from "next-auth/jwt";
+import { getServerSession } from "next-auth";
 import { NextRequest } from "next/server";
+import { authOptions } from "@/lib/auth-options";
 
 const BFF_URL = process.env.NEXT_PUBLIC_BFF_URL;
 
@@ -37,12 +38,8 @@ export async function GET(req: NextRequest) {
     return new Response("Ruta BFF invalida", { status: 400 });
   }
 
-  const token = await getToken({
-    req,
-    secret: process.env.NEXTAUTH_SECRET
-  });
-
-  const accessToken = token?.accessToken;
+  const session = await getServerSession(authOptions);
+  const accessToken = session?.accessToken;
 
   if (typeof accessToken !== "string" || !accessToken) {
     return new Response("Unauthorized", { status: 401 });
