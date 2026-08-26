@@ -15,12 +15,11 @@ let cachedAccessToken: {
   expiresAt: number;
 } | null = null;
 
-async function getSessionAccessToken(): Promise<unknown> {
-  if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now()) {
-    return cachedAccessToken.value;
-  }
+const SESSION_TOKEN_RETRY_COUNT = 25;
+const SESSION_TOKEN_RETRY_DELAY_MS = 200;
 
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+async function waitForSessionAccessToken(): Promise<string | undefined> {
+  for (let attempt = 0; attempt < SESSION_TOKEN_RETRY_COUNT; attempt += 1) {
     const session = await getSession();
 
     if (typeof session?.accessToken === "string" && session.accessToken) {
@@ -31,22 +30,41 @@ async function getSessionAccessToken(): Promise<unknown> {
       return session.accessToken;
     }
 
-    await new Promise((resolve) => window.setTimeout(resolve, 150));
+    if (session?.error === "RefreshAccessTokenError") {
+      return undefined;
+    }
+
+    await new Promise((resolve) =>
+      window.setTimeout(resolve, SESSION_TOKEN_RETRY_DELAY_MS)
+    );
   }
 
   return undefined;
 }
 
+async function getSessionAccessToken(): Promise<string | undefined> {
+  if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now()) {
+    return cachedAccessToken.value;
+  }
+
+  return waitForSessionAccessToken();
+}
+
+type BffFetchOptions = RequestInit & {
+  accessToken?: string;
+};
+
 export async function bffFetch(
   path: string,
-  options: RequestInit = {}
+  options: BffFetchOptions = {}
 ): Promise<Response> {
-  let accessToken = await getSessionAccessToken();
+  const { accessToken: accessTokenOverride, ...fetchOptions } = options;
+  let accessToken = accessTokenOverride || (await getSessionAccessToken());
 
   const buildHeaders = () => {
-    const headers = new Headers(options.headers);
+    const headers = new Headers(fetchOptions.headers);
 
-    if (!(options.body instanceof FormData)) {
+    if (!(fetchOptions.body instanceof FormData)) {
       headers.set("Content-Type", headers.get("Content-Type") || "application/json");
     }
 
@@ -59,24 +77,24 @@ export async function bffFetch(
 
   const startedAt = performance.now();
   let response = await fetch(`${RESOLVED_BFF_URL}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers: buildHeaders(),
-    cache: options.cache ?? "no-store"
+    cache: fetchOptions.cache ?? "no-store"
   });
 
   if (response.status === 401) {
     cachedAccessToken = null;
-    accessToken = await getSessionAccessToken();
+    accessToken = await waitForSessionAccessToken();
     response = await fetch(`${RESOLVED_BFF_URL}${path}`, {
-      ...options,
+      ...fetchOptions,
       headers: buildHeaders(),
-      cache: options.cache ?? "no-store"
+      cache: fetchOptions.cache ?? "no-store"
     });
   }
 
   if (ENABLE_CLIENT_PERF_LOGS) {
     console.info("[BFF_CLIENT_PERF]", {
-      method: options.method || "GET",
+      method: fetchOptions.method || "GET",
       path,
       status: response.status,
       totalMs: Number((performance.now() - startedAt).toFixed(1)),
@@ -115,7 +133,7 @@ export function getBffPathFromUrl(value: string): string | null {
 
 export async function bffAssetFetch(
   value: string,
-  options: RequestInit = {}
+  options: BffFetchOptions = {}
 ): Promise<Response> {
   const bffPath = getBffPathFromUrl(value);
 
@@ -123,5 +141,6 @@ export async function bffAssetFetch(
     return bffFetch(bffPath, options);
   }
 
-  return fetch(value, options);
+  const { accessToken: _accessToken, ...fetchOptions } = options;
+  return fetch(value, fetchOptions);
 }

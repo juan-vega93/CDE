@@ -1516,8 +1516,8 @@ export async function getBimPropertySummary(
           join cde_bim_properties properties on properties.id = pv.property_id
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
           where pv.bim_element_id = candidate_elements.id
-            and properties.normalized_name = lower(regexp_replace(trim($5), '\\s+', ' ', 'g'))
-            and sets.normalized_name = lower(regexp_replace(trim($4), '\\s+', ' ', 'g'))
+            and properties.normalized_name = lower(regexp_replace(trim($5), '[[:space:]]+', '', 'g'))
+            and sets.normalized_name = lower(regexp_replace(trim($4), '[[:space:]]+', '', 'g'))
           order by pv.id
           limit 1
         ) matched_value on true

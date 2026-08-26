@@ -59,7 +59,8 @@ export function setupColoring({ components }: SetupColoringParams) {
   }
 
   async function colorSelections(
-    entries: Array<{ modelIdMap: OBC.ModelIdMap; color: string }>
+    entries: Array<{ modelIdMap: OBC.ModelIdMap; color: string }>,
+    options: { reset?: boolean } = {}
   ) {
     const nonEmptyEntries = entries.filter(
       (entry) => !isEmptyModelIdMap(entry.modelIdMap)
@@ -67,11 +68,24 @@ export function setupColoring({ components }: SetupColoringParams) {
 
     if (nonEmptyEntries.length === 0) return false;
 
-    await restoreAllColors();
+    if (options.reset ?? true) {
+      await restoreAllColors();
+    }
 
     for (const entry of nonEmptyEntries) {
       const styleName = setManualColorStyle(entry.color);
-      highlighter.selection[styleName] = cloneModelIdMap(entry.modelIdMap);
+      const styleSelection =
+        options.reset === false && highlighter.selection[styleName]
+          ? cloneModelIdMap(highlighter.selection[styleName])
+          : {};
+
+      for (const [modelId, ids] of Object.entries(entry.modelIdMap)) {
+        const targetIds = styleSelection[modelId] ?? new Set<number>();
+        for (const localId of ids) targetIds.add(localId);
+        styleSelection[modelId] = targetIds;
+      }
+
+      highlighter.selection[styleName] = styleSelection;
     }
 
     await highlighter.clear("select");

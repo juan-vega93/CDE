@@ -701,8 +701,7 @@ function isIndexedModelRecordReady(record: BimIndexedModelRecord) {
   const status = String(record.status ?? "").toLowerCase();
   return (
     getIndexedModelRecordKey(record).length > 0 &&
-    status !== "failed" &&
-    status !== "cancelled" &&
+    status === "ready" &&
     Number(record.elementCount ?? 0) > 0
   );
 }
@@ -1566,12 +1565,11 @@ const MAX_PROPERTY_INDEX_TOTAL_LOCAL_IDS = 16000;
 const PROPERTY_INDEX_BATCH_SIZE = 12;
 const PROPERTY_INDEX_YIELD_MS = 8;
 const PROPERTY_INDEX_HEAP_WARN_RATIO = 0.66;
-const BIM_INDEX_PERSIST_BATCH_SIZE = 140;
-const BIM_INDEX_PERSIST_MAX_CONCURRENT = 2;
+const BIM_INDEX_PERSIST_BATCH_SIZE = 48;
+const BIM_INDEX_PERSIST_MAX_CONCURRENT = 1;
 const MAX_INDEXED_VALUES_PER_PROPERTY = 450;
 const MAX_LOCAL_IDS_PER_VALUE_BUCKET = 8000;
 const PARAMETER_ANALYSIS_LOCAL_BUCKET_MAX_IDS = 25000;
-const MAX_MODEL_ID_MAP_EXPANSION_IDS = 1500;
 const MAX_NATIVE_LEVEL_INDEX_LOCAL_IDS = 80000;
 const NATIVE_LEVEL_INDEX_BATCH_SIZE = 80;
 const TREE_ACTION_HIGHLIGHT_LIMIT = 1200;
@@ -1581,6 +1579,12 @@ const MAX_SMART_VIEW_PROPERTIES_PER_SET = 140;
 const MAX_SMART_VIEW_NESTED_ARRAY_SCAN = 160;
 const MAX_METERING_ROWS = 5000;
 const METERING_RENDER_ROW_LIMIT = 150;
+const MAX_LOCAL_SMART_VIEW_PROPERTY_SCAN_IDS = 3000;
+const MAX_LOCAL_SMART_VIEW_TEXT_SCAN_IDS = 6000;
+const MAX_LOCAL_AUDIT_SCAN_IDS = 6000;
+const MAX_BROWSER_PROPERTY_INDEX_MS = 90000;
+const MAX_SELECTED_PROPERTIES_IDS = 12;
+const SELECTED_PROPERTIES_TIMEOUT_MS = 12000;
 const IFC_DATA_BATCH_SIZE = 80;
 const SMART_VIEW_INTERNAL_PROPERTY_KEYS = new Set([
   "type",
@@ -4074,6 +4078,51 @@ function mergeModelIdMap(target: OBC.ModelIdMap, source: OBC.ModelIdMap) {
   }
 }
 
+const modelTreeLookupCache = new WeakMap<ModelTreeNode[], Map<number, ModelTreeNode>>();
+
+function buildTreeNodeLookup(nodes: ModelTreeNode[]) {
+  const cached = modelTreeLookupCache.get(nodes);
+
+  if (cached) {
+    return cached;
+  }
+
+  const lookup = new Map<number, ModelTreeNode>();
+
+  for (const node of flattenModelTreeNodes(nodes)) {
+    if (typeof node.localId === "number") {
+      lookup.set(node.localId, node);
+    }
+  }
+
+  modelTreeLookupCache.set(nodes, lookup);
+  return lookup;
+}
+
+function expandLocalIdsWithSpatialTree(
+  model: FederatedModelEntry,
+  localIds: Iterable<number>
+) {
+  const expanded = new Set<number>();
+  const spatialTree = model.spatialTree ?? [];
+  const nodeByLocalId = buildTreeNodeLookup(spatialTree);
+
+  for (const localId of localIds) {
+    if (!Number.isFinite(localId)) continue;
+
+    expanded.add(localId);
+    const node = nodeByLocalId.get(localId);
+
+    if (!node) continue;
+
+    for (const descendantId of collectModelTreeLocalIds(node)) {
+      expanded.add(descendantId);
+    }
+  }
+
+  return Array.from(expanded);
+}
+
 const MODEL_ID_MAP_RENDER_CHUNK_SIZE = 450;
 const MODEL_ID_MAP_COLOR_CHUNK_SIZE = 350;
 
@@ -4145,11 +4194,15 @@ function buildParameterAnalysisBucketsFromSummary({
 
       for (const [modelKey, localIds] of Object.entries(bucket.localIdsByModelKey ?? {})) {
         const modelId = modelIdByKey.get(modelKey);
-        if (!modelId) continue;
+        const model = models.find((item) => item.key === modelKey);
+        if (!modelId || !model) continue;
         addIdsToModelIdMap(
           modelIdMap,
           modelId,
-          localIds.map(Number).filter(Number.isFinite)
+          expandLocalIdsWithSpatialTree(
+            model,
+            localIds.map(Number).filter(Number.isFinite)
+          )
         );
       }
 
@@ -4195,6 +4248,7 @@ function buildParameterAnalysisBuckets({
       .filter((model) => Boolean(model.modelId))
       .map((model) => [model.key, model.modelId as string])
   );
+  const modelByKey = new Map(models.map((model) => [model.key, model]));
   const aggregated = new Map<string, OBC.ModelIdMap>();
   const assignedIdsByModelKey = new Map<string, Set<number>>();
   const rawValueEntries = Object.entries(valueBuckets).sort(([a], [b]) => {
@@ -4210,9 +4264,13 @@ function buildParameterAnalysisBuckets({
 
     for (const [modelKey, localIds] of Object.entries(modelBuckets)) {
       const modelId = modelIdByKey.get(modelKey);
-      if (!modelId) continue;
+      const model = modelByKey.get(modelKey);
+      if (!modelId || !model) continue;
       const assignedIds = assignedIdsByModelKey.get(modelKey) ?? new Set<number>();
-      const unassignedLocalIds = localIds.filter((localId) => !assignedIds.has(localId));
+      const expandedLocalIds = expandLocalIdsWithSpatialTree(model, localIds);
+      const unassignedLocalIds = expandedLocalIds.filter(
+        (localId) => !assignedIds.has(localId)
+      );
       if (unassignedLocalIds.length === 0) continue;
 
       addIdsToModelIdMap(target, modelId, unassignedLocalIds);
@@ -4870,13 +4928,17 @@ function ParameterAnalysisPanel({
     };
 
     setColorOverrides(nextOverrides);
-    await onApplyColors(
-      propertySet,
-      propertyName,
-      displayBuckets.map((item) =>
-        item.value === bucket.value ? { ...item, color } : item
-      )
+    const nextBuckets = displayBuckets.map((item) =>
+      item.value === bucket.value ? { ...item, color } : item
     );
+
+    await onApplyColors(propertySet, propertyName, nextBuckets);
+
+    for (const item of nextBuckets) {
+      if (hiddenBucketValues.has(item.value)) {
+        await onSetBucketVisibility(item, false);
+      }
+    }
   }
 
   async function handleToggleBucket(bucket: ParameterValueBucket) {
@@ -4890,7 +4952,13 @@ function ParameterAnalysisPanel({
     }
 
     setHiddenBucketValues(nextHiddenValues);
-    await onSetBucketVisibility(bucket, willBeVisible);
+    await onRestoreVisibility();
+
+    for (const item of displayBuckets) {
+      if (nextHiddenValues.has(item.value)) {
+        await onSetBucketVisibility(item, false);
+      }
+    }
   }
 
   async function handleRestoreVisibility() {
@@ -6959,7 +7027,10 @@ export function IfcViewerCanvas({
   documentPaths = [],
   projectCode = ""
 }: IfcViewerCanvasProps) {
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
+
+  const sessionAccessToken =
+    typeof session?.accessToken === "string" ? session.accessToken : "";
 
   const currentAuthor =
     session?.user?.name ||
@@ -7487,6 +7558,16 @@ export function IfcViewerCanvas({
   }, [viewpoints, primaryDocumentPath, viewpointsLoaded]);
 
   useEffect(() => {
+    if (sessionStatus === "loading") {
+      setStatus("Preparando sesion...");
+      return;
+    }
+
+    if (sessionStatus === "unauthenticated" || !sessionAccessToken) {
+      setStatus("Sesion requerida para cargar modelos BIM");
+      return;
+    }
+
     const hostElement = hostRef.current;
     if (!hostElement) return;
 
@@ -7875,7 +7956,8 @@ export function IfcViewerCanvas({
             components,
             world,
             source: currentSource,
-            modelName: currentName
+            modelName: currentName,
+            accessToken: sessionAccessToken
           });
 
           currentLoadedModelResultsRef.current.push(result);
@@ -8084,7 +8166,7 @@ export function IfcViewerCanvas({
 
       
     };
-  }, []);
+  }, [sessionAccessToken, sessionStatus]);
 
   useEffect(() => {
   if (!projectCode) {
@@ -8625,6 +8707,17 @@ export function IfcViewerCanvas({
         }
       }
 
+      const databaseBackedIndex = Boolean(projectCode?.trim() && bimIndexOverview);
+      const browserIndexStartedAt =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+
+      if (!databaseBackedIndex && modelsToIndex.length > 1) {
+        setStatus(
+          "Indice BIM no disponible en PostgreSQL. Para federar varios modelos, activa la base de datos o indexa un modelo por vez en local."
+        );
+        return;
+      }
+
       const propertyMap = new Map<string, Map<string, Set<string>>>();
       const localIdsBySetPropertyValue: SmartViewPropertyIndex["localIdsBySetPropertyValue"] = {};
       const localIdsByModelKey: Record<string, number[]> = {};
@@ -8665,7 +8758,9 @@ export function IfcViewerCanvas({
         const indexedLocalIds = Array.from(
           new Set([...treeLocalIds, ...universeLocalIds])
         ).slice(0, maxLocalIdsPerModel);
-        localIdsByModelKey[model.key] = indexedLocalIds;
+        if (!databaseBackedIndex) {
+          localIdsByModelKey[model.key] = indexedLocalIds;
+        }
 
         await upsertBimIndexJob({
           projectCode,
@@ -8769,6 +8864,10 @@ export function IfcViewerCanvas({
                 await schedulePersistedElements();
               }
             }
+            if (databaseBackedIndex) {
+              continue;
+            }
+
             elementIdentityByKey[`${model.key}:${localId}`] =
               getCost5DElementIdentity(item, itemIndexMap, model.key, localId);
             const nativeLevelValue = getNativeIfcLevelValue(item, itemIndexMap);
@@ -8853,6 +8952,17 @@ export function IfcViewerCanvas({
               break;
             }
 
+            const elapsedIndexMs =
+              (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+              browserIndexStartedAt;
+            if (elapsedIndexMs > MAX_BROWSER_PROPERTY_INDEX_MS) {
+              indexPartial = true;
+              setStatus(
+                `Indice parcial por tiempo: ${indexedItems.toLocaleString()} elementos indexados.`
+              );
+              break;
+            }
+
             setStatus(
               `Indexando parametros ${modelIndex + 1}/${modelsToIndex.length}: ${Math.min(
                 index + PROPERTY_INDEX_BATCH_SIZE,
@@ -8874,7 +8984,10 @@ export function IfcViewerCanvas({
           projectCode,
           model,
           sourceHash: analysisSignature,
-          status: "ready",
+          status: indexPartial ? "failed" : "ready",
+          errorMessage: indexPartial
+            ? "Indice parcial detenido para proteger el navegador. Requiere PostgreSQL/worker para completar."
+            : undefined,
           stats: {
             stage: indexPartial ? "browser-index-partial" : "browser-index",
             elementCount: indexedLocalIds.length,
@@ -8935,17 +9048,21 @@ export function IfcViewerCanvas({
 
       setSmartViewPropertyIndex(finalPropertyIndex);
       setSmartViewPropertyIndexSignature(analysisSignature);
-      void saveSmartViewPropertyIndexSnapshot({
-        projectCode,
-        signature: analysisSignature,
-        modelKeys: analysisModelKeys,
-        elementCount: indexedItems,
-        index: finalPropertyIndex
-      });
+      if (!indexPartial) {
+        void saveSmartViewPropertyIndexSnapshot({
+          projectCode,
+          signature: analysisSignature,
+          modelKeys: analysisModelKeys,
+          elementCount: indexedItems,
+          index: finalPropertyIndex
+        });
+      }
       setStatus(
-        finalPropertyIndex.sets.length > 0
-          ? `Conjuntos indexados: ${finalPropertyIndex.sets.length}.`
-          : "No se encontraron conjuntos de propiedades indexables en los modelos cargados."
+        indexPartial
+          ? `Indice parcial detenido para proteger el navegador: ${indexedItems.toLocaleString()} elementos.`
+          : finalPropertyIndex.sets.length > 0
+            ? `Conjuntos indexados: ${finalPropertyIndex.sets.length}.`
+            : "No se encontraron conjuntos de propiedades indexables en los modelos cargados."
       );
     } catch (error) {
       console.error("[viewer-ifc] Error indexando propiedades SmartView:", error);
@@ -9113,12 +9230,22 @@ export function IfcViewerCanvas({
       }
 
       const localIds = candidateNodes.map((node) => node.localId as number);
-      const needsPropertyData = Boolean(
-        normalizedText ||
-          normalizedPropertySet ||
-          normalizedPropertyName ||
-          normalizedPropertyValue
+      const hasPropertyCriteria = Boolean(
+        normalizedPropertySet || normalizedPropertyName || normalizedPropertyValue
       );
+      const canScanTextPropertiesLocally =
+        Boolean(normalizedText) && localIds.length <= MAX_LOCAL_SMART_VIEW_TEXT_SCAN_IDS;
+
+      if (
+        hasPropertyCriteria &&
+        localIds.length > MAX_LOCAL_SMART_VIEW_PROPERTY_SCAN_IDS
+      ) {
+        throw new Error(
+          "SmartView por parametros requiere el indice BIM en PostgreSQL para selecciones grandes."
+        );
+      }
+
+      const needsPropertyData = hasPropertyCriteria || canScanTextPropertiesLocally;
       const itemDataMap = needsPropertyData
         ? new Map<number, Record<string, unknown>>()
         : await getIfcItemDataMap(model.runtimeModel, localIds);
@@ -9314,12 +9441,6 @@ export function IfcViewerCanvas({
   }
 
   async function expandModelIdMapForRendering(modelIdMap: OBC.ModelIdMap) {
-    const sourceCount = getModelIdMapItemCount(modelIdMap);
-
-    if (sourceCount > MAX_MODEL_ID_MAP_EXPANSION_IDS) {
-      return cloneModelIdMap(modelIdMap);
-    }
-
     const cacheKey = getSelectionCacheKey(modelIdMap);
     const cached = expandedModelIdMapCacheRef.current.get(cacheKey);
 
@@ -9334,12 +9455,7 @@ export function IfcViewerCanvas({
       const expandedIds = new Set<number>(ids);
 
       if (model) {
-        const nodeByLocalId = new Map<number, ModelTreeNode>();
-        for (const node of flattenModelTreeNodes(model.spatialTree ?? [])) {
-          if (typeof node.localId === "number") {
-            nodeByLocalId.set(node.localId, node);
-          }
-        }
+        const nodeByLocalId = buildTreeNodeLookup(model.spatialTree ?? []);
 
         for (const localId of ids) {
           const node = nodeByLocalId.get(localId);
@@ -9453,6 +9569,8 @@ export function IfcViewerCanvas({
     const modules = modulesRef.current;
     if (!modules) return false;
 
+    await modules.coloring.restoreAllColors();
+
     for (const selection of selections) {
       const completed = await forEachModelIdMapChunk(
         selection.modelIdMap,
@@ -9462,7 +9580,7 @@ export function IfcViewerCanvas({
               modelIdMap: chunk,
               color: selection.color
             }
-          ]);
+          ], { reset: false });
         },
         MODEL_ID_MAP_COLOR_CHUNK_SIZE,
         () => isRenderOperationCurrent(token)
@@ -10057,6 +10175,26 @@ export function IfcViewerCanvas({
           ? models
           : await ensureSpatialTreesForAnalysis();
       const analysisSignature = getFederatedModelsAnalysisSignature(analysisModels);
+      const auditElementCount = analysisModels.reduce(
+        (total, model) =>
+          total +
+          flattenModelTreeNodes(model.spatialTree ?? []).filter(
+            (node) => isModelTreeElement(node) && typeof node.localId === "number"
+          ).length,
+        0
+      );
+
+      if (
+        auditIndexSignature !== analysisSignature &&
+        auditElementCount > MAX_LOCAL_AUDIT_SCAN_IDS
+      ) {
+        const message =
+          "Auditoria local detenida para proteger el navegador. Ejecuta el indice BIM en PostgreSQL antes de auditar varios modelos o modelos grandes.";
+        setAuditMessage(message);
+        setStatus(message);
+        return;
+      }
+
       let records =
         auditIndexSignature === analysisSignature
           ? auditIndex
@@ -10447,7 +10585,8 @@ async function handleIsolateModel(key: string) {
           components: viewer.components,
           world: viewer.world,
           source,
-          modelName: name
+          modelName: name,
+          accessToken: sessionAccessToken
         });
 
         loadedModelResultsRef.current.push(result);
@@ -10569,6 +10708,16 @@ async function handleIsolateModel(key: string) {
     const map = modules.selection.getSelectionModelIdMap();
     if (Object.keys(map).length === 0) return;
 
+    const selectedCount = countModelIdMapElements(map);
+    if (selectedCount > MAX_SELECTED_PROPERTIES_IDS) {
+      setStatus(
+        `Seleccion grande: ${selectedCount} elementos. Reduce la seleccion para ver propiedades puntuales.`
+      );
+      setPropertiesRequested(false);
+      setPropertiesLoading(false);
+      return;
+    }
+
     const cacheKey = getSelectionCacheKey(map);
     const cached = propertiesCacheRef.current.get(cacheKey);
 
@@ -10600,10 +10749,19 @@ async function handleIsolateModel(key: string) {
     setAssociationsLoading(true);
 
     try {
-      const [data, containment, associations] = await Promise.all([
-        modules.selection.getSelectedItemsData(),
-        modules.selection.getSelectedContainmentData(),
-        modules.selection.getSelectedAssociationsData()
+      const timeout = new Promise<never>((_, reject) => {
+        window.setTimeout(
+          () => reject(new Error("Tiempo agotado cargando propiedades.")),
+          SELECTED_PROPERTIES_TIMEOUT_MS
+        );
+      });
+      const [data, containment, associations] = await Promise.race([
+        Promise.all([
+          modules.selection.getSelectedItemsData(),
+          modules.selection.getSelectedContainmentData(),
+          modules.selection.getSelectedAssociationsData()
+        ]),
+        timeout
       ]);
       const typedData = data as Record<string, unknown>[];
 

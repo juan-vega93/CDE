@@ -8,16 +8,10 @@ import type {
 } from "../types/project-card.types";
 import projectMembersRoutes from "./project-members.routes";
 import {
-  authenticatedRoute,
   projectAuthorizedRoute,
   projectCodeFromAny,
   systemAdminRoute
 } from "../middleware/authorization.middleware";
-import {
-  AuthorizationError,
-  authorizeProjectAccess
-} from "../security/project-access";
-import { hasSystemAdminRole } from "../security/policies";
 
 const router = Router();
 const projectCardsService = new ProjectCardsService();
@@ -31,54 +25,13 @@ router.use(
   projectMembersRoutes
 );
 
-router.get("/", authenticatedRoute(), async (req, res) => {
+router.get("/", systemAdminRoute(), async (_req, res) => {
   try {
     const projectCards = await projectCardsService.getAll();
-    const user = req.auth!;
-    const visibleProjectCards = hasSystemAdminRole(user.realmRoles)
-      ? projectCards
-      : (
-          await Promise.all(
-            projectCards.map(async (projectCard) => {
-              try {
-                await authorizeProjectAccess(
-                  user,
-                  projectCard.code,
-                  "project:read"
-                );
-                return projectCard;
-              } catch (error) {
-                if (!(error instanceof AuthorizationError)) {
-                  console.warn(
-                    `[project-cards.routes] Ignorando Project Card no autorizable '${projectCard.code}':`,
-                    error
-                  );
-                }
-
-                return null;
-              }
-            })
-          )
-        ).filter((projectCard) => projectCard !== null);
-
-    if (
-      process.env.BFF_AUTH_DEBUG === "true" &&
-      projectCards.length > 0 &&
-      visibleProjectCards.length === 0
-    ) {
-      console.warn("[project-cards.routes] usuario autenticado sin project cards visibles", {
-        username: user.username,
-        email: user.email,
-        realmRoles: user.realmRoles,
-        clientRoles: user.clientRoles,
-        groups: user.groups,
-        projectCodes: projectCards.map((projectCard) => projectCard.code)
-      });
-    }
 
     return res.json({
       success: true,
-      data: visibleProjectCards
+      data: projectCards
     });
   } catch (error) {
     console.error("[project-cards.routes] GET / error:", error);

@@ -8,6 +8,7 @@ type LoadViewerModelParams = {
   world: OBC.World;
   source: ViewerSource;
   modelName?: string;
+  accessToken?: string;
 };
 
 type InitializedFragments = {
@@ -66,11 +67,92 @@ function getResolvedModelName(source: ViewerSource, modelName?: string) {
   );
 }
 
+type BufferLikeAttribute = {
+  array?: { byteLength?: number };
+  data?: { array?: { byteLength?: number } };
+};
+
+function hasUsableBuffer(attribute: unknown) {
+  const bufferAttribute = attribute as BufferLikeAttribute | undefined;
+  const array = bufferAttribute?.array ?? bufferAttribute?.data?.array;
+  return typeof array?.byteLength === "number";
+}
+
+function sanitizeRenderableGeometry(object: THREE.Object3D, label: string) {
+  const invalidObjects: THREE.Object3D[] = [];
+  let removedAttributes = 0;
+
+  object.traverse((child) => {
+    const renderable = child as THREE.Object3D & {
+      geometry?: THREE.BufferGeometry;
+    };
+    const geometry = renderable.geometry;
+    if (!geometry?.isBufferGeometry) return;
+
+    if (!hasUsableBuffer(geometry.attributes.position)) {
+      invalidObjects.push(child);
+      return;
+    }
+
+    for (const [name, attribute] of Object.entries(geometry.attributes)) {
+      if (hasUsableBuffer(attribute)) continue;
+      geometry.deleteAttribute(name);
+      removedAttributes += 1;
+    }
+
+    if (geometry.index && !hasUsableBuffer(geometry.index)) {
+      geometry.setIndex(null);
+      removedAttributes += 1;
+    }
+
+    const morphAttributes = geometry.morphAttributes as Record<string, unknown[]>;
+    for (const [name, attributes] of Object.entries(morphAttributes)) {
+      const validAttributes = attributes.filter(hasUsableBuffer);
+      if (validAttributes.length === attributes.length) continue;
+      morphAttributes[name] = validAttributes;
+      removedAttributes += attributes.length - validAttributes.length;
+    }
+  });
+
+  for (const child of invalidObjects) {
+    const renderable = child as THREE.Object3D & {
+      geometry?: THREE.BufferGeometry;
+    };
+    renderable.geometry?.dispose();
+    child.parent?.remove(child);
+  }
+
+  if (invalidObjects.length > 0 || removedAttributes > 0) {
+    console.warn("[viewer-ifc] Geometria BIM invalida omitida antes de renderizar", {
+      model: label,
+      objects: invalidObjects.length,
+      attributes: removedAttributes
+    });
+  }
+}
+
+async function updateFragmentsSafely(
+  fragments: OBC.FragmentsManager,
+  object: THREE.Object3D,
+  label: string
+) {
+  try {
+    await fragments.core.update(true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("byteLength")) throw error;
+
+    sanitizeRenderableGeometry(object, label);
+    await fragments.core.update(true);
+  }
+}
+
 export async function loadViewerModel({
   components,
   world,
   source,
-  modelName
+  modelName,
+  accessToken
 }: LoadViewerModelParams) {
   const { fragments, workerUrl } = await ensureFragmentsInitialized(
     components,
@@ -80,7 +162,7 @@ export async function loadViewerModel({
   const resolvedModelName = getResolvedModelName(source, modelName);
 
   if (source.kind === "frag") {
-    const response = await bffAssetFetch(source.modelUrl);
+    const response = await bffAssetFetch(source.modelUrl, { accessToken });
 
     if (!response.ok) {
       throw new Error(`No se pudo descargar el FRAG: ${response.status}`);
@@ -98,8 +180,9 @@ export async function loadViewerModel({
         | THREE.OrthographicCamera
     );
 
+    sanitizeRenderableGeometry(model.object, resolvedModelName);
     world.scene.three.add(model.object);
-    await fragments.core.update(true);
+    await updateFragmentsSafely(fragments, model.object, resolvedModelName);
 
     return {
       model,
@@ -118,7 +201,7 @@ export async function loadViewerModel({
     }
   });
 
-  const response = await bffAssetFetch(source.modelUrl);
+  const response = await bffAssetFetch(source.modelUrl, { accessToken });
 
   if (!response.ok) {
     throw new Error(`No se pudo descargar el IFC: ${response.status}`);
@@ -133,8 +216,9 @@ export async function loadViewerModel({
       | THREE.OrthographicCamera
   );
 
+  sanitizeRenderableGeometry(model.object, resolvedModelName);
   world.scene.three.add(model.object);
-  await fragments.core.update(true);
+  await updateFragmentsSafely(fragments, model.object, resolvedModelName);
 
   return {
     model,
