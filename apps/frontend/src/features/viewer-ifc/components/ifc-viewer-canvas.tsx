@@ -10725,28 +10725,15 @@ async function handleIsolateModel(key: string) {
       setSelectedItemsData(cached);
       setPropertiesRequested(true);
       setPropertiesLoading(false);
-      setContainmentLoading(true);
-      setAssociationsLoading(true);
-
-      try {
-        const [containment, associations] = await Promise.all([
-          modules.selection.getSelectedContainmentData(),
-          modules.selection.getSelectedAssociationsData()
-        ]);
-        setContainmentData(containment as Record<string, unknown>[]);
-        setAssociationsData(associations as Record<string, unknown>[]);
-      } finally {
-        setContainmentLoading(false);
-        setAssociationsLoading(false);
-      }
-
       setStatus("Propiedades cargadas");
       return;
     }
 
     setPropertiesLoading(true);
-    setContainmentLoading(true);
-    setAssociationsLoading(true);
+    setContainmentLoading(false);
+    setAssociationsLoading(false);
+    setContainmentData([]);
+    setAssociationsData([]);
 
     try {
       const timeout = new Promise<never>((_, reject) => {
@@ -10755,20 +10742,14 @@ async function handleIsolateModel(key: string) {
           SELECTED_PROPERTIES_TIMEOUT_MS
         );
       });
-      const [data, containment, associations] = await Promise.race([
-        Promise.all([
-          modules.selection.getSelectedItemsData(),
-          modules.selection.getSelectedContainmentData(),
-          modules.selection.getSelectedAssociationsData()
-        ]),
+      const data = await Promise.race([
+        modules.selection.getSelectedItemsData(),
         timeout
       ]);
       const typedData = data as Record<string, unknown>[];
 
       propertiesCacheRef.current.set(cacheKey, typedData);
       setSelectedItemsData(typedData);
-      setContainmentData(containment as Record<string, unknown>[]);
-      setAssociationsData(associations as Record<string, unknown>[]);
       setPropertiesRequested(true);
       setStatus("Propiedades cargadas");
     } catch (error) {
@@ -12510,7 +12491,15 @@ async function handleIsolateModel(key: string) {
     setContainmentLoading(true);
 
     try {
-      const data = await modules.selection.getSelectedContainmentData();
+      const data = await Promise.race([
+        modules.selection.getSelectedContainmentData(),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(
+            () => reject(new Error("Tiempo agotado cargando contenedor espacial.")),
+            SELECTED_PROPERTIES_TIMEOUT_MS
+          )
+        )
+      ]);
       setContainmentData(data as Record<string, unknown>[]);
       setStatus("Contenedor espacial cargado");
     } catch (error) {
@@ -12528,7 +12517,15 @@ async function handleIsolateModel(key: string) {
     setAssociationsLoading(true);
 
     try {
-      const data = await modules.selection.getSelectedAssociationsData();
+      const data = await Promise.race([
+        modules.selection.getSelectedAssociationsData(),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(
+            () => reject(new Error("Tiempo agotado cargando asociaciones.")),
+            SELECTED_PROPERTIES_TIMEOUT_MS
+          )
+        )
+      ]);
       setAssociationsData(data as Record<string, unknown>[]);
       setStatus("Asociaciones cargadas");
     } catch (error) {

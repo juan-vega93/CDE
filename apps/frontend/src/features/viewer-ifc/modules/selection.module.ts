@@ -136,14 +136,6 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
           IsTypedBy: {
             attributes: true,
             relations: true
-          },
-          ContainedInStructure: {
-            attributes: true,
-            relations: true
-          },
-          HasAssociations: {
-            attributes: true,
-            relations: true
           }
         }
       });
