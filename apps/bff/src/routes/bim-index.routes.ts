@@ -350,12 +350,13 @@ router.post("/models/:modelId/elements/bulk", async (req, res) => {
   try {
     const modelId = toText(req.params.modelId);
     const elementsRaw: unknown[] = Array.isArray(req.body?.elements) ? req.body.elements : [];
+    const finalize = req.body?.finalize === true;
 
     if (!modelId) {
       return res.status(400).json({ success: false, message: "modelId es obligatorio" });
     }
 
-    if (elementsRaw.length === 0 || elementsRaw.length > MAX_ELEMENTS_PER_BATCH) {
+    if ((!finalize && elementsRaw.length === 0) || elementsRaw.length > MAX_ELEMENTS_PER_BATCH) {
       return res.status(400).json({
         success: false,
         message: `elements debe contener entre 1 y ${MAX_ELEMENTS_PER_BATCH} elementos`
@@ -373,7 +374,7 @@ router.post("/models/:modelId/elements/bulk", async (req, res) => {
       });
     }
 
-    const data = await bulkUpsertBimElements(modelId, elements);
+    const data = await bulkUpsertBimElements(modelId, elements, { finalize });
     return res.json({ success: true, data });
   } catch (error) {
     return sendRouteError(res, error);

@@ -477,7 +477,11 @@ export async function getBimModelByDocument(input: {
   return result.rows[0] ? toModel(result.rows[0]) : null;
 }
 
-export async function bulkUpsertBimElements(modelId: string, elements: BimElementInput[]) {
+export async function bulkUpsertBimElements(
+  modelId: string,
+  elements: BimElementInput[],
+  options: { finalize?: boolean } = {}
+) {
   ensureBimDatabaseEnabled();
   const pool = getDatabasePool();
   const client = await pool.connect();
@@ -607,7 +611,7 @@ export async function bulkUpsertBimElements(modelId: string, elements: BimElemen
       `
         update cde_bim_models
         set
-          status = 'ready',
+          status = case when $2::boolean then 'ready' else 'processing' end,
           element_count = (select count(*) from cde_bim_elements where bim_model_id = $1),
           property_count = (
             select count(*)
@@ -615,12 +619,12 @@ export async function bulkUpsertBimElements(modelId: string, elements: BimElemen
             join cde_bim_elements elements on elements.id = pv.bim_element_id
             where elements.bim_model_id = $1
           ),
-          indexed_at = now(),
-          error_message = null,
+          indexed_at = case when $2::boolean then now() else indexed_at end,
+          error_message = case when $2::boolean then null else error_message end,
           updated_at = now()
         where id = $1
       `,
-      [modelId]
+      [modelId, options.finalize === true]
     );
 
     await client.query("commit");

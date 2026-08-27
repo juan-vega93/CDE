@@ -866,21 +866,27 @@ function createBimIndexElementPayload(input: {
 
 async function persistBimIndexElementBatch(
   modelId: string | undefined,
-  elements: BimIndexElementPayload[]
-) {
-  if (!modelId || elements.length === 0) return;
+  elements: BimIndexElementPayload[],
+  options: { finalize?: boolean } = {}
+): Promise<boolean> {
+  const finalize = options.finalize ?? false;
+  if (!modelId) return false;
+  if (elements.length === 0 && !finalize) return true;
 
   try {
     const response = await bffFetch(`/api/bim-index/models/${modelId}/elements/bulk`, {
       method: "POST",
-      body: JSON.stringify({ elements })
+      body: JSON.stringify({ elements, finalize })
     });
 
     if (!response.ok) {
       console.warn("[viewer-ifc] Lote BIM no persistido", response.status);
+      return false;
     }
+    return true;
   } catch (error) {
     console.warn("[viewer-ifc] No se pudo persistir lote BIM:", error);
+    return false;
   }
 }
 
@@ -4186,33 +4192,76 @@ function buildParameterAnalysisBucketsFromSummary({
       .filter((model) => Boolean(model.modelId))
       .map((model) => [model.key, model.modelId as string])
   );
+  const modelByKey = new Map(models.map((model) => [model.key, model]));
+  const aggregated = new Map<string, OBC.ModelIdMap>();
+  const assignedIdsByModelKey = new Map<string, Set<number>>();
 
-  return summary.buckets
-    .map((bucket) => {
-      const value = normalizeParameterBucketValue(bucket.value);
-      const modelIdMap: OBC.ModelIdMap = {};
+  for (const bucket of summary.buckets) {
+    const value = normalizeParameterBucketValue(bucket.value);
+    if (value === "Sin valor") continue;
 
-      for (const [modelKey, localIds] of Object.entries(bucket.localIdsByModelKey ?? {})) {
-        const modelId = modelIdByKey.get(modelKey);
-        const model = models.find((item) => item.key === modelKey);
-        if (!modelId || !model) continue;
-        addIdsToModelIdMap(
-          modelIdMap,
-          modelId,
-          expandLocalIdsWithSpatialTree(
-            model,
-            localIds.map(Number).filter(Number.isFinite)
-          )
-        );
+    const modelIdMap: OBC.ModelIdMap = {};
+
+    for (const [modelKey, localIds] of Object.entries(bucket.localIdsByModelKey ?? {})) {
+      const modelId = modelIdByKey.get(modelKey);
+      const model = modelByKey.get(modelKey);
+      if (!modelId || !model) continue;
+      const assignedIds = assignedIdsByModelKey.get(modelKey) ?? new Set<number>();
+      const expandedLocalIds = expandLocalIdsWithSpatialTree(
+        model,
+        localIds.map(Number).filter(Number.isFinite)
+      );
+      const unassignedLocalIds = expandedLocalIds.filter(
+        (localId) => !assignedIds.has(localId)
+      );
+      if (unassignedLocalIds.length === 0) continue;
+
+      addIdsToModelIdMap(modelIdMap, modelId, unassignedLocalIds);
+
+      for (const localId of unassignedLocalIds) {
+        assignedIds.add(localId);
       }
+      assignedIdsByModelKey.set(modelKey, assignedIds);
+    }
 
-      return {
-        value,
-        count: Number(bucket.count) || countModelIdMapElements(modelIdMap),
-        color: PARAMETER_ANALYSIS_MISSING_COLOR,
-        modelIdMap
-      };
-    })
+    if (countModelIdMapElements(modelIdMap) > 0) {
+      aggregated.set(value, modelIdMap);
+    }
+  }
+
+  const missingMap: OBC.ModelIdMap = {};
+
+  for (const model of models) {
+    if (!model.modelId) continue;
+
+    const assignedIds = assignedIdsByModelKey.get(model.key) ?? new Set<number>();
+    const modelUniverseIds = flattenModelTreeNodes(model.spatialTree ?? [])
+      .filter(
+        (node) =>
+          isModelTreeElement(node) &&
+          typeof node.localId === "number"
+      )
+      .map((node) => node.localId as number);
+    const missingIds = Array.from(new Set(modelUniverseIds)).filter(
+      (localId) => !assignedIds.has(localId)
+    );
+
+    if (missingIds.length > 0) {
+      addIdsToModelIdMap(missingMap, model.modelId, missingIds);
+    }
+  }
+
+  if (countModelIdMapElements(missingMap) > 0) {
+    aggregated.set("Sin valor", missingMap);
+  }
+
+  return Array.from(aggregated.entries())
+    .map(([value, modelIdMap]) => ({
+      value,
+      count: countModelIdMapElements(modelIdMap),
+      color: PARAMETER_ANALYSIS_MISSING_COLOR,
+      modelIdMap
+    }))
     .filter((bucket) => bucket.count > 0 && countModelIdMapElements(bucket.modelIdMap) > 0)
     .sort((a, b) => {
       if (a.value === "Sin valor") return 1;
@@ -8780,12 +8829,16 @@ export function IfcViewerCanvas({
           elementCount: indexedLocalIds.length
         });
         const persistedElementBuffer: BimIndexElementPayload[] = [];
-        const activePersistWrites: Promise<void>[] = [];
+        const activePersistWrites: Promise<boolean>[] = [];
+        let persistFailed = false;
         const schedulePersistedElements = async () => {
           if (!persistedModelId || persistedElementBuffer.length === 0) return;
           const batch = persistedElementBuffer.splice(0, BIM_INDEX_PERSIST_BATCH_SIZE);
-          let write: Promise<void>;
-          write = persistBimIndexElementBatch(persistedModelId, batch).finally(() => {
+          let write: Promise<boolean>;
+          write = persistBimIndexElementBatch(persistedModelId, batch).then((ok) => {
+            if (!ok) persistFailed = true;
+            return ok;
+          }).finally(() => {
             const writeIndex = activePersistWrites.indexOf(write);
             if (writeIndex >= 0) activePersistWrites.splice(writeIndex, 1);
           });
@@ -8980,13 +9033,22 @@ export function IfcViewerCanvas({
         if (activePersistWrites.length > 0) {
           await Promise.allSettled([...activePersistWrites]);
         }
+        if (persistedModelId && !indexPartial) {
+          const finalized = await persistBimIndexElementBatch(persistedModelId, [], { finalize: true });
+          if (!finalized) persistFailed = true;
+        }
+        if (persistFailed) {
+          indexPartial = true;
+        }
         await upsertBimIndexJob({
           projectCode,
           model,
           sourceHash: analysisSignature,
           status: indexPartial ? "failed" : "ready",
           errorMessage: indexPartial
-            ? "Indice parcial detenido para proteger el navegador. Requiere PostgreSQL/worker para completar."
+            ? persistFailed
+              ? "Indice no finalizado: fallo al persistir uno o mas lotes en PostgreSQL."
+              : "Indice parcial detenido para proteger el navegador. Requiere PostgreSQL/worker para completar."
             : undefined,
           stats: {
             stage: indexPartial ? "browser-index-partial" : "browser-index",
@@ -9156,7 +9218,9 @@ export function IfcViewerCanvas({
       if (dbLocalIdsByModelKey) {
         const dbIds = dbLocalIdsByModelKey[model.key] ?? [];
         if (dbIds.length > 0) {
-          result[model.modelId] = new Set(dbIds);
+          result[model.modelId] = new Set(
+            expandLocalIdsWithSpatialTree(model, dbIds)
+          );
         }
         continue;
       }
