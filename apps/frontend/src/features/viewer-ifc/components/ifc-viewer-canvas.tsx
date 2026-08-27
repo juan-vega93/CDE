@@ -636,7 +636,8 @@ async function upsertBimIndexModel(input: {
         elementCount: input.elementCount,
         metadata: {
           sourceKind: input.model.source.kind,
-          analysisSignature: input.signature
+          analysisSignature: input.signature,
+          indexVersion: BIM_INDEX_SCHEMA_VERSION
         }
       })
     });
@@ -661,6 +662,7 @@ type BimIndexedModelRecord = {
   status?: string;
   elementCount?: number;
   propertyCount?: number;
+  metadata?: Record<string, unknown>;
   updatedAt?: string;
   lastIndexedAt?: string | null;
 };
@@ -699,10 +701,13 @@ function getIndexedModelRecordKey(record: BimIndexedModelRecord) {
 
 function isIndexedModelRecordReady(record: BimIndexedModelRecord) {
   const status = String(record.status ?? "").toLowerCase();
+  const indexVersion = Number(record.metadata?.indexVersion ?? 0);
   return (
     getIndexedModelRecordKey(record).length > 0 &&
     status === "ready" &&
-    Number(record.elementCount ?? 0) > 0
+    indexVersion >= BIM_INDEX_SCHEMA_VERSION &&
+    Number(record.elementCount ?? 0) > 0 &&
+    Number(record.propertyCount ?? 0) > 0
   );
 }
 
@@ -842,6 +847,24 @@ function createBimIndexElementPayload(input: {
       "ObjectType"
     ]) || undefined;
   const levelName = getNativeIfcLevelValue(input.item, input.pairs) || undefined;
+
+  const addCanonicalProperty = (setName: string, name: string, value: string | undefined) => {
+    const normalizedValue = value?.trim();
+    if (!normalizedValue) return;
+    const exists = properties.some(
+      (property) =>
+        normalizeSmartViewPropertyKey(property.setName) === normalizeSmartViewPropertyKey(setName) &&
+        normalizeSmartViewPropertyKey(property.name) === normalizeSmartViewPropertyKey(name) &&
+        String(property.value).trim().toLowerCase() === normalizedValue.toLowerCase()
+    );
+    if (!exists) {
+      properties.push({ setName, name, value: normalizedValue, valueType: "text" });
+    }
+  };
+
+  addCanonicalProperty("Descripcion del elemento", "Tipo de elemento", typeName);
+  addCanonicalProperty("Atributos IFC", "IFC Class", ifcClass);
+  addCanonicalProperty("Atributos IFC", "Nivel", levelName);
 
   return {
     localId: input.localId,
@@ -1566,11 +1589,12 @@ type ViewerPerformanceStats = {
 
 const MAX_TREE_ELEMENT_NODES = 25000;
 const MAX_RENDERED_TREE_GROUP_CHILDREN = 350;
-const MAX_PROPERTY_INDEX_LOCAL_IDS = 5200;
+const MAX_PROPERTY_INDEX_LOCAL_IDS = 12000;
 const MAX_PROPERTY_INDEX_TOTAL_LOCAL_IDS = 16000;
 const PROPERTY_INDEX_BATCH_SIZE = 12;
 const PROPERTY_INDEX_YIELD_MS = 8;
 const PROPERTY_INDEX_HEAP_WARN_RATIO = 0.66;
+const BIM_INDEX_SCHEMA_VERSION = 3;
 const BIM_INDEX_PERSIST_BATCH_SIZE = 48;
 const BIM_INDEX_PERSIST_MAX_CONCURRENT = 1;
 const MAX_INDEXED_VALUES_PER_PROPERTY = 450;
@@ -8688,10 +8712,10 @@ export function IfcViewerCanvas({
         );
       }
 
-      const lightweightPersistedIndex = await loadSmartViewPropertyIndexSnapshot(
-        projectCode,
-        lightweightSignature
-      );
+      const allowSnapshotFallback = !projectCode?.trim();
+      const lightweightPersistedIndex = allowSnapshotFallback
+        ? await loadSmartViewPropertyIndexSnapshot(projectCode, lightweightSignature)
+        : null;
 
       if (lightweightPersistedIndex && smartViewIndexRunRef.current === runId) {
         setSmartViewPropertyIndex(lightweightPersistedIndex);
@@ -8728,10 +8752,9 @@ export function IfcViewerCanvas({
         return;
       }
 
-      const persistedIndex = await loadSmartViewPropertyIndexSnapshot(
-        projectCode,
-        analysisSignature
-      );
+      const persistedIndex = allowSnapshotFallback
+        ? await loadSmartViewPropertyIndexSnapshot(projectCode, analysisSignature)
+        : null;
 
       if (persistedIndex && smartViewIndexRunRef.current === runId) {
         setSmartViewPropertyIndex(persistedIndex);

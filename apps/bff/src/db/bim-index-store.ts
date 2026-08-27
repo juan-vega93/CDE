@@ -1010,8 +1010,8 @@ export async function getBimCost5DAggregation(
           join cde_bim_properties properties on properties.id = pv.property_id
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
           where pv.bim_element_id = base.element_id
-            and sets.normalized_name = lower(regexp_replace(trim($4), '[[:space:]]+', '', 'g'))
-            and properties.normalized_name = lower(regexp_replace(trim($5), '[[:space:]]+', '', 'g'))
+            and lower(regexp_replace(sets.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($4), '[[:space:]_.-]+', '', 'g'))
+            and lower(regexp_replace(properties.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($5), '[[:space:]_.-]+', '', 'g'))
           limit 1
         ) item_id_value on true
         left join lateral (
@@ -1022,8 +1022,8 @@ export async function getBimCost5DAggregation(
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
           where pv.bim_element_id = base.element_id
             and $6::text is not null
-            and sets.normalized_name = lower(regexp_replace(trim($6), '[[:space:]]+', '', 'g'))
-            and properties.normalized_name = lower(regexp_replace(trim($7), '[[:space:]]+', '', 'g'))
+            and lower(regexp_replace(sets.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($6), '[[:space:]_.-]+', '', 'g'))
+            and lower(regexp_replace(properties.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($7), '[[:space:]_.-]+', '', 'g'))
           limit 1
         ) item_name_value on true
         left join lateral (
@@ -1034,8 +1034,8 @@ export async function getBimCost5DAggregation(
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
           where pv.bim_element_id = base.element_id
             and $8::text is not null
-            and sets.normalized_name = lower(regexp_replace(trim($8), '[[:space:]]+', '', 'g'))
-            and properties.normalized_name = lower(regexp_replace(trim($9), '[[:space:]]+', '', 'g'))
+            and lower(regexp_replace(sets.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($8), '[[:space:]_.-]+', '', 'g'))
+            and lower(regexp_replace(properties.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($9), '[[:space:]_.-]+', '', 'g'))
           limit 1
         ) item_unit_value on true
         left join lateral (
@@ -1047,8 +1047,8 @@ export async function getBimCost5DAggregation(
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
           where pv.bim_element_id = base.element_id
             and $10::text is not null
-            and sets.normalized_name = lower(regexp_replace(trim($10), '[[:space:]]+', '', 'g'))
-            and properties.normalized_name = lower(regexp_replace(trim($11), '[[:space:]]+', '', 'g'))
+            and lower(regexp_replace(sets.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($10), '[[:space:]_.-]+', '', 'g'))
+            and lower(regexp_replace(properties.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($11), '[[:space:]_.-]+', '', 'g'))
           limit 1
         ) quantity_value on true
       )
@@ -1227,8 +1227,8 @@ export async function getBimCost5DMeteringRows(
           join cde_bim_properties properties on properties.id = values.property_id
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
           where values.bim_element_id = page.id
-            and sets.normalized_name = lower(regexp_replace(trim(requested_columns.set_name), '[[:space:]]+', '', 'g'))
-            and properties.normalized_name = lower(regexp_replace(trim(requested_columns.property_name), '[[:space:]]+', '', 'g'))
+            and lower(regexp_replace(sets.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim(requested_columns.set_name), '[[:space:]_.-]+', '', 'g'))
+            and lower(regexp_replace(properties.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim(requested_columns.property_name), '[[:space:]_.-]+', '', 'g'))
           limit 1
         ) property_value on true
       )
@@ -1520,8 +1520,8 @@ export async function getBimPropertySummary(
           join cde_bim_properties properties on properties.id = pv.property_id
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
           where pv.bim_element_id = candidate_elements.id
-            and properties.normalized_name = lower(regexp_replace(trim($5), '[[:space:]]+', '', 'g'))
-            and sets.normalized_name = lower(regexp_replace(trim($4), '[[:space:]]+', '', 'g'))
+            and lower(regexp_replace(properties.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($5), '[[:space:]_.-]+', '', 'g'))
+            and lower(regexp_replace(sets.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($4), '[[:space:]_.-]+', '', 'g'))
           order by pv.id
           limit 1
         ) matched_value on true
@@ -1650,8 +1650,8 @@ export async function queryBimPropertyLocalIds(
         where models.project_code = $1
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
           and ($3::text[] is null or models.model_key = any($3::text[]))
-          and sets.normalized_name = lower(regexp_replace(trim($4), '[[:space:]]+', '', 'g'))
-          and properties.normalized_name = lower(regexp_replace(trim($5), '[[:space:]]+', '', 'g'))
+          and lower(regexp_replace(sets.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($4), '[[:space:]_.-]+', '', 'g'))
+          and lower(regexp_replace(properties.name, '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(trim($5), '[[:space:]_.-]+', '', 'g'))
           and (
             $6::text is null
             or lower(coalesce(
