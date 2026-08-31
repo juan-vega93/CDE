@@ -868,6 +868,13 @@ export async function getBimPropertyCatalog(input: {
           where models.project_code = $1
             and ($2::uuid[] is null or models.id = any($2::uuid[]))
             and ($3::text[] is null or models.model_key = any($3::text[]))
+            and nullif(trim(coalesce(
+              pv.value_text,
+              pv.value_number::text,
+              pv.value_bool::text,
+              pv.value_json::text,
+              ''
+            )), '') is not null
           group by sets.name, properties.name, value_key
         ), ranked as (
           select
@@ -906,7 +913,8 @@ export async function getBimPropertyCatalog(input: {
     }
     const propertyValues = valuesBySetAndProperty.get(row.set_name)!;
     const values = propertyValues.get(row.property_name) ?? [];
-    values.push({ value: row.value_key ?? '', count: Number(row.count) });
+    if (!row.value_key) continue;
+    values.push({ value: row.value_key, count: Number(row.count) });
     propertyValues.set(row.property_name, values);
   }
 

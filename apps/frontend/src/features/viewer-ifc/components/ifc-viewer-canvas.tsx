@@ -4902,6 +4902,7 @@ function ParameterAnalysisPanel({
     [models, propertyIndex, propertySet, propertyName, shouldBuildLocalBuckets]
   );
   const buckets = databaseBuckets ?? localBuckets;
+  const hasRealValueBuckets = buckets.some((bucket) => bucket.value !== "Sin valor");
   const displayBuckets = useMemo(
     () =>
       buckets.map((bucket) => ({
@@ -4910,7 +4911,9 @@ function ParameterAnalysisPanel({
       })),
     [buckets, colorOverrides]
   );
+  const colorableBuckets = displayBuckets.filter((bucket) => bucket.value !== "Sin valor");
   const total = displayBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
+  const realValueCount = displayBuckets.filter((bucket) => bucket.value !== "Sin valor").length;
   const missingCount =
     displayBuckets.find((bucket) => bucket.value === "Sin valor")?.count ?? 0;
   const maxCount = Math.max(...displayBuckets.map((bucket) => bucket.count), 1);
@@ -4946,11 +4949,13 @@ function ParameterAnalysisPanel({
     })
       .then((summary) => {
         if (!active) return;
-        setDatabaseBuckets(
-          summary
-            ? buildParameterAnalysisBucketsFromSummary({ models, summary })
-            : null
-        );
+        if (!summary) {
+          setDatabaseBuckets(null);
+        } else {
+          const summaryBuckets = buildParameterAnalysisBucketsFromSummary({ models, summary });
+          const hasSummaryValues = summaryBuckets.some((bucket) => bucket.value !== "Sin valor");
+          setDatabaseBuckets(hasSummaryValues ? summaryBuckets : null);
+        }
         setDatabaseBucketsResolvedKey(databaseBucketsRequestKey);
       })
       .finally(() => {
@@ -4985,9 +4990,9 @@ function ParameterAnalysisPanel({
   }, [propertyName, propertySet]);
 
   async function handleApplyColors() {
-    await onApplyColors(propertySet, propertyName, displayBuckets);
+    await onApplyColors(propertySet, propertyName, colorableBuckets);
 
-    for (const bucket of displayBuckets) {
+    for (const bucket of colorableBuckets) {
       if (hiddenBucketValues.has(bucket.value)) {
         await onSetBucketVisibility(bucket, false);
       }
@@ -5004,10 +5009,11 @@ function ParameterAnalysisPanel({
     const nextBuckets = displayBuckets.map((item) =>
       item.value === bucket.value ? { ...item, color } : item
     );
+    const nextColorableBuckets = nextBuckets.filter((item) => item.value !== "Sin valor");
 
-    await onApplyColors(propertySet, propertyName, nextBuckets);
+    await onApplyColors(propertySet, propertyName, nextColorableBuckets);
 
-    for (const item of nextBuckets) {
+    for (const item of nextColorableBuckets) {
       if (hiddenBucketValues.has(item.value)) {
         await onSetBucketVisibility(item, false);
       }
@@ -5122,7 +5128,7 @@ function ParameterAnalysisPanel({
           <div className="rounded border border-zinc-800 bg-zinc-900 p-3">
             <div className="text-[10px] uppercase text-zinc-500">Valores</div>
             <div className="text-lg font-semibold text-emerald-300">
-              {buckets.length}
+              {realValueCount}
             </div>
           </div>
           <div className="rounded border border-zinc-800 bg-zinc-900 p-3">
@@ -5145,7 +5151,7 @@ function ParameterAnalysisPanel({
           <button
             type="button"
             onClick={handleApplyColors}
-            disabled={!propertySet || !propertyName || displayBuckets.length === 0}
+            disabled={!propertySet || !propertyName || !hasRealValueBuckets || colorableBuckets.length === 0}
             className="min-h-9 flex-1 rounded bg-red-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Colorear
@@ -5179,6 +5185,10 @@ function ParameterAnalysisPanel({
         {displayBuckets.length === 0 ? (
           <div className="rounded border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
             Carga parametros y selecciona un conjunto/parametro para analizar.
+          </div>
+        ) : !hasRealValueBuckets ? (
+          <div className="rounded border border-amber-800/70 bg-amber-950/40 p-4 text-sm text-amber-100">
+            Este parametro no tiene valores enlazados para los modelos cargados. Reindexa el modelo o elige un parametro con valores reales; no se aplicara color a "Sin valor".
           </div>
         ) : chartMode === "donut" ? (
           <div className="rounded border border-zinc-800 bg-zinc-900 p-4">
