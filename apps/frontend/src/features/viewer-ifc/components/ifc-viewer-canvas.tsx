@@ -144,38 +144,79 @@ function isUsableSmartViewPropertyCatalog(value: unknown): value is SmartViewPro
   );
 }
 
+function isRealSmartViewSelectorValue(value: string | undefined) {
+  const normalized = normalizeParameterBucketValue(value ?? "");
+  const lower = normalized.toLowerCase();
+  return (
+    normalized !== "Sin valor" &&
+    lower !== "null" &&
+    lower !== "undefined"
+  );
+}
+
+function buildFilteredSelectorSource(
+  source: {
+    valuesBySetAndProperty: Record<string, Record<string, string[]>>;
+  },
+  sourceName: SmartViewSelectorSource["source"]
+): SmartViewSelectorSource {
+  const sets: string[] = [];
+  const propertiesBySet: Record<string, string[]> = {};
+  const valuesBySetAndProperty: Record<string, Record<string, string[]>> = {};
+
+  for (const [setName, properties] of Object.entries(source.valuesBySetAndProperty)) {
+    const filteredProperties: string[] = [];
+    const filteredValues: Record<string, string[]> = {};
+
+    for (const [propertyName, values] of Object.entries(properties)) {
+      const realValues = Array.from(
+        new Set(values.map(String).filter(isRealSmartViewSelectorValue))
+      ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+      if (realValues.length === 0) continue;
+      filteredProperties.push(propertyName);
+      filteredValues[propertyName] = realValues;
+    }
+
+    if (filteredProperties.length === 0) continue;
+    sets.push(setName);
+    propertiesBySet[setName] = filteredProperties.sort((a, b) => a.localeCompare(b));
+    valuesBySetAndProperty[setName] = filteredValues;
+  }
+
+  return {
+    sets: sets.sort((a, b) => a.localeCompare(b)),
+    propertiesBySet,
+    valuesBySetAndProperty,
+    source: sourceName
+  };
+}
+
 function getSmartViewSelectorSource(
   propertyIndex: SmartViewPropertyIndex,
   propertyCatalog: SmartViewPropertyCatalog | null
 ): SmartViewSelectorSource {
   if (propertyCatalog && propertyCatalog.sets.length > 0) {
-    const valuesBySetAndProperty: Record<string, Record<string, string[]>> = {};
+    const catalogValuesBySetAndProperty: Record<string, Record<string, string[]>> = {};
 
     for (const [setName, properties] of Object.entries(propertyCatalog.valuesBySetAndProperty)) {
-      valuesBySetAndProperty[setName] = {};
+      catalogValuesBySetAndProperty[setName] = {};
 
       for (const [propertyName, values] of Object.entries(properties)) {
-        valuesBySetAndProperty[setName][propertyName] = values
-          .map((item) => item.value)
-          .filter(Boolean);
+        catalogValuesBySetAndProperty[setName][propertyName] = values.map((item) => item.value);
       }
     }
 
-    return {
-      sets: propertyCatalog.sets,
-      propertiesBySet: propertyCatalog.propertiesBySet,
-      valuesBySetAndProperty,
-      source: "catalog"
-    };
+    const filteredCatalog = buildFilteredSelectorSource(
+      { valuesBySetAndProperty: catalogValuesBySetAndProperty },
+      "catalog"
+    );
+    if (filteredCatalog.sets.length > 0) return filteredCatalog;
   }
 
   if (propertyIndex.sets.length > 0) {
-    return {
-      sets: propertyIndex.sets,
-      propertiesBySet: propertyIndex.propertiesBySet,
-      valuesBySetAndProperty: propertyIndex.valuesBySetAndProperty,
-      source: "index"
-    };
+    const filteredIndex = buildFilteredSelectorSource(propertyIndex, "index");
+    if (filteredIndex.sets.length > 0) return filteredIndex;
   }
 
   return {

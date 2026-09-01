@@ -875,6 +875,13 @@ export async function getBimPropertyCatalog(input: {
               pv.value_json::text,
               ''
             )), '') is not null
+            and lower(trim(coalesce(
+              pv.value_text,
+              pv.value_number::text,
+              pv.value_bool::text,
+              pv.value_json::text,
+              ''
+            ))) not in ('-', 'sin valor', 'null', 'undefined')
           group by sets.name, properties.name, value_key
         ), ranked as (
           select
