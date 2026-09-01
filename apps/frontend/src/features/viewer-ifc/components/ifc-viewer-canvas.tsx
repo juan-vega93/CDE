@@ -5000,6 +5000,14 @@ function ParameterAnalysisPanel({
   const availableProperties = propertySet
     ? selectorSource.propertiesBySet[propertySet] ?? []
     : [];
+  const selectedPropertyHasRealValues = Boolean(
+    propertySet &&
+      propertyName &&
+      availableProperties.includes(propertyName) &&
+      (selectorSource.valuesBySetAndProperty[propertySet]?.[propertyName]?.some(
+        isRealSmartViewSelectorValue
+      ) ?? false)
+  );
   const [databaseBuckets, setDatabaseBuckets] = useState<
     ParameterValueBucket[] | null
   >(null);
@@ -5015,7 +5023,7 @@ function ParameterAnalysisPanel({
   );
   const databaseBucketsRequestKey = useMemo(() => {
     const normalizedProjectCode = projectCode?.trim().toUpperCase();
-    if (!normalizedProjectCode || !propertySet || !propertyName || !modelKeySignature) {
+    if (!normalizedProjectCode || !propertySet || !propertyName || !selectedPropertyHasRealValues || !modelKeySignature) {
       return "";
     }
 
@@ -5025,7 +5033,7 @@ function ParameterAnalysisPanel({
       propertySet,
       propertyName
     });
-  }, [modelKeySignature, projectCode, propertyName, propertySet]);
+  }, [modelKeySignature, projectCode, propertyName, propertySet, selectedPropertyHasRealValues]);
   const [databaseBucketsResolvedKey, setDatabaseBucketsResolvedKey] = useState("");
   const parameterAnalysisLocalIdCount = useMemo(
     () =>
@@ -5099,6 +5107,7 @@ function ParameterAnalysisPanel({
       modelKeys.length === 0 ||
       !propertySet ||
       !propertyName ||
+      !selectedPropertyHasRealValues ||
       !databaseBucketsRequestKey
     ) {
       setDatabaseBucketsLoading(false);
@@ -5147,24 +5156,29 @@ function ParameterAnalysisPanel({
     return () => {
       active = false;
     };
-  }, [databaseBucketsRequestKey, models, projectCode, propertyName, propertySet]);
+  }, [databaseBucketsRequestKey, models, projectCode, propertyName, propertySet, selectedPropertyHasRealValues]);
   useEffect(() => {
-    if (!propertySet && selectorSource.sets.length > 0) {
-      setPropertySet(selectorSource.sets[0]);
-    }
-  }, [propertySet, selectorSource.sets]);
+    const firstSet = selectorSource.sets[0] ?? "";
+    const nextSet = propertySet && selectorSource.sets.includes(propertySet)
+      ? propertySet
+      : firstSet;
 
-  useEffect(() => {
-    if (!propertySet) {
-      setPropertyName("");
+    if (nextSet !== propertySet) {
+      setPropertySet(nextSet);
+      setPropertyName(selectorSource.propertiesBySet[nextSet]?.[0] ?? "");
       return;
     }
 
-    const properties = selectorSource.propertiesBySet[propertySet] ?? [];
+    if (!nextSet) {
+      if (propertyName) setPropertyName("");
+      return;
+    }
+
+    const properties = selectorSource.propertiesBySet[nextSet] ?? [];
     if (!properties.includes(propertyName)) {
       setPropertyName(properties[0] ?? "");
     }
-  }, [propertyName, propertySet, selectorSource.propertiesBySet]);
+  }, [propertyName, propertySet, selectorSource.propertiesBySet, selectorSource.sets]);
 
   useEffect(() => {
     setHiddenBucketValues(new Set());
@@ -5333,7 +5347,7 @@ function ParameterAnalysisPanel({
           <button
             type="button"
             onClick={handleApplyColors}
-            disabled={!propertySet || !propertyName || !hasRealValueBuckets || colorableBuckets.length === 0}
+            disabled={!propertySet || !propertyName || !selectedPropertyHasRealValues || !hasRealValueBuckets || colorableBuckets.length === 0}
             className="min-h-9 flex-1 rounded bg-red-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Colorear
