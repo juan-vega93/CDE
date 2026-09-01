@@ -4405,6 +4405,132 @@ function buildParameterAnalysisBuckets({
     }));
 }
 
+async function buildRuntimeParameterAnalysisBuckets({
+  models,
+  propertySet,
+  propertyName,
+  shouldContinue = () => true
+}: {
+  models: FederatedModelEntry[];
+  propertySet: string;
+  propertyName: string;
+  shouldContinue?: () => boolean;
+}): Promise<ParameterValueBucket[]> {
+  if (!propertySet || !propertyName) return [];
+
+  const normalizedSet = normalizeSmartViewPropertyKey(propertySet);
+  const normalizedProperty = normalizeSmartViewPropertyKey(propertyName);
+  const aggregated = new Map<string, OBC.ModelIdMap>();
+  const assignedIdsByModelKey = new Map<string, Set<number>>();
+
+  for (const model of models) {
+    if (!shouldContinue()) return [];
+    if (!model.modelId || !model.runtimeModel.getItemsData) continue;
+
+    const candidateIds = Array.from(
+      new Set(
+        flattenModelTreeNodes(model.spatialTree ?? [])
+          .filter(
+            (node) =>
+              isModelTreeElement(node) &&
+              typeof node.localId === "number"
+          )
+          .map((node) => node.localId as number)
+      )
+    ).slice(0, MAX_PROPERTY_INDEX_LOCAL_IDS);
+    const assignedIds = assignedIdsByModelKey.get(model.key) ?? new Set<number>();
+
+    for (let index = 0; index < candidateIds.length; index += PROPERTY_INDEX_BATCH_SIZE) {
+      if (!shouldContinue()) return [];
+      const batch = candidateIds.slice(index, index + PROPERTY_INDEX_BATCH_SIZE);
+      let itemsData: Record<string, unknown>[] = [];
+
+      try {
+        itemsData = (await Promise.resolve(
+          model.runtimeModel.getItemsData(batch, {
+            attributesDefault: true,
+            relations: {
+              IsDefinedBy: {
+                attributes: true,
+                relations: true
+              },
+              IsTypedBy: {
+                attributes: true,
+                relations: true
+              }
+            }
+          })
+        )) as Record<string, unknown>[];
+      } catch {
+        try {
+          itemsData = (await Promise.resolve(
+            model.runtimeModel.getItemsData(batch, { attributesDefault: true })
+          )) as Record<string, unknown>[];
+        } catch {
+          continue;
+        }
+      }
+
+      for (let itemIndex = 0; itemIndex < itemsData.length; itemIndex += 1) {
+        const localId = batch[itemIndex];
+        const pairs = collectSmartViewPropertyPairs(itemsData[itemIndex]);
+        let values: Set<string> | undefined;
+
+        for (const [setName, properties] of pairs) {
+          if (normalizeSmartViewPropertyKey(setName) !== normalizedSet) continue;
+
+          for (const [name, propertyValues] of properties) {
+            if (normalizeSmartViewPropertyKey(name) === normalizedProperty) {
+              values = propertyValues;
+              break;
+            }
+          }
+
+          if (values) break;
+        }
+
+        const normalizedValues = Array.from(values ?? [])
+          .map(normalizeParameterBucketValue)
+          .filter((value) => value && value !== "Sin valor");
+
+        if (normalizedValues.length === 0) continue;
+
+        const expandedLocalIds = expandLocalIdsWithSpatialTree(model, [localId]).filter(
+          (id) => !assignedIds.has(id)
+        );
+        if (expandedLocalIds.length === 0) continue;
+
+        for (const value of normalizedValues) {
+          const target = aggregated.get(value) ?? {};
+          addIdsToModelIdMap(target, model.modelId, expandedLocalIds);
+          aggregated.set(value, target);
+        }
+
+        for (const id of expandedLocalIds) {
+          assignedIds.add(id);
+        }
+      }
+
+      await waitForIdleBudget();
+    }
+
+    assignedIdsByModelKey.set(model.key, assignedIds);
+  }
+
+  return Array.from(aggregated.entries())
+    .map(([value, modelIdMap]) => ({
+      value,
+      count: countModelIdMapElements(modelIdMap),
+      color: PARAMETER_ANALYSIS_MISSING_COLOR,
+      modelIdMap
+    }))
+    .filter((bucket) => bucket.count > 0)
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+    .map((bucket, index) => ({
+      ...bucket,
+      color: getParameterAnalysisColor(index)
+    }));
+}
 function buildParameterDonutGradient(buckets: ParameterValueBucket[]) {
   if (buckets.length === 0) return "#27272a 0% 100%";
 
@@ -4947,15 +5073,30 @@ function ParameterAnalysisPanel({
       propertySet,
       propertyName
     })
-      .then((summary) => {
+      .then(async (summary) => {
         if (!active) return;
-        if (!summary) {
-          setDatabaseBuckets(null);
-        } else {
+        let nextBuckets: ParameterValueBucket[] | null = null;
+
+        if (summary) {
           const summaryBuckets = buildParameterAnalysisBucketsFromSummary({ models, summary });
           const hasSummaryValues = summaryBuckets.some((bucket) => bucket.value !== "Sin valor");
-          setDatabaseBuckets(hasSummaryValues ? summaryBuckets : null);
+          nextBuckets = hasSummaryValues ? summaryBuckets : null;
         }
+
+        if (!nextBuckets) {
+          const runtimeBuckets = await buildRuntimeParameterAnalysisBuckets({
+            models,
+            propertySet,
+            propertyName,
+            shouldContinue: () => active
+          });
+          if (!active) return;
+          nextBuckets = runtimeBuckets.some((bucket) => bucket.value !== "Sin valor")
+            ? runtimeBuckets
+            : null;
+        }
+
+        setDatabaseBuckets(nextBuckets);
         setDatabaseBucketsResolvedKey(databaseBucketsRequestKey);
       })
       .finally(() => {
