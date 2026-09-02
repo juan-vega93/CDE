@@ -280,6 +280,39 @@ function normalizeText(value: string | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+function normalizeBimPropertyLabel(value: string): string {
+  return value.trim().replace(/[\s]*\([0-9]+\)[\s]*$/, "");
+}
+
+function isRealBimPropertyValue(value: string | null | undefined): boolean {
+  const trimmed = value?.trim();
+  if (!trimmed) return false;
+  return !["-", "sin valor", "null", "undefined"].includes(trimmed.toLowerCase());
+}
+
+const BIM_MODEL_KEY_FILTER_SQL = `(
+  $3::text[] is null
+  or models.model_key = any($3::text[])
+  or exists (
+    select 1
+    from unnest($3::text[]) as requested_model_keys(model_key)
+    where lower(requested_model_keys.model_key) = lower(models.model_key)
+      or lower(requested_model_keys.model_key) = lower('frag:' || models.document_path)
+      or lower(requested_model_keys.model_key) = lower('ifc:' || models.document_path)
+      or lower(requested_model_keys.model_key) = lower(models.document_path)
+  )
+)`;
+
+const BIM_MODEL_KEY_ALIAS_SQL = `coalesce((
+  select requested_model_keys.model_key
+  from unnest($3::text[]) as requested_model_keys(model_key)
+  where lower(requested_model_keys.model_key) = lower(models.model_key)
+    or lower(requested_model_keys.model_key) = lower('frag:' || models.document_path)
+    or lower(requested_model_keys.model_key) = lower('ifc:' || models.document_path)
+    or lower(requested_model_keys.model_key) = lower(models.document_path)
+  limit 1
+), models.model_key)`;
+
 function inferValueType(value: BimElementPropertyInput["value"]): BimPropertyValueType {
   if (typeof value === "number" && Number.isFinite(value)) return "number";
   if (typeof value === "boolean") return "boolean";
@@ -843,7 +876,7 @@ export async function getBimPropertyCatalog(input: {
         join cde_bim_models models on models.id = elements.bim_model_id
         where models.project_code = $1
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
-          and ($3::text[] is null or models.model_key = any($3::text[]))
+          and ${BIM_MODEL_KEY_FILTER_SQL}
       `,
       params.slice(0, 3)
     ),
@@ -867,7 +900,7 @@ export async function getBimPropertyCatalog(input: {
           join cde_bim_models models on models.id = elements.bim_model_id
           where models.project_code = $1
             and ($2::uuid[] is null or models.id = any($2::uuid[]))
-            and ($3::text[] is null or models.model_key = any($3::text[]))
+            and ${BIM_MODEL_KEY_FILTER_SQL}
             and nullif(trim(coalesce(
               pv.value_text,
               pv.value_number::text,
@@ -912,17 +945,24 @@ export async function getBimPropertyCatalog(input: {
   const valuesBySetAndProperty = new Map<string, Map<string, Array<{ value: string; count: number }>>>();
 
   for (const row of valuesResult.rows) {
-    if (!propertiesBySet.has(row.set_name)) propertiesBySet.set(row.set_name, new Set());
-    propertiesBySet.get(row.set_name)!.add(row.property_name);
+    const setName = normalizeBimPropertyLabel(row.set_name);
+    const propertyName = normalizeBimPropertyLabel(row.property_name);
+    if (!propertiesBySet.has(setName)) propertiesBySet.set(setName, new Set());
+    propertiesBySet.get(setName)!.add(propertyName);
 
-    if (!valuesBySetAndProperty.has(row.set_name)) {
-      valuesBySetAndProperty.set(row.set_name, new Map());
+    if (!valuesBySetAndProperty.has(setName)) {
+      valuesBySetAndProperty.set(setName, new Map());
     }
-    const propertyValues = valuesBySetAndProperty.get(row.set_name)!;
-    const values = propertyValues.get(row.property_name) ?? [];
-    if (!row.value_key) continue;
-    values.push({ value: row.value_key, count: Number(row.count) });
-    propertyValues.set(row.property_name, values);
+    const propertyValues = valuesBySetAndProperty.get(setName)!;
+    const values = propertyValues.get(propertyName) ?? [];
+    if (!isRealBimPropertyValue(row.value_key)) continue;
+    const existing = values.find((item) => item.value === row.value_key);
+    if (existing) {
+      existing.count += Number(row.count);
+    } else {
+      values.push({ value: row.value_key as string, count: Number(row.count) });
+    }
+    propertyValues.set(propertyName, values);
   }
 
   const sortedSets = [...propertiesBySet.keys()].sort((a, b) => a.localeCompare(b));
@@ -998,13 +1038,13 @@ export async function getBimCost5DAggregation(
     `
       with base as (
         select
-          models.model_key,
+          ${BIM_MODEL_KEY_ALIAS_SQL} as model_key,
           elements.id as element_id
         from cde_bim_elements elements
         join cde_bim_models models on models.id = elements.bim_model_id
         where models.project_code = $1
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
-          and ($3::text[] is null or models.model_key = any($3::text[]))
+          and ${BIM_MODEL_KEY_FILTER_SQL}
       ), enriched as (
         select
           base.model_key,
@@ -1027,6 +1067,14 @@ export async function getBimCost5DAggregation(
           where pv.bim_element_id = base.element_id
             and lower(regexp_replace(regexp_replace(sets.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($4), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
             and lower(regexp_replace(regexp_replace(properties.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($5), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
+                    order by
+            case
+              when nullif(trim(coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text, '')), '') is not null
+                and lower(trim(coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text, ''))) not in ('-', 'sin valor', 'null', 'undefined')
+              then 0
+              else 1
+            end,
+            pv.id
           limit 1
         ) item_id_value on true
         left join lateral (
@@ -1039,6 +1087,14 @@ export async function getBimCost5DAggregation(
             and $6::text is not null
             and lower(regexp_replace(regexp_replace(sets.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($6), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
             and lower(regexp_replace(regexp_replace(properties.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($7), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
+                    order by
+            case
+              when nullif(trim(coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text, '')), '') is not null
+                and lower(trim(coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text, ''))) not in ('-', 'sin valor', 'null', 'undefined')
+              then 0
+              else 1
+            end,
+            pv.id
           limit 1
         ) item_name_value on true
         left join lateral (
@@ -1051,6 +1107,14 @@ export async function getBimCost5DAggregation(
             and $8::text is not null
             and lower(regexp_replace(regexp_replace(sets.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($8), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
             and lower(regexp_replace(regexp_replace(properties.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($9), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
+                    order by
+            case
+              when nullif(trim(coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text, '')), '') is not null
+                and lower(trim(coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text, ''))) not in ('-', 'sin valor', 'null', 'undefined')
+              then 0
+              else 1
+            end,
+            pv.id
           limit 1
         ) item_unit_value on true
         left join lateral (
@@ -1064,6 +1128,14 @@ export async function getBimCost5DAggregation(
             and $10::text is not null
             and lower(regexp_replace(regexp_replace(sets.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($10), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
             and lower(regexp_replace(regexp_replace(properties.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($11), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
+                    order by
+            case
+              when nullif(trim(coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text, '')), '') is not null
+                and lower(trim(coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text, ''))) not in ('-', 'sin valor', 'null', 'undefined')
+              then 0
+              else 1
+            end,
+            pv.id
           limit 1
         ) quantity_value on true
       )
@@ -1148,7 +1220,7 @@ export async function getBimCost5DMeteringRows(
   const whereSql = `
         models.project_code = $1
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
-          and ($3::text[] is null or models.model_key = any($3::text[]))
+          and ${BIM_MODEL_KEY_FILTER_SQL}
           and (
             $4::text is null
             or elements.name ilike $4
@@ -1213,7 +1285,7 @@ export async function getBimCost5DMeteringRows(
           coalesce(elements.type_name, elements.ifc_class, '-') as class_name,
           coalesce(elements.name, concat('Elemento ', elements.local_id::text)) as element_name,
           models.id as model_id,
-          models.model_key,
+          ${BIM_MODEL_KEY_ALIAS_SQL} as model_key,
           models.document_name
         from cde_bim_elements elements
         join cde_bim_models models on models.id = elements.bim_model_id
@@ -1244,6 +1316,14 @@ export async function getBimCost5DMeteringRows(
           where values.bim_element_id = page.id
             and lower(regexp_replace(regexp_replace(sets.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim(requested_columns.set_name), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
             and lower(regexp_replace(regexp_replace(properties.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim(requested_columns.property_name), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
+                    order by
+            case
+              when nullif(trim(coalesce(values.value_text, values.value_number::text, values.value_bool::text, values.value_json::text, '')), '') is not null
+                and lower(trim(coalesce(values.value_text, values.value_number::text, values.value_bool::text, values.value_json::text, ''))) not in ('-', 'sin valor', 'null', 'undefined')
+              then 0
+              else 1
+            end,
+            values.id
           limit 1
         ) property_value on true
       )
@@ -1315,7 +1395,7 @@ export async function getBimPropertyIndex(input: {
   }>(
     `
       select
-        models.model_key,
+        ${BIM_MODEL_KEY_ALIAS_SQL} as model_key,
         elements.local_id,
         elements.element_identity,
         elements.level_name,
@@ -1334,7 +1414,7 @@ export async function getBimPropertyIndex(input: {
       join cde_bim_models models on models.id = elements.bim_model_id
       where models.project_code = $1
         and ($2::uuid[] is null or models.id = any($2::uuid[]))
-        and ($3::text[] is null or models.model_key = any($3::text[]))
+        and ${BIM_MODEL_KEY_FILTER_SQL}
     `,
     [
       input.projectCode,
@@ -1351,8 +1431,10 @@ export async function getBimPropertyIndex(input: {
   const levelLocalIdsByModelKeySets = new Map<string, Map<string, Set<number>>>();
 
   for (const row of result.rows) {
-    if (!propertiesBySet.has(row.set_name)) propertiesBySet.set(row.set_name, new Set());
-    propertiesBySet.get(row.set_name)!.add(row.property_name);
+    const setName = normalizeBimPropertyLabel(row.set_name);
+    const propertyName = normalizeBimPropertyLabel(row.property_name);
+    if (!propertiesBySet.has(setName)) propertiesBySet.set(setName, new Set());
+    propertiesBySet.get(setName)!.add(propertyName);
 
     const modelLocalIds = localIdsByModelKeySets.get(row.model_key) ?? new Set<number>();
     if (modelLocalIds.size < maxLocalIdsPerModel) {
@@ -1373,26 +1455,27 @@ export async function getBimPropertyIndex(input: {
       levelLocalIdsByModelKeySets.set(row.model_key, levels);
     }
 
-    if (!valuesBySetAndProperty.has(row.set_name)) {
-      valuesBySetAndProperty.set(row.set_name, new Map());
+    if (!valuesBySetAndProperty.has(setName)) {
+      valuesBySetAndProperty.set(setName, new Map());
     }
-    const propertyValues = valuesBySetAndProperty.get(row.set_name)!;
-    if (!propertyValues.has(row.property_name)) {
-      propertyValues.set(row.property_name, new Set());
+    const propertyValues = valuesBySetAndProperty.get(setName)!;
+    if (!propertyValues.has(propertyName)) {
+      propertyValues.set(propertyName, new Set());
     }
-    const valueSet = propertyValues.get(row.property_name)!;
-    if (row.value_key !== null && valueSet.size < maxValues) {
-      valueSet.add(row.value_key);
+    const valueSet = propertyValues.get(propertyName)!;
+    if (isRealBimPropertyValue(row.value_key) && valueSet.size < maxValues) {
+      valueSet.add(row.value_key as string);
     }
 
-    if (row.value_key !== null) {
+    if (isRealBimPropertyValue(row.value_key)) {
+      const valueKey = row.value_key as string;
       const setBuckets =
-        localIdsBySetPropertyValue[row.set_name] ??
-        (localIdsBySetPropertyValue[row.set_name] = {});
+        localIdsBySetPropertyValue[setName] ??
+        (localIdsBySetPropertyValue[setName] = {});
       const propertyBuckets =
-        setBuckets[row.property_name] ?? (setBuckets[row.property_name] = {});
+        setBuckets[propertyName] ?? (setBuckets[propertyName] = {});
       const valueBuckets =
-        propertyBuckets[row.value_key] ?? (propertyBuckets[row.value_key] = {});
+        propertyBuckets[valueKey] ?? (propertyBuckets[valueKey] = {});
       const ids = valueBuckets[row.model_key] ?? [];
       if (ids.length < maxLocalIdsPerBucket) {
         ids.push(row.local_id);
@@ -1474,11 +1557,11 @@ export async function getBimPropertySummary(
   }>(
     `
       with selected_models as (
-        select id, model_key
-        from cde_bim_models
+        select id, ${BIM_MODEL_KEY_ALIAS_SQL} as model_key
+        from cde_bim_models models
         where project_code = $1
-          and ($2::uuid[] is null or id = any($2::uuid[]))
-          and ($3::text[] is null or model_key = any($3::text[]))
+          and ($2::uuid[] is null or models.id = any($2::uuid[]))
+          and ${BIM_MODEL_KEY_FILTER_SQL}
       ),
       candidate_elements as (
         select
@@ -1537,7 +1620,14 @@ export async function getBimPropertySummary(
           where pv.bim_element_id = candidate_elements.id
             and lower(regexp_replace(regexp_replace(properties.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($5), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
             and lower(regexp_replace(regexp_replace(sets.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($4), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
-          order by pv.id
+          order by
+            case
+              when nullif(trim(coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text, '')), '') is not null
+                and lower(trim(coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text, ''))) not in ('-', 'sin valor', 'null', 'undefined')
+              then 0
+              else 1
+            end,
+            pv.id
           limit 1
         ) matched_value on true
       ),
@@ -1651,7 +1741,7 @@ export async function queryBimPropertyLocalIds(
     `
       with matches as (
         select
-          models.model_key,
+          ${BIM_MODEL_KEY_ALIAS_SQL} as model_key,
           elements.local_id,
           row_number() over (
             partition by models.model_key
@@ -1664,7 +1754,7 @@ export async function queryBimPropertyLocalIds(
         join cde_bim_models models on models.id = elements.bim_model_id
         where models.project_code = $1
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
-          and ($3::text[] is null or models.model_key = any($3::text[]))
+          and ${BIM_MODEL_KEY_FILTER_SQL}
           and lower(regexp_replace(regexp_replace(sets.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($4), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
           and lower(regexp_replace(regexp_replace(properties.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($5), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
           and (

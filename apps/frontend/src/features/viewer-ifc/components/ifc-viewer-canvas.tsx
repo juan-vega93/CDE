@@ -1436,6 +1436,10 @@ function getSourceKey(source: ViewerSource) {
   return `${source.kind}:${source.documentPath ?? source.modelUrl}`.toLowerCase();
 }
 
+function getModelEntryKey(source: ViewerSource) {
+  return getSourceKey(source);
+}
+
 function ModelVisibilityButton({
   visible,
   onClick
@@ -8363,7 +8367,7 @@ export function IfcViewerCanvas({
           }
 
           loadedEntries.push({
-            key: `${currentName}-${index}`,
+            key: getModelEntryKey(currentSource),
             name: currentName,
             source: currentSource,
             object,
@@ -10985,7 +10989,7 @@ async function handleIsolateModel(key: string) {
         modelsGroup.add(object);
 
         const entry: FederatedModelEntry = {
-          key: `${name}-${Date.now()}-${index}`,
+          key: getModelEntryKey(source),
           name,
           source,
           object,
