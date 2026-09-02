@@ -154,15 +154,39 @@ function isRealSmartViewSelectorValue(value: string | undefined) {
   );
 }
 
+function selectorValueHasLocalIds(
+  source: {
+    localIdsBySetPropertyValue?: SmartViewPropertyIndex["localIdsBySetPropertyValue"];
+  },
+  setName: string,
+  propertyName: string,
+  value: string,
+  modelKeys: string[]
+) {
+  const valueBuckets = source.localIdsBySetPropertyValue?.[setName]?.[propertyName]?.[value];
+  if (!valueBuckets) return false;
+
+  const activeModelKeys = new Set(modelKeys.map((key) => key.trim()).filter(Boolean));
+  return Object.entries(valueBuckets).some(
+    ([modelKey, ids]) =>
+      (activeModelKeys.size === 0 || activeModelKeys.has(modelKey)) &&
+      Array.isArray(ids) &&
+      ids.length > 0
+  );
+}
+
 function buildFilteredSelectorSource(
   source: {
     valuesBySetAndProperty: Record<string, Record<string, string[]>>;
+    localIdsBySetPropertyValue?: SmartViewPropertyIndex["localIdsBySetPropertyValue"];
   },
-  sourceName: SmartViewSelectorSource["source"]
+  sourceName: SmartViewSelectorSource["source"],
+  modelKeys: string[] = []
 ): SmartViewSelectorSource {
   const sets: string[] = [];
   const propertiesBySet: Record<string, string[]> = {};
   const valuesBySetAndProperty: Record<string, Record<string, string[]>> = {};
+  const requireLinkedIds = sourceName === "index" && Boolean(source.localIdsBySetPropertyValue);
 
   for (const [setName, properties] of Object.entries(source.valuesBySetAndProperty)) {
     const filteredProperties: string[] = [];
@@ -171,7 +195,13 @@ function buildFilteredSelectorSource(
     for (const [propertyName, values] of Object.entries(properties)) {
       const realValues = Array.from(
         new Set(values.map(String).filter(isRealSmartViewSelectorValue))
-      ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      )
+        .filter(
+          (value) =>
+            !requireLinkedIds ||
+            selectorValueHasLocalIds(source, setName, propertyName, value, modelKeys)
+        )
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
       if (realValues.length === 0) continue;
       filteredProperties.push(propertyName);
@@ -194,7 +224,8 @@ function buildFilteredSelectorSource(
 
 function getSmartViewSelectorSource(
   propertyIndex: SmartViewPropertyIndex,
-  propertyCatalog: SmartViewPropertyCatalog | null
+  propertyCatalog: SmartViewPropertyCatalog | null,
+  modelKeys: string[] = []
 ): SmartViewSelectorSource {
   if (propertyCatalog && propertyCatalog.sets.length > 0) {
     const catalogValuesBySetAndProperty: Record<string, Record<string, string[]>> = {};
@@ -215,7 +246,7 @@ function getSmartViewSelectorSource(
   }
 
   if (propertyIndex.sets.length > 0) {
-    const filteredIndex = buildFilteredSelectorSource(propertyIndex, "index");
+    const filteredIndex = buildFilteredSelectorSource(propertyIndex, "index", modelKeys);
     if (filteredIndex.sets.length > 0) return filteredIndex;
   }
 
@@ -1676,7 +1707,11 @@ const SMART_VIEW_INTERNAL_PROPERTY_KEYS = new Set([
   "ownerhistory"
 ]);
 function normalizeSmartViewPropertyKey(value: string) {
-  return value.trim().toLowerCase().replace(/[\s_\-.]/g, "");
+  return value
+    .trim()
+    .replace(/\s*\(\d+\)\s*$/, "")
+    .toLowerCase()
+    .replace(/[\s_\-.]/g, "");
 }
 
 function isSmartViewInternalPropertyKey(value: string) {
@@ -3810,9 +3845,13 @@ function SmartViewPanel({
       a.localeCompare(b, undefined, { numeric: true })
     );
   }, [models]);
+  const loadedModelKeys = useMemo(
+    () => models.map((model) => model.key).filter(Boolean),
+    [models]
+  );
   const selectorSource = useMemo(
-    () => getSmartViewSelectorSource(propertyIndex, propertyCatalog),
-    [propertyCatalog, propertyIndex]
+    () => getSmartViewSelectorSource(propertyIndex, propertyCatalog, loadedModelKeys),
+    [loadedModelKeys, propertyCatalog, propertyIndex]
   );
   const propertyValueOptions = criteria.propertyName
     ? selectorSource.valuesBySetAndProperty[criteria.propertySet]?.[
@@ -4446,6 +4485,58 @@ function buildParameterAnalysisBuckets({
     }));
 }
 
+function getRuntimeParameterValuesForAnalysis(input: {
+  item: Record<string, unknown>;
+  pairs: Map<string, Map<string, Set<string>>>;
+  node?: ModelTreeNode;
+  propertySet: string;
+  propertyName: string;
+}) {
+  const normalizedSet = normalizeSmartViewPropertyKey(input.propertySet);
+  const normalizedProperty = normalizeSmartViewPropertyKey(input.propertyName);
+
+  for (const [setName, properties] of input.pairs) {
+    if (normalizeSmartViewPropertyKey(setName) !== normalizedSet) continue;
+
+    for (const [name, propertyValues] of properties) {
+      if (normalizeSmartViewPropertyKey(name) === normalizedProperty) {
+        return propertyValues;
+      }
+    }
+  }
+
+  const values = new Set<string>();
+  if (["tipodeelemento", "typename", "type", "objecttype"].includes(normalizedProperty)) {
+    const typeValue =
+      findSmartViewPropertyValueByNames(input.pairs, [
+        "Tipo de elemento",
+        "Type Name",
+        "Type",
+        "ObjectType"
+      ]) ||
+      readItemAttributeValue(input.item.ObjectType) ||
+      readItemAttributeValue(input.item.Type) ||
+      (input.node?.type ? getIfcTypeGroupLabel(input.node.type) : "");
+    if (typeValue) values.add(typeValue);
+  }
+
+  if (["ifcclass", "category", "categoria"].includes(normalizedProperty)) {
+    const classValue =
+      findSmartViewPropertyValueByNames(input.pairs, ["IFC Class", "Category", "Categoria"]) ||
+      readItemAttributeValue(input.item._category) ||
+      readItemAttributeValue(input.item.Category) ||
+      input.node?.type ||
+      "";
+    if (classValue) values.add(classValue);
+  }
+
+  if (["nivel", "level", "floor", "storey", "buildingstorey", "buildingstory"].includes(normalizedProperty)) {
+    const levelValue = getNativeIfcLevelValue(input.item, input.pairs);
+    if (levelValue) values.add(levelValue);
+  }
+
+  return values;
+}
 async function buildRuntimeParameterAnalysisBuckets({
   models,
   propertySet,
@@ -4459,8 +4550,6 @@ async function buildRuntimeParameterAnalysisBuckets({
 }): Promise<ParameterValueBucket[]> {
   if (!propertySet || !propertyName) return [];
 
-  const normalizedSet = normalizeSmartViewPropertyKey(propertySet);
-  const normalizedProperty = normalizeSmartViewPropertyKey(propertyName);
   const aggregated = new Map<string, OBC.ModelIdMap>();
   const assignedIdsByModelKey = new Map<string, Set<number>>();
 
@@ -4480,6 +4569,11 @@ async function buildRuntimeParameterAnalysisBuckets({
       )
     ).slice(0, MAX_PROPERTY_INDEX_LOCAL_IDS);
     const assignedIds = assignedIdsByModelKey.get(model.key) ?? new Set<number>();
+    const nodeByLocalId = new Map(
+      flattenModelTreeNodes(model.spatialTree ?? [])
+        .filter((node) => isModelTreeElement(node) && typeof node.localId === "number")
+        .map((node) => [node.localId as number, node])
+    );
 
     for (let index = 0; index < candidateIds.length; index += PROPERTY_INDEX_BATCH_SIZE) {
       if (!shouldContinue()) return [];
@@ -4515,22 +4609,15 @@ async function buildRuntimeParameterAnalysisBuckets({
       for (let itemIndex = 0; itemIndex < itemsData.length; itemIndex += 1) {
         const localId = batch[itemIndex];
         const pairs = collectSmartViewPropertyPairs(itemsData[itemIndex]);
-        let values: Set<string> | undefined;
+        const values = getRuntimeParameterValuesForAnalysis({
+          item: itemsData[itemIndex],
+          pairs,
+          node: nodeByLocalId.get(localId),
+          propertySet,
+          propertyName
+        });
 
-        for (const [setName, properties] of pairs) {
-          if (normalizeSmartViewPropertyKey(setName) !== normalizedSet) continue;
-
-          for (const [name, propertyValues] of properties) {
-            if (normalizeSmartViewPropertyKey(name) === normalizedProperty) {
-              values = propertyValues;
-              break;
-            }
-          }
-
-          if (values) break;
-        }
-
-        const normalizedValues = Array.from(values ?? [])
+        const normalizedValues = Array.from(values)
           .map(normalizeParameterBucketValue)
           .filter((value) => value && value !== "Sin valor");
 
@@ -4993,9 +5080,13 @@ function ParameterAnalysisPanel({
     {}
   );
 
+  const loadedModelKeys = useMemo(
+    () => models.map((model) => model.key).filter(Boolean),
+    [models]
+  );
   const selectorSource = useMemo(
-    () => getSmartViewSelectorSource(propertyIndex, propertyCatalog),
-    [propertyCatalog, propertyIndex]
+    () => getSmartViewSelectorSource(propertyIndex, propertyCatalog, loadedModelKeys),
+    [loadedModelKeys, propertyCatalog, propertyIndex]
   );
   const availableProperties = propertySet
     ? selectorSource.propertiesBySet[propertySet] ?? []
@@ -5791,8 +5882,8 @@ function Cost5DPanel({
     [models]
   );
   const selectorSource = useMemo(
-    () => getSmartViewSelectorSource(propertyIndex, propertyCatalog),
-    [propertyCatalog, propertyIndex]
+    () => getSmartViewSelectorSource(propertyIndex, propertyCatalog, loadedModelKeys),
+    [loadedModelKeys, propertyCatalog, propertyIndex]
   );
   const selectorSourceReady = selectorSource.sets.length > 0;
   const indexStillPreparing =
