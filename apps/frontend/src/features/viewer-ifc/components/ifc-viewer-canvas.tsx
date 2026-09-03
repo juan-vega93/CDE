@@ -110,10 +110,12 @@ type FederatedModelEntry = {
 
 function getFederatedModelsAnalysisSignature(models: FederatedModelEntry[]) {
   return models
-    .map(
-      (model) =>
-        `${model.key}:${model.modelId ?? ""}:${model.spatialTree?.length ?? 0}:${model.spatialTreeError ?? ""}`
-    )
+    .map((model) => {
+      const sourceIdentity = model.source.documentPath ?? model.source.modelUrl ?? "";
+      return `v${BIM_INDEX_SCHEMA_VERSION}:${model.key}:${model.modelId ?? ""}:${
+        model.source.kind
+      }:${sourceIdentity}:${model.spatialTree?.length ?? 0}:${model.spatialTreeError ?? ""}`;
+    })
     .sort()
     .join("|");
 }
@@ -769,6 +771,54 @@ type BimIndexOverview = {
 
 function getIndexedModelRecordKey(record: BimIndexedModelRecord) {
   return typeof record.modelKey === "string" ? record.modelKey.trim() : "";
+}
+
+function normalizeIndexedModelIdentity(value?: string | null) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function getLoadedModelDocumentIdentity(model: FederatedModelEntry) {
+  return normalizeIndexedModelIdentity(
+    model.source.documentPath ?? model.source.modelUrl ?? model.key
+  );
+}
+
+function isIndexedModelRecordForLoadedModel(
+  record: BimIndexedModelRecord,
+  model: FederatedModelEntry
+) {
+  const recordKey = normalizeIndexedModelIdentity(record.modelKey);
+  const recordPath = normalizeIndexedModelIdentity(record.documentPath);
+  const modelKey = normalizeIndexedModelIdentity(model.key);
+  const modelPath = getLoadedModelDocumentIdentity(model);
+
+  return (
+    (recordKey.length > 0 && recordKey === modelKey) ||
+    (recordPath.length > 0 && recordPath === modelPath) ||
+    (recordPath.length > 0 &&
+      (modelKey === `frag:${recordPath}` || modelKey === `ifc:${recordPath}`)) ||
+    (modelPath.length > 0 &&
+      (recordKey === `frag:${modelPath}` || recordKey === `ifc:${modelPath}`))
+  );
+}
+
+function getReadyIndexedModelKeysForLoadedModels(
+  records: BimIndexedModelRecord[],
+  models: FederatedModelEntry[]
+) {
+  const readyModelKeys = new Set<string>();
+  for (const model of models) {
+    if (
+      records.some(
+        (record) =>
+          isIndexedModelRecordReady(record) &&
+          isIndexedModelRecordForLoadedModel(record, model)
+      )
+    ) {
+      readyModelKeys.add(model.key);
+    }
+  }
+  return readyModelKeys;
 }
 
 function isIndexedModelRecordReady(record: BimIndexedModelRecord) {
@@ -1670,7 +1720,7 @@ const MAX_PROPERTY_INDEX_TOTAL_LOCAL_IDS = 16000;
 const PROPERTY_INDEX_BATCH_SIZE = 12;
 const PROPERTY_INDEX_YIELD_MS = 8;
 const PROPERTY_INDEX_HEAP_WARN_RATIO = 0.66;
-const BIM_INDEX_SCHEMA_VERSION = 3;
+const BIM_INDEX_SCHEMA_VERSION = 4;
 const BIM_INDEX_PERSIST_BATCH_SIZE = 48;
 const BIM_INDEX_PERSIST_MAX_CONCURRENT = 1;
 const MAX_INDEXED_VALUES_PER_PROPERTY = 450;
@@ -7603,6 +7653,19 @@ export function IfcViewerCanvas({
 
     setSmartViewPropertyCatalogLoading(true);
     try {
+      const indexedModelRecords = await loadIndexedBimModels(projectCode);
+      const readyModelKeys = getReadyIndexedModelKeysForLoadedModels(
+        indexedModelRecords,
+        models
+      );
+      const allLoadedModelsIndexed =
+        loadedModelKeys.length > 0 && readyModelKeys.size === loadedModelKeys.length;
+
+      if (!allLoadedModelsIndexed) {
+        setSmartViewPropertyCatalog(null);
+        return;
+      }
+
       const catalog = await loadSmartViewPropertyCatalogFromDatabase({
         projectCode,
         modelKeys: loadedModelKeys
@@ -7611,7 +7674,7 @@ export function IfcViewerCanvas({
     } finally {
       setSmartViewPropertyCatalogLoading(false);
     }
-  }, [loadedModelKeys, projectCode]);
+  }, [loadedModelKeys, models, projectCode]);
 
   useEffect(() => {
     void refreshSmartViewPropertyCatalog();
@@ -8982,20 +9045,21 @@ export function IfcViewerCanvas({
       }
 
       const indexedModelRecords = await loadIndexedBimModels(projectCode);
-      const readyIndexedModelKeys = new Set(
-        indexedModelRecords
-          .filter(isIndexedModelRecordReady)
-          .map(getIndexedModelRecordKey)
+      const readyIndexedModelKeys = getReadyIndexedModelKeysForLoadedModels(
+        indexedModelRecords,
+        models
       );
       const indexedModelKeysForCurrentLoad = modelKeys.filter((key) =>
         readyIndexedModelKeys.has(key)
       );
       const allLoadedModelsIndexed =
         modelKeys.length > 0 && indexedModelKeysForCurrentLoad.length === modelKeys.length;
-      const normalizedDbIndex = await loadSmartViewPropertyIndexFromDatabase({
-        projectCode,
-        modelKeys
-      });
+      const normalizedDbIndex = allLoadedModelsIndexed
+        ? await loadSmartViewPropertyIndexFromDatabase({
+            projectCode,
+            modelKeys
+          })
+        : null;
 
       if (normalizedDbIndex && smartViewIndexRunRef.current === runId) {
         setSmartViewPropertyIndex(normalizedDbIndex);
@@ -9029,7 +9093,10 @@ export function IfcViewerCanvas({
       const analysisModels = await ensureSpatialTreesForAnalysis();
       const analysisSignature = getFederatedModelsAnalysisSignature(analysisModels);
       const analysisModelKeys = analysisModels.map((model) => model.key).filter(Boolean);
-      const readyIndexedModelKeysForAnalysis = new Set(readyIndexedModelKeys);
+      const readyIndexedModelKeysForAnalysis = getReadyIndexedModelKeysForLoadedModels(
+        indexedModelRecords,
+        analysisModels
+      );
       const modelsToIndex = analysisModels.filter(
         (model) => !readyIndexedModelKeysForAnalysis.has(model.key)
       );

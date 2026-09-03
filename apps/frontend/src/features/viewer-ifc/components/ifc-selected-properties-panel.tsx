@@ -81,23 +81,47 @@ function getRelationTarget(
   return relation;
 }
 
+function hasPropertyCollection(value: Record<string, unknown>) {
+  return (
+    Array.isArray(value.HasProperties) ||
+    Array.isArray(value.HasQuantities) ||
+    Array.isArray(value.Properties) ||
+    Array.isArray(value.Quantities)
+  );
+}
+
 function extractPropertySets(item: Record<string, unknown>) {
-  const relations = Array.isArray(item.IsDefinedBy)
-    ? item.IsDefinedBy.filter(isObject)
-    : [];
-
   const sets: Record<string, unknown>[] = [];
+  const seen = new WeakSet<Record<string, unknown>>();
 
-  for (const relation of relations) {
-    const target = getRelationTarget(relation, ["RelatingPropertyDefinition"]);
-    if (
-      Array.isArray(target.HasProperties) ||
-      Array.isArray(target.HasQuantities) ||
-      target !== relation
-    ) {
-      sets.push(target);
+  const addSet = (candidate: unknown) => {
+    if (!isObject(candidate) || seen.has(candidate) || !hasPropertyCollection(candidate)) return;
+    seen.add(candidate);
+    sets.push(candidate);
+  };
+
+  const addRelationTargets = (relationsValue: unknown, targetKeys: string[]) => {
+    const relations = Array.isArray(relationsValue) ? relationsValue.filter(isObject) : [];
+    for (const relation of relations) {
+      const target = getRelationTarget(relation, targetKeys);
+      addSet(target);
+
+      for (const nestedKey of ["HasPropertySets", "PropertySets", "Properties", "Quantities"]) {
+        const nested = target[nestedKey];
+        if (Array.isArray(nested)) nested.forEach(addSet);
+      }
     }
-  }
+  };
+
+  addSet(item);
+  addRelationTargets(item.IsDefinedBy, ["RelatingPropertyDefinition"]);
+  addRelationTargets(item.IsTypedBy, ["RelatingType"]);
+  addRelationTargets(item.ObjectTypeOf, ["RelatingType", "RelatedObjects"]);
+  addRelationTargets(item.HasAssociations, [
+    "RelatingMaterial",
+    "RelatingClassification",
+    "RelatingDocument"
+  ]);
 
   return sets;
 }
@@ -137,6 +161,8 @@ function extractAssociations(item: Record<string, unknown>) {
 function getPropertyCandidates(pset: Record<string, unknown>): unknown[] {
   if (Array.isArray(pset.HasProperties)) return pset.HasProperties;
   if (Array.isArray(pset.HasQuantities)) return pset.HasQuantities;
+  if (Array.isArray(pset.Properties)) return pset.Properties;
+  if (Array.isArray(pset.Quantities)) return pset.Quantities;
   return [];
 }
 
