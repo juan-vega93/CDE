@@ -5,7 +5,8 @@ import type {
 } from "../types/document.types";
 import { mapWorkflowStatusToUiStatus } from "./status-mapping.service";
 import { NextcloudAdapter } from "../adapters/nextcloud.adapter";
-import { generateFragFromDocument } from "./fragments.service";
+import { generateFragFromBuffer, generateFragFromDocument } from "./fragments.service";
+import { indexBimPropertiesFromBuffer } from "./bim-property-indexer.service";
 import path from "path";
 import { getWorkPackageLinks } from "./work-package-links.service";
 import type { FolderItem } from "../types/folder.types";
@@ -195,6 +196,12 @@ const documentExplorerCache = new Map<string, DocumentExplorerCacheEntry>();
 const fragGenerationQueue: string[] = [];
 const queuedFragGenerationPaths = new Set<string>();
 const activeFragGenerationPromises = new Map<string, Promise<{ fragPath: string }>>();
+const activeBimPropertyIndexPromises = new Map<string, Promise<{
+  documentPath: string;
+  status: "ready";
+  elementCount: number;
+  propertyCount: number;
+}>>();
 let activeFragGenerationJobs = 0;
 
 function getDocumentExplorerCacheTtlMs(): number {
@@ -222,6 +229,52 @@ export function enqueueFragGeneration(documentPath: string): void {
   void runNextFragGenerationJob();
 }
 
+export async function indexDocumentBimProperties(documentPath: string): Promise<{
+  documentPath: string;
+  status: "active" | "ready";
+  elementCount?: number;
+  propertyCount?: number;
+}> {
+  const cleanDocumentPath = normalizePortalPath(documentPath);
+  if (!cleanDocumentPath.toLowerCase().endsWith(".ifc")) {
+    throw new Error("Solo se pueden indexar propiedades desde archivos IFC");
+  }
+
+  const active = activeBimPropertyIndexPromises.get(cleanDocumentPath);
+  if (active) {
+    return { documentPath: cleanDocumentPath, status: "active" };
+  }
+
+  const promise = (async () => {
+    const identity = await buildCurrentDerivativeIdentity(cleanDocumentPath);
+    const sourceHash = getBimIndexSourceHash(identity);
+    const modelKey = getBimIndexModelKey(identity);
+    const ifcFile = await getDocumentContent(cleanDocumentPath);
+    const result = await indexBimPropertiesFromBuffer({
+      projectCode: identity.projectCode,
+      documentId: identity.fileId ?? undefined,
+      documentPath: identity.sourcePath,
+      documentName: identity.sourceName,
+      sourceVersion: identity.versionId,
+      sourceHash,
+      modelKey,
+      ifcBuffer: ifcFile.buffer
+    });
+
+    clearDocumentExplorerCache();
+    return {
+      documentPath: cleanDocumentPath,
+      status: "ready" as const,
+      elementCount: result.elementCount,
+      propertyCount: result.propertyCount
+    };
+  })().finally(() => {
+    activeBimPropertyIndexPromises.delete(cleanDocumentPath);
+  });
+
+  activeBimPropertyIndexPromises.set(cleanDocumentPath, promise);
+  return promise;
+}
 export function getFragGenerationQueueStatus(): {
   activeJobs: number;
   concurrency: number;
@@ -1145,7 +1198,8 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
 
   const fragPath = identity.fragPath;
   try {
-    const fragBytes = await generateFragFromDocument(documentPath);
+        const ifcFile = await getDocumentContent(documentPath);
+    const fragBytes = await generateFragFromBuffer(ifcFile.buffer);
 
     await ensureDerivedFolderExists(fragPath);
 
@@ -1187,9 +1241,22 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
       generatedAt: new Date().toISOString()
     });
 
-    void registerBimIndexCandidate(identity, {
+    await registerBimIndexCandidate(identity, {
       derivativeStatus: "generated",
       phase: "frag-generated"
+    });
+
+    void indexBimPropertiesFromBuffer({
+      projectCode: identity.projectCode,
+      documentId: identity.fileId ?? undefined,
+      documentPath: identity.sourcePath,
+      documentName: identity.sourceName,
+      sourceVersion: identity.versionId,
+      sourceHash: getBimIndexSourceHash(identity),
+      modelKey: getBimIndexModelKey(identity),
+      ifcBuffer: ifcFile.buffer
+    }).catch((error) => {
+      console.warn("[documents.service] No se pudo indexar propiedades BIM en servidor:", error);
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

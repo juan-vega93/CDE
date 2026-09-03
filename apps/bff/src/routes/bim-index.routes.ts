@@ -1,4 +1,5 @@
 import { Router, type Response } from "express";
+import { indexDocumentBimProperties } from "../services/documents.service";
 import {
   bulkUpsertBimElements,
   getBimModelByDocument,
@@ -329,6 +330,24 @@ router.get("/models", async (req, res) => {
   }
 });
 
+router.post("/models/index-from-document", async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const documentPath = toText(body.documentPath);
+
+    if (!documentPath) {
+      return res.status(400).json({
+        success: false,
+        message: "documentPath es obligatorio"
+      });
+    }
+
+    const data = await indexDocumentBimProperties(documentPath);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return sendRouteError(res, error);
+  }
+});
 router.put("/models", async (req, res) => {
   try {
     const input = parseModelInput(req.body);

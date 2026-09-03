@@ -31,15 +31,7 @@ function configureImporterClasses(serializer: FRAGS.IfcImporter) {
   }
 }
 
-export async function generateFragFromDocument(
-  documentPath: string
-): Promise<Uint8Array> {
-  if (!documentPath.trim()) {
-    throw new Error("documentPath es requerido");
-  }
-
-  const ifcFile = await getDocumentContent(documentPath);
-
+export async function generateFragFromBuffer(ifcBuffer: Buffer | Uint8Array): Promise<Uint8Array> {
   const serializer = new FRAGS.IfcImporter();
   serializer.wasm = {
     absolute: true,
@@ -48,9 +40,18 @@ export async function generateFragFromDocument(
 
   configureImporterClasses(serializer);
 
-  const fragBytes = await serializer.process({
-    bytes: new Uint8Array(ifcFile.buffer)
+  return serializer.process({
+    bytes: new Uint8Array(ifcBuffer)
   });
+}
 
-  return fragBytes;
+export async function generateFragFromDocument(
+  documentPath: string
+): Promise<Uint8Array> {
+  if (!documentPath.trim()) {
+    throw new Error("documentPath es requerido");
+  }
+
+  const ifcFile = await getDocumentContent(documentPath);
+  return generateFragFromBuffer(ifcFile.buffer);
 }

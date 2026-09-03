@@ -510,6 +510,37 @@ async function exportCost5DMeteringRowsFromDatabase(input: {
     return false;
   }
 }
+async function requestServerBimPropertyIndex(input: {
+  projectCode?: string;
+  models: FederatedModelEntry[];
+}): Promise<boolean> {
+  const normalizedProjectCode = input.projectCode?.trim().toUpperCase();
+  if (!normalizedProjectCode || input.models.length === 0) return false;
+
+  let requested = false;
+
+  for (const model of input.models) {
+    const documentPath = model.source.documentPath?.trim();
+    if (!documentPath || !documentPath.toLowerCase().endsWith(".ifc")) continue;
+
+    requested = true;
+    const response = await bffFetch("/api/bim-index/models/index-from-document", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectCode: normalizedProjectCode,
+        documentPath
+      })
+    });
+
+    if (!response.ok) {
+      const message = await response.text().catch(() => "");
+      throw new Error(message || `No se pudo indexar propiedades BIM en servidor: ${response.status}`);
+    }
+  }
+
+  return requested;
+}
 async function loadSmartViewPropertyIndexFromDatabase(input: {
   projectCode?: string;
   modelKeys: string[];
@@ -9145,6 +9176,47 @@ export function IfcViewerCanvas({
           );
           return;
         }
+      }
+
+      if (projectCode?.trim()) {
+        setStatus("Indexando parametros en servidor para evitar sobrecargar el navegador...");
+        const serverIndexRequested = await requestServerBimPropertyIndex({
+          projectCode,
+          models: modelsToIndex
+        });
+
+        if (serverIndexRequested) {
+          const refreshedRecords = await loadIndexedBimModels(projectCode);
+          const refreshedReadyKeys = getReadyIndexedModelKeysForLoadedModels(
+            refreshedRecords,
+            analysisModels
+          );
+          const allServerIndexed =
+            analysisModelKeys.length > 0 && refreshedReadyKeys.size === analysisModelKeys.length;
+
+          if (allServerIndexed) {
+            const serverDbIndex = await loadSmartViewPropertyIndexFromDatabase({
+              projectCode,
+              modelKeys: analysisModelKeys
+            });
+
+            if (serverDbIndex && smartViewIndexRunRef.current === runId) {
+              setSmartViewPropertyIndex(serverDbIndex);
+              setSmartViewPropertyIndexSignature(analysisSignature);
+              setSmartViewPropertyCatalog(null);
+              void refreshSmartViewPropertyCatalog();
+              void refreshBimIndexOverview();
+              setStatus(`Indice BIM listo desde servidor: ${serverDbIndex.sets.length} conjuntos.`);
+              return;
+            }
+          }
+        }
+
+        setStatus(
+          "Indice BIM solicitado al servidor. Espera a que termine y vuelve a cargar parametros; el navegador no hara indexado pesado."
+        );
+        void refreshBimIndexOverview();
+        return;
       }
 
       const databaseBackedIndex = Boolean(projectCode?.trim() && bimIndexOverview);
