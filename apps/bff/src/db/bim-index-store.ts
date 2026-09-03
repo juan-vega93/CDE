@@ -947,6 +947,8 @@ export async function getBimPropertyCatalog(input: {
   for (const row of valuesResult.rows) {
     const setName = normalizeBimPropertyLabel(row.set_name);
     const propertyName = normalizeBimPropertyLabel(row.property_name);
+    if (!isRealBimPropertyValue(row.value_key)) continue;
+
     if (!propertiesBySet.has(setName)) propertiesBySet.set(setName, new Set());
     propertiesBySet.get(setName)!.add(propertyName);
 
@@ -955,7 +957,6 @@ export async function getBimPropertyCatalog(input: {
     }
     const propertyValues = valuesBySetAndProperty.get(setName)!;
     const values = propertyValues.get(propertyName) ?? [];
-    if (!isRealBimPropertyValue(row.value_key)) continue;
     const existing = values.find((item) => item.value === row.value_key);
     if (existing) {
       existing.count += Number(row.count);
