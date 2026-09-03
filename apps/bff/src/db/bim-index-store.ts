@@ -1433,8 +1433,7 @@ export async function getBimPropertyIndex(input: {
   for (const row of result.rows) {
     const setName = normalizeBimPropertyLabel(row.set_name);
     const propertyName = normalizeBimPropertyLabel(row.property_name);
-    if (!propertiesBySet.has(setName)) propertiesBySet.set(setName, new Set());
-    propertiesBySet.get(setName)!.add(propertyName);
+    const hasRealValue = isRealBimPropertyValue(row.value_key);
 
     const modelLocalIds = localIdsByModelKeySets.get(row.model_key) ?? new Set<number>();
     if (modelLocalIds.size < maxLocalIdsPerModel) {
@@ -1455,6 +1454,11 @@ export async function getBimPropertyIndex(input: {
       levelLocalIdsByModelKeySets.set(row.model_key, levels);
     }
 
+    if (!hasRealValue) continue;
+
+    if (!propertiesBySet.has(setName)) propertiesBySet.set(setName, new Set());
+    propertiesBySet.get(setName)!.add(propertyName);
+
     if (!valuesBySetAndProperty.has(setName)) {
       valuesBySetAndProperty.set(setName, new Map());
     }
@@ -1463,25 +1467,23 @@ export async function getBimPropertyIndex(input: {
       propertyValues.set(propertyName, new Set());
     }
     const valueSet = propertyValues.get(propertyName)!;
-    if (isRealBimPropertyValue(row.value_key) && valueSet.size < maxValues) {
+    if (valueSet.size < maxValues) {
       valueSet.add(row.value_key as string);
     }
 
-    if (isRealBimPropertyValue(row.value_key)) {
-      const valueKey = row.value_key as string;
-      const setBuckets =
-        localIdsBySetPropertyValue[setName] ??
-        (localIdsBySetPropertyValue[setName] = {});
-      const propertyBuckets =
-        setBuckets[propertyName] ?? (setBuckets[propertyName] = {});
-      const valueBuckets =
-        propertyBuckets[valueKey] ?? (propertyBuckets[valueKey] = {});
-      const ids = valueBuckets[row.model_key] ?? [];
-      if (ids.length < maxLocalIdsPerBucket) {
-        ids.push(row.local_id);
-      }
-      valueBuckets[row.model_key] = ids;
+    const valueKey = row.value_key as string;
+    const setBuckets =
+      localIdsBySetPropertyValue[setName] ??
+      (localIdsBySetPropertyValue[setName] = {});
+    const propertyBuckets =
+      setBuckets[propertyName] ?? (setBuckets[propertyName] = {});
+    const valueBuckets =
+      propertyBuckets[valueKey] ?? (propertyBuckets[valueKey] = {});
+    const ids = valueBuckets[row.model_key] ?? [];
+    if (ids.length < maxLocalIdsPerBucket) {
+      ids.push(row.local_id);
     }
+    valueBuckets[row.model_key] = ids;
   }
 
   const valuesObject: BimPropertyIndex["valuesBySetAndProperty"] = {};

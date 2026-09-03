@@ -7,7 +7,7 @@ import {
   type BimElementPropertyInput
 } from "../db/bim-index-store";
 
-const BIM_INDEX_SCHEMA_VERSION = 4;
+const BIM_INDEX_SCHEMA_VERSION = 5;
 const SERVER_INDEX_BATCH_SIZE = 250;
 const MAX_PROPERTY_SETS_PER_ELEMENT = 64;
 const MAX_PROPERTIES_PER_SET = 120;
