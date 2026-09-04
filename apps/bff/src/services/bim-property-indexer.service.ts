@@ -83,6 +83,7 @@ function toCollectionArray(value: unknown): unknown[] {
     for (let index = 0; index < size; index += 1) result.push(value.get(index));
     return result;
   }
+  if (isObject(value)) return [value];
   return [];
 }
 
@@ -99,6 +100,119 @@ function getPropertyCandidates(pset: IfcRecord): unknown[] {
     ...toCollectionArray(pset.Properties),
     ...toCollectionArray(pset.Quantities)
   ];
+}
+
+function hasPropertyCandidates(value: unknown): value is IfcRecord {
+  return isObject(value) && getPropertyCandidates(value).length > 0;
+}
+
+function getRelationTarget(
+  relation: IfcRecord,
+  targetKeys: string[]
+): IfcRecord {
+  for (const key of targetKeys) {
+    if (isObject(relation[key])) return relation[key] as IfcRecord;
+  }
+
+  return relation;
+}
+
+function extractPropertySetsFromExpandedLine(line: IfcRecord): IfcRecord[] {
+  const sets: IfcRecord[] = [];
+  const seen = new Set<number | string>();
+
+  function pushSet(candidate: unknown) {
+    if (!isObject(candidate)) return;
+    const pset = unwrapPropertySet(candidate);
+    if (!hasPropertyCandidates(pset)) return;
+
+    const key =
+      normalizeText(pset.GlobalId) ??
+      normalizeText(pset.Name) ??
+      String((pset as { expressID?: unknown }).expressID ?? sets.length);
+    if (seen.has(key)) return;
+    seen.add(key);
+    sets.push(pset);
+  }
+
+  function pushRelationTargets(value: unknown, targetKeys: string[]) {
+    for (const relationValue of toCollectionArray(value)) {
+      if (!isObject(relationValue)) continue;
+      const target = getRelationTarget(relationValue, targetKeys);
+      pushSet(target);
+
+      for (const nestedKey of [
+        "HasPropertySets",
+        "PropertySets",
+        "HasProperties",
+        "HasQuantities",
+        "Properties",
+        "Quantities"
+      ]) {
+        for (const nested of toCollectionArray(target[nestedKey])) {
+          pushSet(nested);
+        }
+      }
+    }
+  }
+
+  pushSet(line);
+  pushRelationTargets(line.IsDefinedBy, ["RelatingPropertyDefinition"]);
+  pushRelationTargets(line.IsTypedBy, ["RelatingType"]);
+  pushRelationTargets(line.ObjectTypeOf, ["RelatingType", "RelatedObjects"]);
+
+  for (const nestedKey of [
+    "HasPropertySets",
+    "PropertySets",
+    "HasProperties",
+    "HasQuantities",
+    "Properties",
+    "Quantities"
+  ]) {
+    for (const nested of toCollectionArray(line[nestedKey])) {
+      pushSet(nested);
+    }
+  }
+
+  return sets.slice(0, MAX_PROPERTY_SETS_PER_ELEMENT);
+}
+
+async function getElementPropertySets(
+  ifcApi: WEBIFC.IfcAPI,
+  modelId: number,
+  localId: number
+): Promise<IfcRecord[]> {
+  const attempts: Array<[boolean, boolean]> = [
+    [true, true],
+    [true, false],
+    [false, false]
+  ];
+
+  for (const [recursive, includeTypeProperties] of attempts) {
+    try {
+      const psets = await ifcApi.properties.getPropertySets(
+        modelId,
+        localId,
+        recursive,
+        includeTypeProperties
+      );
+      const normalized = toCollectionArray(psets)
+        .filter(isObject)
+        .map(unwrapPropertySet)
+        .filter(hasPropertyCandidates);
+      if (normalized.length > 0) return normalized;
+    } catch {
+      // Some authoring tools export type property references in a non-iterable
+      // shape. Fall back to the expanded IFC line instead of failing the model.
+    }
+  }
+
+  try {
+    const expandedLine = ifcApi.GetLine(modelId, localId, true, true) as IfcRecord | null;
+    return expandedLine ? extractPropertySetsFromExpandedLine(expandedLine) : [];
+  } catch {
+    return [];
+  }
 }
 
 function getPropertyValue(property: IfcRecord): string | undefined {
@@ -167,9 +281,10 @@ function extractPropertiesFromSets(psets: unknown[]): BimElementPropertyInput[] 
 
   for (const rawSet of psets.slice(0, MAX_PROPERTY_SETS_PER_ELEMENT)) {
     if (!isObject(rawSet)) continue;
-    const setName = readIfcName(rawSet, "Property Set");
+    const pset = unwrapPropertySet(rawSet);
+    const setName = readIfcName(pset, "Property Set");
 
-    for (const rawProperty of getPropertyCandidates(rawSet).slice(0, MAX_PROPERTIES_PER_SET)) {
+    for (const rawProperty of getPropertyCandidates(pset).slice(0, MAX_PROPERTIES_PER_SET)) {
       if (!isObject(rawProperty)) continue;
       const name = normalizeText(rawProperty.Name);
       if (!name) continue;
@@ -210,7 +325,7 @@ async function buildElementPayload(
 
   const typeCode = Number(ifcApi.GetLineType(modelId, localId));
   const ifcClass = Number.isFinite(typeCode) ? ifcApi.GetNameFromTypeCode(typeCode) : undefined;
-  const psets = await ifcApi.properties.getPropertySets(modelId, localId, true, true);
+  const psets = await getElementPropertySets(ifcApi, modelId, localId);
   const properties = extractPropertiesFromSets(psets);
   const typeName =
     properties.find(

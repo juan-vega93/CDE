@@ -875,6 +875,7 @@ export async function getBimPropertyCatalog(input: {
         join cde_bim_elements elements on elements.id = pv.bim_element_id
         join cde_bim_models models on models.id = elements.bim_model_id
         where models.project_code = $1
+          and models.status = 'ready'
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
           and ${BIM_MODEL_KEY_FILTER_SQL}
       `,
@@ -899,6 +900,7 @@ export async function getBimPropertyCatalog(input: {
           join cde_bim_elements elements on elements.id = pv.bim_element_id
           join cde_bim_models models on models.id = elements.bim_model_id
           where models.project_code = $1
+            and models.status = 'ready'
             and ($2::uuid[] is null or models.id = any($2::uuid[]))
             and ${BIM_MODEL_KEY_FILTER_SQL}
             and nullif(trim(coalesce(
@@ -1044,6 +1046,7 @@ export async function getBimCost5DAggregation(
         from cde_bim_elements elements
         join cde_bim_models models on models.id = elements.bim_model_id
         where models.project_code = $1
+          and models.status = 'ready'
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
           and ${BIM_MODEL_KEY_FILTER_SQL}
       ), enriched as (
@@ -1563,6 +1566,7 @@ export async function getBimPropertySummary(
         select id, ${BIM_MODEL_KEY_ALIAS_SQL} as model_key
         from cde_bim_models models
         where project_code = $1
+          and models.status = 'ready'
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
           and ${BIM_MODEL_KEY_FILTER_SQL}
       ),
@@ -1756,6 +1760,7 @@ export async function queryBimPropertyLocalIds(
         join cde_bim_elements elements on elements.id = pv.bim_element_id
         join cde_bim_models models on models.id = elements.bim_model_id
         where models.project_code = $1
+          and models.status = 'ready'
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
           and ${BIM_MODEL_KEY_FILTER_SQL}
           and lower(regexp_replace(regexp_replace(sets.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($4), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
