@@ -52,7 +52,13 @@ function renderIfcValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(renderIfcValue).filter(Boolean).join(", ");
 
   if (isObject(value)) {
-    if ("value" in value) return renderIfcValue(value.value);
+    if ("value" in value && value.value != null) return renderIfcValue(value.value);
+    if ("_representationValue" in value && value._representationValue != null) {
+      return renderIfcValue(value._representationValue);
+    }
+    if ("_internalValue" in value && value._internalValue != null) {
+      return renderIfcValue(value._internalValue);
+    }
     if ("Name" in value && Object.keys(value).length <= 3) return renderIfcValue(value.Name);
     if ("expressID" in value && Object.keys(value).length <= 2) return "";
   }
@@ -69,12 +75,30 @@ function readIfcName(record: IfcRecord, fallback: string): string {
   );
 }
 
-function getPropertyCandidates(pset: IfcRecord): unknown[] {
-  if (Array.isArray(pset.HasProperties)) return pset.HasProperties;
-  if (Array.isArray(pset.HasQuantities)) return pset.HasQuantities;
-  if (Array.isArray(pset.Properties)) return pset.Properties;
-  if (Array.isArray(pset.Quantities)) return pset.Quantities;
+function toCollectionArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (isObject(value) && typeof value.size === "function" && typeof value.get === "function") {
+    const result: unknown[] = [];
+    const size = Number(value.size());
+    for (let index = 0; index < size; index += 1) result.push(value.get(index));
+    return result;
+  }
   return [];
+}
+
+function unwrapPropertySet(rawSet: IfcRecord): IfcRecord {
+  return isObject(rawSet.RelatingPropertyDefinition)
+    ? rawSet.RelatingPropertyDefinition
+    : rawSet;
+}
+
+function getPropertyCandidates(pset: IfcRecord): unknown[] {
+  return [
+    ...toCollectionArray(pset.HasProperties),
+    ...toCollectionArray(pset.HasQuantities),
+    ...toCollectionArray(pset.Properties),
+    ...toCollectionArray(pset.Quantities)
+  ];
 }
 
 function getPropertyValue(property: IfcRecord): string | undefined {
