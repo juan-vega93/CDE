@@ -1246,16 +1246,7 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
       phase: "frag-generated"
     });
 
-    void indexBimPropertiesFromBuffer({
-      projectCode: identity.projectCode,
-      documentId: identity.fileId ?? undefined,
-      documentPath: identity.sourcePath,
-      documentName: identity.sourceName,
-      sourceVersion: identity.versionId,
-      sourceHash: getBimIndexSourceHash(identity),
-      modelKey: getBimIndexModelKey(identity),
-      ifcBuffer: ifcFile.buffer
-    }).catch((error) => {
+    void indexDocumentBimProperties(documentPath).catch((error) => {
       console.warn("[documents.service] No se pudo indexar propiedades BIM en servidor:", error);
     });
   } catch (error) {

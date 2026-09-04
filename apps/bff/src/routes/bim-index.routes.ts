@@ -89,10 +89,11 @@ function sendRouteError(res: Response, error: unknown) {
     });
   }
 
+  const message = error instanceof Error ? error.message : String(error);
   console.error("[bim-index.routes] error:", error);
   return res.status(500).json({
     success: false,
-    message: "No se pudo procesar el indice BIM"
+    message: message || "No se pudo procesar el indice BIM"
   });
 }
 

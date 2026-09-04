@@ -534,7 +534,12 @@ async function requestServerBimPropertyIndex(input: {
     });
 
     if (!response.ok) {
-      const message = await response.text().catch(() => "");
+      const message = await response
+        .json()
+        .then((payload: { message?: unknown }) =>
+          typeof payload.message === "string" ? payload.message : ""
+        )
+        .catch(async () => response.text().catch(() => ""));
       throw new Error(message || `No se pudo indexar propiedades BIM en servidor: ${response.status}`);
     }
   }
@@ -7561,6 +7566,7 @@ export function IfcViewerCanvas({
   const smartViewIndexRunRef = useRef(0);
   const renderOperationTokenRef = useRef(0);
   const smartViewIndexInFlightSignatureRef = useRef<string | null>(null);
+  const serverBimIndexAutoRequestsRef = useRef<Set<string>>(new Set());
 
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("properties");
   const activeRightPanelGroup = getRightPanelGroup(rightPanelTab);
@@ -7728,6 +7734,77 @@ export function IfcViewerCanvas({
   useEffect(() => {
     void refreshBimIndexOverview();
   }, [refreshBimIndexOverview]);
+
+  useEffect(() => {
+    if (!projectCode?.trim() || loadedModelKeys.length === 0) return;
+
+    let cancelled = false;
+
+    async function ensureServerBimIndexForLoadedModels() {
+      try {
+        const indexedModelRecords = await loadIndexedBimModels(projectCode);
+        if (cancelled) return;
+
+        const readyModelKeys = getReadyIndexedModelKeysForLoadedModels(
+          indexedModelRecords,
+          models
+        );
+        const missingModels = models.filter(
+          (model) => model.key && !readyModelKeys.has(model.key)
+        );
+
+        if (missingModels.length === 0) return;
+
+        const requestKey = `${BIM_INDEX_SCHEMA_VERSION}:${loadedModelsSignature}`;
+        if (serverBimIndexAutoRequestsRef.current.has(requestKey)) return;
+        serverBimIndexAutoRequestsRef.current.add(requestKey);
+
+        setStatus("Indice BIM pendiente. Indexando parametros en servidor...");
+        const requested = await requestServerBimPropertyIndex({
+          projectCode,
+          models: missingModels
+        });
+
+        if (!requested || cancelled) return;
+
+        await refreshBimIndexOverview();
+        await refreshSmartViewPropertyCatalog();
+
+        const refreshedIndex = await loadSmartViewPropertyIndexFromDatabase({
+          projectCode,
+          modelKeys: loadedModelKeys
+        });
+
+        if (!cancelled && refreshedIndex) {
+          setSmartViewPropertyIndex(refreshedIndex);
+          setSmartViewPropertyIndexSignature(loadedModelsSignature);
+          setStatus(
+            `Indice BIM listo desde PostgreSQL: ${refreshedIndex.sets.length} conjuntos.`
+          );
+        }
+      } catch (error) {
+        console.warn("[viewer-ifc] No se pudo autoindexar BIM en servidor:", error);
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Error desconocido";
+          setStatus(`No se pudieron indexar propiedades para SmartView: ${message}`);
+        }
+      }
+    }
+
+    void ensureServerBimIndexForLoadedModels();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    loadedModelKeys,
+    loadedModelsSignature,
+    models,
+    projectCode,
+    refreshBimIndexOverview,
+    refreshSmartViewPropertyCatalog
+  ]);
+
 
   const auditRulesStorageKey = useMemo(
     () =>

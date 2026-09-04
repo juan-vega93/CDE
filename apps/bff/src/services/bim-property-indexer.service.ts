@@ -1,4 +1,5 @@
 import * as WEBIFC from "web-ifc";
+import path from "path";
 import {
   bulkUpsertBimElements,
   upsertBimIndexJob,
@@ -12,6 +13,11 @@ const SERVER_INDEX_BATCH_SIZE = 250;
 const MAX_PROPERTY_SETS_PER_ELEMENT = 64;
 const MAX_PROPERTIES_PER_SET = 120;
 const PLACEHOLDER_VALUES = new Set(["", "-", "sin valor", "null", "undefined"]);
+
+function resolveWebIfcWasmPath(): string {
+  const wasmFile = require.resolve("web-ifc/web-ifc-node.wasm");
+  return path.dirname(wasmFile) + path.sep;
+}
 
 type IndexBimPropertiesInput = {
   projectCode: string;
@@ -247,7 +253,8 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
   let propertyCount = 0;
 
   try {
-    await ifcApi.Init();
+    ifcApi.SetWasmPath(resolveWebIfcWasmPath(), true);
+    await ifcApi.Init(undefined, true);
     openedModelId = ifcApi.OpenModel(new Uint8Array(input.ifcBuffer));
     if (openedModelId < 0) throw new Error("No se pudo abrir el IFC para indexar propiedades");
 
