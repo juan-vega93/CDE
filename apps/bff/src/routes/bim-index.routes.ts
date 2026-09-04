@@ -331,6 +331,94 @@ router.get("/models", async (req, res) => {
   }
 });
 
+router.get("/models/diagnostics", async (req, res) => {
+  try {
+    const projectCode = toProjectCode(req.query.projectCode);
+    const documentPath = toText(req.query.documentPath);
+
+    if (!projectCode || !documentPath) {
+      return res.status(400).json({
+        success: false,
+        message: "projectCode y documentPath son obligatorios"
+      });
+    }
+
+    const normalizedPath = documentPath.startsWith("/") ? documentPath : `/${documentPath}`;
+    const aliases = [
+      normalizedPath,
+      `frag:${normalizedPath}`,
+      `ifc:${normalizedPath}`
+    ].map((value) => value.toLowerCase());
+
+    const [models, jobs, catalog, index] = await Promise.all([
+      listBimModels(projectCode),
+      listBimIndexJobs({ projectCode, limit: 50 }),
+      getBimPropertyCatalog({ projectCode, modelKeys: aliases, maxValuesPerProperty: 20 }),
+      getBimPropertyIndex({ projectCode, modelKeys: aliases, maxValuesPerProperty: 20 })
+    ]);
+
+    const matchingModels = models.filter((model) => {
+      const keys = [
+        model.modelKey,
+        model.documentPath,
+        `frag:${model.documentPath}`,
+        `ifc:${model.documentPath}`
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase());
+      return keys.some((key) => aliases.includes(key));
+    });
+
+    const matchingJobs = jobs.filter((job) =>
+      job.documentPath.trim().toLowerCase() === normalizedPath.toLowerCase()
+    );
+
+    const topParameters = Object.entries(catalog.valuesBySetAndProperty)
+      .flatMap(([setName, properties]) =>
+        Object.entries(properties).map(([propertyName, values]) => ({
+          setName,
+          propertyName,
+          values: values.slice(0, 5),
+          totalCount: values.reduce((sum, item) => sum + item.count, 0)
+        }))
+      )
+      .sort((a, b) => b.totalCount - a.totalCount)
+      .slice(0, 20);
+
+    return res.json({
+      success: true,
+      data: {
+        projectCode,
+        documentPath: normalizedPath,
+        aliases,
+        models: matchingModels,
+        jobs: matchingJobs,
+        catalogStats: {
+          sets: catalog.sets.length,
+          properties: Object.values(catalog.propertiesBySet).reduce(
+            (sum, properties) => sum + properties.length,
+            0
+          ),
+          elementCount: catalog.elementCount,
+          propertyCount: catalog.propertyCount,
+          valueCount: catalog.valueCount
+        },
+        indexStats: {
+          sets: index.sets.length,
+          localIdsByModelKey: Object.fromEntries(
+            Object.entries(index.localIdsByModelKey ?? {}).map(([modelKey, ids]) => [
+              modelKey,
+              ids.length
+            ])
+          )
+        },
+        topParameters
+      }
+    });
+  } catch (error) {
+    return sendRouteError(res, error);
+  }
+});
 router.post("/models/index-from-document", async (req, res) => {
   try {
     const body = req.body && typeof req.body === "object" ? req.body : {};
