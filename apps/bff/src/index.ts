@@ -197,8 +197,8 @@ export function createApp() {
 if (require.main === module) {
   const app = createApp();
 
-  app.listen(PORT, () => {
-    console.log(`BFF running on http://localhost:${PORT}`);
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`BFF running on http://0.0.0.0:${PORT}`);
   });
 }
 
