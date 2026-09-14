@@ -34,7 +34,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
 
   try {
     const response = await fetch(
-      `${process.env.NEXT_PUBLIC_KEYCLOAK_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/token`,
+      `${process.env.KEYCLOAK_INTERNAL_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/token`,
       {
         method: "POST",
         headers: {
@@ -82,7 +82,12 @@ export const authOptions: NextAuthOptions = {
     Keycloak({
       clientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID!,
       clientSecret: process.env.KEYCLOAK_CLIENT_SECRET!,
-      issuer: `${process.env.NEXT_PUBLIC_KEYCLOAK_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}`
+      issuer: `${process.env.NEXT_PUBLIC_KEYCLOAK_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}`,
+      wellKnown: `${process.env.KEYCLOAK_INTERNAL_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/.well-known/openid-configuration`,
+      authorization: `${process.env.NEXT_PUBLIC_KEYCLOAK_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/auth`,
+      token: `${process.env.KEYCLOAK_INTERNAL_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/token`,
+      userinfo: `${process.env.KEYCLOAK_INTERNAL_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/userinfo`,
+      jwks_endpoint: `${process.env.KEYCLOAK_INTERNAL_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/certs`
     })
   ],
   secret: process.env.NEXTAUTH_SECRET,

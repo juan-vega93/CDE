@@ -1,4 +1,19 @@
 services:
+  cde-portal-keycloak:
+    image: quay.io/keycloak/keycloak:26.3.3
+    container_name: cde-portal-keycloak
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --hostname=http://localhost:8080
+      - --hostname-backchannel-dynamic=true
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8080:8080"
+    volumes:
+      - cde-portal-keycloak-data:/opt/keycloak/data
   cde-portal-db:
     image: postgres:16-alpine
     container_name: cde-portal-db
@@ -48,3 +63,4 @@ services:
 
 volumes:
   cde-portal-db-data:
+  cde-portal-keycloak-data:
