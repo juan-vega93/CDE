@@ -7,6 +7,7 @@ services:
       - start-dev
       - --hostname=http://localhost:8080
       - --hostname-backchannel-dynamic=true
+      - --http-host=0.0.0.0
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:-admin}
