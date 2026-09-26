@@ -45,10 +45,7 @@ function isBimViewerFile(fileName: string) {
 function isReadyForFederation(doc: DocumentItem) {
   const extension = doc.extension?.toLowerCase() || doc.name.split(".").pop()?.toLowerCase() || "";
 
-  if (extension === "frag") return true;
-  if (extension !== "ifc") return false;
-
-  return doc.bimDerivative?.status === "generated";
+  return extension === "ifc" || extension === "frag";
 }
 
 function getBimStatusLabel(doc: DocumentItem) {

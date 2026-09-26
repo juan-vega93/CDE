@@ -7530,6 +7530,8 @@ export function IfcViewerCanvas({
   const rendererRef = useRef<unknown>(null);
   const initialSourcesRef = useRef(sources);
   const initialDocumentNamesRef = useRef(documentNames);
+  const sessionAccessTokenRef = useRef(sessionAccessToken);
+  const viewerInitializedRef = useRef(false);
   const loadedSourceKeysRef = useRef<Set<string>>(new Set());
   const hasLoadedAnyModelRef = useRef(false);
   const annotationModeRef = useRef(false);
@@ -7574,6 +7576,8 @@ export function IfcViewerCanvas({
   const [showViewerStats, setShowViewerStats] = useState(false);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
   const [status, setStatus] = useState("Inicializando visor...");
+  const [isViewerLifecycleAuthorized, setIsViewerLifecycleAuthorized] =
+    useState(false);
   const [viewpoints, setViewpoints] = useState<ViewerViewpoint[]>([]);
   const [viewpointsLoaded, setViewpointsLoaded] = useState(false);
   const [bim2DViews, setBim2DViews] = useState<Bim2DViewEntry[]>([]);
@@ -8103,18 +8107,35 @@ export function IfcViewerCanvas({
   }, [viewpoints, primaryDocumentPath, viewpointsLoaded]);
 
   useEffect(() => {
+    sessionAccessTokenRef.current = sessionAccessToken;
+  }, [sessionAccessToken]);
+
+  useEffect(() => {
     if (sessionStatus === "loading") {
-      setStatus("Preparando sesion...");
+      if (!viewerInitializedRef.current) {
+        setStatus("Preparando sesion...");
+      }
       return;
     }
 
     if (sessionStatus === "unauthenticated" || !sessionAccessToken) {
       setStatus("Sesion requerida para cargar modelos BIM");
+      if (viewerInitializedRef.current) {
+        setIsViewerLifecycleAuthorized(false);
+      }
       return;
     }
 
+    setIsViewerLifecycleAuthorized(true);
+  }, [sessionAccessToken, sessionStatus]);
+
+  useEffect(() => {
+    if (!isViewerLifecycleAuthorized) return;
+
     const hostElement = hostRef.current;
     if (!hostElement) return;
+
+    viewerInitializedRef.current = true;
 
     let components: OBC.Components | null = null;
     let handleResize: (() => void) | null = null;
@@ -8502,7 +8523,7 @@ export function IfcViewerCanvas({
             world,
             source: currentSource,
             modelName: currentName,
-            accessToken: sessionAccessToken
+            accessToken: sessionAccessTokenRef.current
           });
 
           currentLoadedModelResultsRef.current.push(result);
@@ -8606,6 +8627,7 @@ export function IfcViewerCanvas({
 
     return () => {
       disposed = true;
+      viewerInitializedRef.current = false;
       try {
         const modules = modulesRef.current;
 
@@ -8711,7 +8733,7 @@ export function IfcViewerCanvas({
 
       
     };
-  }, [sessionAccessToken, sessionStatus]);
+  }, [isViewerLifecycleAuthorized]);
 
   useEffect(() => {
   if (!projectCode) {
@@ -11152,8 +11174,7 @@ async function handleIsolateModel(key: string) {
 
         const source = await resolveViewerSource({
           documentPath: item.path,
-          documentName: item.name,
-          requireFrag: true
+          documentName: item.name
         });
 
         resolvedSources.push(source);
@@ -11190,7 +11211,7 @@ async function handleIsolateModel(key: string) {
           world: viewer.world,
           source,
           modelName: name,
-          accessToken: sessionAccessToken
+          accessToken: sessionAccessTokenRef.current
         });
 
         loadedModelResultsRef.current.push(result);

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
+import { initializeFragments } from "@/features/viewer-ifc/lib/fragments";
 
 export type ViewerWorld = {
   components: OBC.Components;
@@ -36,6 +37,7 @@ export function createWorld(viewport: HTMLElement): ViewerWorld {
 
   components.get(OBC.Grids).create(world);
   components.init();
+  initializeFragments(components, world);
 
   const rendererWithDirty = renderer as OBF.PostproductionRenderer & {
     needsUpdate?: boolean;

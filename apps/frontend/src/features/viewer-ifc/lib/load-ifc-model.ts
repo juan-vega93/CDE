@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import type { ViewerSource } from "@/features/viewer-ifc/lib/resolve-viewer-source";
+import { initializeFragments } from "@/features/viewer-ifc/lib/fragments";
 import { bffAssetFetch } from "@/services/bff-client";
 
 type LoadViewerModelParams = {
@@ -11,52 +12,7 @@ type LoadViewerModelParams = {
   accessToken?: string;
 };
 
-type InitializedFragments = {
-  fragments: OBC.FragmentsManager;
-  workerUrl: string;
-};
-
-const fragmentsInitCache = new WeakMap<OBC.Components, Promise<InitializedFragments>>();
-type ControlsWithUpdateListener = {
-  addEventListener: (type: "update", listener: () => void) => void;
-};
-
-const controlsHooked = new WeakSet<object>();
-const FRAGMENTS_WORKER_URL = "/vendor/thatopen/fragments-worker.mjs";
 const WEB_IFC_WASM_PATH = "/vendor/web-ifc/";
-
-async function ensureFragmentsInitialized(
-  components: OBC.Components,
-  world: OBC.World
-): Promise<InitializedFragments> {
-  const cached = fragmentsInitCache.get(components);
-  if (cached) return cached;
-
-  const initPromise = (async () => {
-    const fragments = components.get(OBC.FragmentsManager);
-    const workerUrl = FRAGMENTS_WORKER_URL;
-
-    fragments.init(workerUrl);
-
-    const controls = world.camera.controls as ControlsWithUpdateListener | null;
-
-    if (controls && !controlsHooked.has(controls)) {
-      controls.addEventListener("update", () => {
-        fragments.core.update();
-      });
-
-      controlsHooked.add(controls);
-    }
-
-    return {
-      fragments,
-      workerUrl
-    };
-  })();
-
-  fragmentsInitCache.set(components, initPromise);
-  return initPromise;
-}
 
 function getResolvedModelName(source: ViewerSource, modelName?: string) {
   return (
@@ -154,10 +110,7 @@ export async function loadViewerModel({
   modelName,
   accessToken
 }: LoadViewerModelParams) {
-  const { fragments, workerUrl } = await ensureFragmentsInitialized(
-    components,
-    world
-  );
+  const { fragments, workerUrl } = initializeFragments(components, world);
 
   const resolvedModelName = getResolvedModelName(source, modelName);
 
