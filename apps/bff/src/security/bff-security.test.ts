@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import crypto from "crypto";
+import fs from "node:fs/promises";
 import http from "http";
 import type { AddressInfo } from "net";
+import os from "node:os";
+import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { createApp } from "../index";
 import { clearJwksCacheForTests } from "./keycloak-jwt";
@@ -294,6 +297,76 @@ test("usuario con permiso de escritura puede ejecutar operaciones permitidas", a
     body: JSON.stringify([])
   });
   assert.equal(response.status, 200);
+});
+
+test("upload mock HTTP persiste antes de responder y el explorer puede recuperarlo", async () => {
+  const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "cde-mock-http-test-"));
+  const previousRuntime = process.env.BFF_RUNTIME_DIR;
+  process.env.BFF_RUNTIME_DIR = runtimeRoot;
+
+  try {
+    const content = Buffer.from("TEST-MOCK-HTTP-IFC", "utf8");
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new Blob([content], { type: "application/x-step" }),
+      "synthetic.ifc"
+    );
+    formData.append("targetFolderPath", "/PROJA/mock-http");
+    formData.append("projectCode", "PROJA");
+
+    const upload = await fetch(`${appUrl}/api/documents/upload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${writerToken()}` },
+      body: formData
+    });
+    const uploadBody = await upload.json();
+    assert.equal(upload.status, 201);
+    assert.equal(uploadBody.success, true);
+    assert.equal(uploadBody.data.path, "/PROJA/mock-http/synthetic.ifc");
+
+    const explorer = await request(
+      "/api/documents/explorer?path=%2FPROJA%2Fmock-http&projectCode=PROJA",
+      { token: writerToken() }
+    );
+    const explorerBody = await explorer.json();
+    assert.equal(explorer.status, 200);
+    assert.equal(explorerBody.data.documents.length, 1);
+    assert.equal(explorerBody.data.documents[0].name, "synthetic.ifc");
+    assert.equal(explorerBody.data.documents[0].size, content.length);
+
+    const download = await request(
+      "/api/documents/content?path=%2FPROJA%2Fmock-http%2Fsynthetic.ifc&projectCode=PROJA",
+      { token: writerToken() }
+    );
+    assert.equal(download.status, 200);
+    assert.deepEqual(Buffer.from(await download.arrayBuffer()), content);
+
+    const blockedRuntimePath = path.join(runtimeRoot, "blocked-runtime");
+    await fs.writeFile(blockedRuntimePath, "not a directory", "utf8");
+    process.env.BFF_RUNTIME_DIR = blockedRuntimePath;
+    const failedUploadForm = new FormData();
+    failedUploadForm.append(
+      "file",
+      new Blob([Buffer.from("TEST-MOCK-HTTP-FAIL")], { type: "application/x-step" }),
+      "write-failure.ifc"
+    );
+    failedUploadForm.append("targetFolderPath", "/PROJA/mock-http");
+    failedUploadForm.append("projectCode", "PROJA");
+
+    const failedUpload = await fetch(`${appUrl}/api/documents/upload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${writerToken()}` },
+      body: failedUploadForm
+    });
+    const failedUploadBody = await failedUpload.json();
+    assert.equal(failedUpload.status, 500);
+    assert.equal(failedUploadBody.success, false);
+  } finally {
+    if (previousRuntime === undefined) delete process.env.BFF_RUNTIME_DIR;
+    else process.env.BFF_RUNTIME_DIR = previousRuntime;
+    await fs.rm(runtimeRoot, { recursive: true, force: true });
+  }
 });
 
 test("usuario no administrador no puede acceder a rutas administrativas", async () => {

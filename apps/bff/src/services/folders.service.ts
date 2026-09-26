@@ -6,6 +6,10 @@ import {
   moveDerivedFolderForFolderMove,
   renameDerivedFolderForFolderRename
 } from "./documents.service";
+import {
+  createMockDocumentFolder,
+  listMockDocumentDirectory
+} from "./mock-document-storage.service";
 
 const nextcloudAdapter = new NextcloudAdapter();
 const TECHNICAL_FOLDER_NAMES = new Set([
@@ -127,7 +131,17 @@ export async function getFolders(path: string): Promise<FoldersResponse> {
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
-    return getMockFolders(path);
+    const persistedFolders = (await listMockDocumentDirectory(path)).folders;
+    const fixtureFolders = getMockFolders(path).items.filter(
+      (folder) => !persistedFolders.some((persisted) => persisted.path === folder.path)
+    );
+
+    return {
+      path,
+      items: [...fixtureFolders, ...persistedFolders].sort((left, right) =>
+        left.name.localeCompare(right.name)
+      )
+    };
   }
 
   try {
@@ -253,7 +267,7 @@ export async function createFolder(folderPath: string): Promise<void> {
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
-    console.log("[folders.service] Mock create folder:", { folderPath });
+    await createMockDocumentFolder(assertWritableDestinationPath(folderPath));
     clearDocumentExplorerCache();
     return;
   }

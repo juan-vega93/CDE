@@ -45,6 +45,8 @@ services:
       DATABASE_URL: postgresql://cde_portal:cde_portal_dev@cde-portal-db:5432/cde_portal
     ports:
       - "4000:4000"
+    volumes:
+      - cde-portal-bff-runtime:/app/apps/bff/.runtime
     depends_on:
       cde-portal-db:
         condition: service_healthy
@@ -65,3 +67,4 @@ services:
 volumes:
   cde-portal-db-data:
   cde-portal-keycloak-data:
+  cde-portal-bff-runtime:

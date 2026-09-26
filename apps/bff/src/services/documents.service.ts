@@ -30,6 +30,14 @@ import {
   remapBimDerivativeSourcePath,
   upsertBimDerivative
 } from "./bim-derivatives.service";
+import {
+  deleteMockDocument,
+  listMockDocumentDirectory,
+  moveMockDocument,
+  readMockDocument,
+  renameMockDocument,
+  writeMockDocument
+} from "./mock-document-storage.service";
 
 const nextcloudAdapter = new NextcloudAdapter();
 type CurrentBimDerivativeIdentity = {
@@ -583,6 +591,26 @@ function buildMockDocuments(path: string): DocumentItem[] {
   return [];
 }
 
+async function getPersistedMockDirectory(path: string): Promise<DocumentExplorerData> {
+  const cleanPath = normalizePortalPath(path);
+  const persisted = await listMockDocumentDirectory(cleanPath);
+  const persistedPaths = new Set(persisted.documents.map((document) => document.path));
+  const fixtureDocuments = buildMockDocuments(cleanPath).filter(
+    (document) => !persistedPaths.has(document.path)
+  );
+  const documents = withBimDerivativeStatuses([
+    ...fixtureDocuments,
+    ...persisted.documents
+  ]);
+
+  return {
+    path: cleanPath,
+    folders: persisted.folders,
+    documents,
+    workPackageLinks: filterLinksForDocuments(getWorkPackageLinks(), documents)
+  };
+}
+
 function filterLinksForDocuments(
   links: WorkPackageLink[],
   documents: DocumentItem[]
@@ -600,9 +628,10 @@ export async function getDocuments(path: string): Promise<DocumentsResponse> {
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
+    const directory = await getPersistedMockDirectory(path);
     return {
-      path,
-      items: withBimDerivativeStatuses(buildMockDocuments(path))
+      path: directory.path,
+      items: directory.documents
     };
   }
 
@@ -644,14 +673,7 @@ export async function getDocumentExplorer(path: string): Promise<DocumentExplore
   }
 
   if (useMock) {
-    const documents = withBimDerivativeStatuses(buildMockDocuments(cleanPath));
-
-    return cacheAndReturn({
-      path: cleanPath,
-      folders: [],
-      documents,
-      workPackageLinks: filterLinksForDocuments(getWorkPackageLinks(), documents)
-    });
+    return cacheAndReturn(await getPersistedMockDirectory(cleanPath));
   }
 
   try {
@@ -686,8 +708,8 @@ export async function getDocumentById(
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
-    const documents = buildMockDocuments(path);
-    return documents.find((doc) => doc.id === id) ?? null;
+    const directory = await getPersistedMockDirectory(path);
+    return directory.documents.find((doc) => doc.id === id) ?? null;
   }
 
   try {
@@ -782,8 +804,10 @@ export async function uploadDocument(
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
-    console.log("[documents.service] Mock upload:", {
-      targetPath,
+    const cleanTargetPath = assertWritableDocumentPath(targetPath);
+    await writeMockDocument(cleanTargetPath, fileBuffer);
+    console.log("[documents.service] Mock upload persisted:", {
+      targetPath: cleanTargetPath,
       size: fileBuffer.length,
       contentType
     });
@@ -800,7 +824,7 @@ export async function deleteDocument(documentPath: string): Promise<void> {
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
-    console.log("[documents.service] Mock delete document:", { documentPath });
+    await deleteMockDocument(assertWritableDocumentPath(documentPath));
     clearDocumentExplorerCache();
     return;
   }
@@ -834,10 +858,7 @@ export async function renameDocument(
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
-    console.log("[documents.service] Mock rename:", {
-      documentPath,
-      newName
-    });
+    await renameMockDocument(assertWritableDocumentPath(documentPath), newName.trim());
     clearDocumentExplorerCache();
     return;
   }
@@ -871,10 +892,10 @@ export async function moveDocument(
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
-    console.log("[documents.service] Mock move document:", {
-      documentPath,
-      destinationFolderPath
-    });
+    await moveMockDocument(
+      assertWritableDocumentPath(documentPath),
+      assertWritableDestinationPath(destinationFolderPath)
+    );
     clearDocumentExplorerCache();
     return;
   }
@@ -944,9 +965,7 @@ export async function getDocumentContent(
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (useMock) {
-    throw new Error(
-      "La descarga real de documentos no está disponible en modo mock"
-    );
+    return readMockDocument(documentPath);
   }
 
   const cleanVersionId = documentVersionId?.trim();
