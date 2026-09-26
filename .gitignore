@@ -6,3 +6,5 @@ dist
 coverage
 .runtime/
 .DS_Store
+
+test-data/
