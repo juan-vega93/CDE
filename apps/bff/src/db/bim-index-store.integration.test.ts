@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import {
   bulkUpsertBimElements,
+  getBimElementProperties,
   getBimPropertyCatalog,
   getBimPropertyIndexSnapshot,
   queryBimPropertyLocalIds,
@@ -15,7 +16,9 @@ const databaseUrl = process.env.DATABASE_URL?.trim();
 const runId = randomUUID();
 const projectCode = `TEST-BIM-CONTRACT-${runId}`;
 const isolatedProjectCode = `TEST-BIM-ISOLATED-${runId}`;
-const modelKey = "test-model";
+const modelKey = "frag:/test-bim-contract/test-model.ifc";
+const ifcModelKey = "ifc:/test-bim-contract/test-model.ifc";
+const federatedModelKey = "frag:/test-bim-contract/other-model.ifc";
 const snapshotSignature = `test-snapshot-${runId}`;
 
 async function cleanupTestData() {
@@ -119,6 +122,34 @@ test(
       { finalize: true }
     );
 
+    const federatedModel = await upsertBimModel({
+      projectCode,
+      documentPath: "/TEST-BIM-CONTRACT/other-model.ifc",
+      documentName: "other-model.ifc",
+      sourceHash: `test-source-other-${runId}`,
+      modelKey: federatedModelKey,
+      status: "processing"
+    });
+    await bulkUpsertBimElements(
+      federatedModel.id,
+      [
+        {
+          localId: 101,
+          globalId: "TEST-GLOBAL-OTHER-101",
+          ifcClass: "IfcDoor",
+          name: "Other Test Door",
+          properties: [
+            {
+              setName: "Pset_DoorCommon",
+              name: "FireRating",
+              value: "TEST-OTHER-120"
+            }
+          ]
+        }
+      ],
+      { finalize: true }
+    );
+
     const isolatedModel = await upsertBimModel({
       projectCode: isolatedProjectCode,
       documentPath: "/TEST-BIM-ISOLATED/test-model.ifc",
@@ -198,6 +229,54 @@ test(
       propertyValue: "true"
     });
     assert.deepEqual(isolatedIds, {});
+
+    const wallProperties = await getBimElementProperties({
+      projectCode,
+      modelKey: ifcModelKey,
+      localId: 101
+    });
+    assert.ok(wallProperties);
+    assert.equal(wallProperties.model.id, model.id);
+    assert.equal(wallProperties.globalId, "TEST-GLOBAL-WALL-101");
+    assert.equal(wallProperties.ifcClass, "IfcWall");
+    assert.deepEqual(wallProperties.propertySets, [
+      {
+        name: "Pset_WallCommon",
+        properties: [
+          {
+            name: "LoadBearing",
+            value: true,
+            valueType: "boolean",
+            unit: null
+          },
+          {
+            name: "Reference",
+            value: "TEST-WALL-101",
+            valueType: "text",
+            unit: null
+          }
+        ]
+      }
+    ]);
+
+    const federatedProperties = await getBimElementProperties({
+      projectCode,
+      modelKey: federatedModelKey,
+      localId: 101
+    });
+    assert.ok(federatedProperties);
+    assert.equal(federatedProperties.model.id, federatedModel.id);
+    assert.equal(federatedProperties.globalId, "TEST-GLOBAL-OTHER-101");
+    assert.equal(federatedProperties.ifcClass, "IfcDoor");
+
+    assert.equal(
+      await getBimElementProperties({ projectCode, modelKey: "ifc:/missing.ifc", localId: 101 }),
+      null
+    );
+    assert.equal(
+      await getBimElementProperties({ projectCode, modelKey: ifcModelKey, localId: 999999 }),
+      null
+    );
 
     const index = {
       sets: ["Pset_WallCommon"],

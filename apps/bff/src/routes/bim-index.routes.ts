@@ -11,6 +11,7 @@ import {
   getBimPropertySummary,
   queryBimPropertyLocalIds,
   getBimPropertyIndexSnapshot,
+  getBimElementProperties,
   listBimIndexJobs,
   listBimModels,
   upsertBimModel,
@@ -325,6 +326,30 @@ router.get("/models", async (req, res) => {
     }
 
     const data = await listBimModels(projectCode);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return sendRouteError(res, error);
+  }
+});
+
+router.get("/models/element-properties", async (req, res) => {
+  try {
+    const projectCode = toProjectCode(req.query.projectCode);
+    const modelKey = toText(req.query.modelKey);
+    const localId = typeof req.query.localId === "string" ? Number(req.query.localId) : NaN;
+
+    if (!projectCode || !modelKey || !Number.isInteger(localId) || localId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "projectCode, modelKey y localId positivo son obligatorios"
+      });
+    }
+
+    const data = await getBimElementProperties({ projectCode, modelKey, localId });
+    if (!data) {
+      return res.status(404).json({ success: false, message: "Elemento BIM no encontrado" });
+    }
+
     return res.json({ success: true, data });
   } catch (error) {
     return sendRouteError(res, error);

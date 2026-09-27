@@ -18,6 +18,7 @@ import * as FRAGS from "@thatopen/fragments";
 import * as WEBIFC from "web-ifc";
 import { createWorld } from "@/features/viewer-ifc/lib/create-world";
 import { loadViewerModel } from "@/features/viewer-ifc/lib/load-ifc-model";
+import { createLiveBimModelResolver } from "@/features/viewer-ifc/lib/bim-model-identity";
 import {
   resolveViewerSource,
   type ViewerSource
@@ -107,6 +108,57 @@ type FederatedModelEntry = {
   spatialTreeLoading?: boolean;
   spatialTreeError?: string;
 };
+
+type SelectedBimElementProperties = {
+  model: { documentName: string };
+  localId: number;
+  globalId: string | null;
+  ifcClass: string | null;
+  name: string | null;
+  tag: string | null;
+  propertySets: Array<{
+    name: string;
+    properties: Array<{
+      name: string;
+      value: unknown;
+      valueType: string;
+      unit: string | null;
+    }>;
+  }>;
+};
+
+function isSelectedBimElementProperties(value: unknown): value is SelectedBimElementProperties {
+  if (!value || typeof value !== "object") return false;
+  const data = value as Partial<SelectedBimElementProperties>;
+  return (
+    typeof data.localId === "number" &&
+    Array.isArray(data.propertySets) &&
+    typeof data.model?.documentName === "string"
+  );
+}
+
+function toSelectedPropertiesPanelItem(
+  element: SelectedBimElementProperties
+): Record<string, unknown> {
+  return {
+    __modelName: element.model.documentName,
+    _category: element.ifcClass,
+    Name: element.name,
+    Tag: element.tag,
+    _guid: element.globalId,
+    _localId: element.localId,
+    IsDefinedBy: element.propertySets.map((propertySet) => ({
+      RelatingPropertyDefinition: {
+        Name: propertySet.name,
+        HasProperties: propertySet.properties.map((property) => ({
+          Name: property.name,
+          NominalValue: { value: property.value, type: property.valueType },
+          Unit: property.unit
+        }))
+      }
+    }))
+  };
+}
 
 function getFederatedModelsAnalysisSignature(models: FederatedModelEntry[]) {
   return models
@@ -11367,16 +11419,53 @@ async function handleIsolateModel(key: string) {
           SELECTED_PROPERTIES_TIMEOUT_MS
         );
       });
-      const data = await Promise.race([
-        modules.selection.getSelectedItemsData(),
-        timeout
-      ]);
+      const modelResolver = createLiveBimModelResolver({ projectCode, models });
+      const selectedElements = Object.entries(map).flatMap(([runtimeModelId, localIds]) =>
+        [...localIds].map((localId) => ({ runtimeModelId, localId }))
+      );
+      const resolvedElements = selectedElements.map((element) => ({
+        ...element,
+        model: modelResolver.fromRuntimeModelId(element.runtimeModelId)
+      }));
+      const dbData =
+        projectCode?.trim() && resolvedElements.every((element) => element.model)
+          ? await Promise.race([
+              Promise.all(
+                resolvedElements.map(async (element) => {
+                  const identity = element.model!;
+                  const params = new URLSearchParams({
+                    projectCode: identity.projectCode,
+                    modelKey: identity.modelKey,
+                    localId: String(element.localId)
+                  });
+                  const response = await bffFetch(
+                    `/api/bim-index/models/element-properties?${params.toString()}`
+                  );
+                  if (!response.ok) return null;
+
+                  const payload = (await response.json()) as { success?: boolean; data?: unknown };
+                  return payload.success && isSelectedBimElementProperties(payload.data)
+                    ? toSelectedPropertiesPanelItem(payload.data)
+                    : null;
+                })
+              ),
+              timeout
+            ])
+          : null;
+
+      // Runtime remains the compatibility fallback for unindexed or unresolved models.
+      const usingDatabase = Boolean(
+        dbData && dbData.every((item): item is Record<string, unknown> => item !== null)
+      );
+      const data = usingDatabase
+        ? dbData
+        : await Promise.race([modules.selection.getSelectedItemsData(), timeout]);
       const typedData = data as Record<string, unknown>[];
 
       propertiesCacheRef.current.set(cacheKey, typedData);
       setSelectedItemsData(typedData);
       setPropertiesRequested(true);
-      setStatus("Propiedades cargadas");
+      setStatus(usingDatabase ? "Propiedades cargadas desde PostgreSQL" : "Propiedades cargadas");
     } catch (error) {
       console.error("[viewer-ifc] Error loading selected item data:", error);
       setStatus("Error cargando propiedades. Revisa la consola.");

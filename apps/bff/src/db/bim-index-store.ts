@@ -110,6 +110,24 @@ export type BimPropertyCatalog = {
   valueCount: number;
 };
 
+export type BimElementProperties = {
+  model: ReturnType<typeof toModel>;
+  localId: number;
+  globalId: string | null;
+  ifcClass: string | null;
+  name: string | null;
+  tag: string | null;
+  propertySets: Array<{
+    name: string;
+    properties: Array<{
+      name: string;
+      value: string | number | boolean | Record<string, unknown> | unknown[] | null;
+      valueType: BimPropertyValueType;
+      unit: string | null;
+    }>;
+  }>;
+};
+
 
 export type BimPropertySummaryInput = {
   projectCode: string;
@@ -508,6 +526,129 @@ export async function getBimModelByDocument(input: {
     [input.projectCode, input.documentPath, normalizeText(input.sourceHash)]
   );
   return result.rows[0] ? toModel(result.rows[0]) : null;
+}
+
+function getCompatibleBimModelKeys(value: string): string[] {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return [];
+
+  const documentPath = normalized.replace(/^(?:ifc|frag):/, "");
+  if (!documentPath.startsWith("/")) return [normalized];
+
+  return Array.from(
+    new Set([normalized, documentPath, `ifc:${documentPath}`, `frag:${documentPath}`])
+  );
+}
+
+export async function getBimElementProperties(input: {
+  projectCode: string;
+  modelKey: string;
+  localId: number;
+}): Promise<BimElementProperties | null> {
+  ensureBimDatabaseEnabled();
+  const modelKeys = getCompatibleBimModelKeys(input.modelKey);
+  if (!input.projectCode.trim() || modelKeys.length === 0 || !Number.isInteger(input.localId)) {
+    return null;
+  }
+
+  const modelResult = await getDatabasePool().query<BimModelRow>(
+    `
+      select models.*
+      from cde_bim_models models
+      where models.project_code = $1
+        and (
+          lower(models.model_key) = any($2::text[])
+          or lower(models.document_path) = any($2::text[])
+          or lower('ifc:' || models.document_path) = any($2::text[])
+          or lower('frag:' || models.document_path) = any($2::text[])
+        )
+      order by case when models.status = 'ready' then 0 else 1 end, models.updated_at desc
+      limit 1
+    `,
+    [input.projectCode.trim(), modelKeys]
+  );
+  const model = modelResult.rows[0];
+  if (!model) return null;
+
+  const elementResult = await getDatabasePool().query<{
+    id: string;
+    local_id: number;
+    global_id: string | null;
+    ifc_class: string | null;
+    name: string | null;
+    metadata: Record<string, unknown>;
+  }>(
+    `
+      select id, local_id, global_id, ifc_class, name, metadata
+      from cde_bim_elements
+      where bim_model_id = $1 and local_id = $2
+      limit 1
+    `,
+    [model.id, input.localId]
+  );
+  const element = elementResult.rows[0];
+  if (!element) return null;
+
+  const propertyResult = await getDatabasePool().query<{
+    set_name: string;
+    property_name: string;
+    value_type: BimPropertyValueType;
+    value_text: string | null;
+    value_number: number | null;
+    value_bool: boolean | null;
+    value_json: Record<string, unknown> | unknown[] | null;
+    unit: string | null;
+  }>(
+    `
+      select
+        sets.name as set_name,
+        properties.name as property_name,
+        properties.value_type,
+        values.value_text,
+        values.value_number,
+        values.value_bool,
+        values.value_json,
+        values.unit
+      from cde_bim_property_values values
+      join cde_bim_properties properties on properties.id = values.property_id
+      join cde_bim_property_sets sets on sets.id = properties.property_set_id
+      where values.bim_element_id = $1
+      order by sets.name asc, properties.name asc
+    `,
+    [element.id]
+  );
+
+  const propertySets = new Map<string, BimElementProperties["propertySets"][number]>();
+  for (const property of propertyResult.rows) {
+    const set = propertySets.get(property.set_name) ?? {
+      name: property.set_name,
+      properties: []
+    };
+    if (!propertySets.has(property.set_name)) propertySets.set(property.set_name, set);
+
+    set.properties.push({
+      name: property.property_name,
+      value:
+        property.value_json ??
+        property.value_bool ??
+        property.value_number ??
+        property.value_text,
+      valueType: property.value_type,
+      unit: property.unit
+    });
+  }
+
+  const metadata = asObject(element.metadata);
+  const tag = metadata.tag ?? metadata.Tag;
+  return {
+    model: toModel(model),
+    localId: element.local_id,
+    globalId: element.global_id,
+    ifcClass: element.ifc_class,
+    name: element.name,
+    tag: typeof tag === "string" ? tag : null,
+    propertySets: [...propertySets.values()]
+  };
 }
 
 export async function bulkUpsertBimElements(
