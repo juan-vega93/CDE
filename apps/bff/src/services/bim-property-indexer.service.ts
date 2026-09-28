@@ -30,7 +30,7 @@ type IndexBimPropertiesInput = {
   ifcBuffer: Buffer | Uint8Array;
 };
 
-type IfcRecord = Record<string, unknown>;
+export type IfcRecord = Record<string, unknown>;
 
 function isObject(value: unknown): value is IfcRecord {
   return Boolean(value) && typeof value === "object";
@@ -106,6 +106,108 @@ function hasPropertyCandidates(value: unknown): value is IfcRecord {
   return isObject(value) && getPropertyCandidates(value).length > 0;
 }
 
+function getIfcRecordExpressId(record: IfcRecord): number | undefined {
+  const expressId = Number(record.expressID);
+  return Number.isInteger(expressId) && expressId > 0 ? expressId : undefined;
+}
+
+function getPropertySetStableIdentity(pset: IfcRecord): string | undefined {
+  const expressId = getIfcRecordExpressId(pset);
+  if (expressId !== undefined) return `express:${expressId}`;
+
+  const globalId = normalizeText(pset.GlobalId);
+  return globalId ? `global:${globalId.toLowerCase()}` : undefined;
+}
+
+function getPropertySetFallbackIdentity(pset: IfcRecord, occurrence: number): string {
+  const name = normalizeText(pset.Name)?.toLowerCase();
+  if (!name) return `unidentified:${occurrence}`;
+
+  const propertyIdentity = getPropertyCandidates(pset)
+    .map((property) => {
+      if (!isObject(property)) return "";
+      const expressId = getIfcRecordExpressId(property);
+      if (expressId !== undefined) return `express:${expressId}`;
+      const globalId = normalizeText(property.GlobalId);
+      if (globalId) return `global:${globalId.toLowerCase()}`;
+      const name = normalizeText(property.Name)?.toLowerCase() ?? "";
+      const value = [
+        "NominalValue",
+        "LengthValue",
+        "AreaValue",
+        "VolumeValue",
+        "CountValue",
+        "WeightValue",
+        "TimeValue",
+        "EnumerationValues",
+        "ListValues"
+      ]
+        .map((key) => normalizeText(property[key]))
+        .find(Boolean)
+        ?.toLowerCase() ?? "";
+      return name || value ? `${name}:${value}` : "";
+    })
+    .filter(Boolean)
+    .sort()
+    .join("|");
+
+  // A name alone is not sufficient: IFC files can contain distinct property
+  // sets with the same display name. Keep unresolved same-name sets separate.
+  return propertyIdentity ? `name:${name}:properties:${propertyIdentity}` : `name:${name}:${occurrence}`;
+}
+
+function getPropertySetCompleteness(pset: IfcRecord): number {
+  let score = 0;
+  for (const property of getPropertyCandidates(pset)) {
+    score += 1;
+    if (!isObject(property)) continue;
+    if (normalizeText(property.Name)) score += 4;
+    if (
+      [
+        "NominalValue",
+        "LengthValue",
+        "AreaValue",
+        "VolumeValue",
+        "CountValue",
+        "WeightValue",
+        "TimeValue",
+        "EnumerationValues",
+        "ListValues"
+      ].some((key) => normalizeText(property[key]))
+    ) {
+      score += 2;
+    }
+  }
+  return score;
+}
+
+/**
+ * Merges the partial shapes returned by web-ifc property helpers. Stable IFC
+ * identity wins over display names; when no stable identity exists, a property
+ * signature prevents distinct same-name sets from being collapsed.
+ */
+export function mergeIfcPropertySets(...collections: unknown[][]): IfcRecord[] {
+  const merged = new Map<string, IfcRecord>();
+  let occurrence = 0;
+
+  for (const collection of collections) {
+    for (const rawSet of collection) {
+      if (!isObject(rawSet)) continue;
+      const pset = unwrapPropertySet(rawSet);
+      if (!hasPropertyCandidates(pset)) continue;
+
+      const key =
+        getPropertySetStableIdentity(pset) ?? getPropertySetFallbackIdentity(pset, occurrence++);
+      const current = merged.get(key);
+      if (!current || getPropertySetCompleteness(pset) > getPropertySetCompleteness(current)) {
+        merged.set(key, pset);
+      }
+    }
+  }
+
+  return [...merged.values()];
+}
+
 function getRelationTarget(
   relation: IfcRecord,
   targetKeys: string[]
@@ -118,21 +220,13 @@ function getRelationTarget(
 }
 
 function extractPropertySetsFromExpandedLine(line: IfcRecord): IfcRecord[] {
-  const sets: IfcRecord[] = [];
-  const seen = new Set<number | string>();
+  const candidates: unknown[] = [];
 
   function pushSet(candidate: unknown) {
     if (!isObject(candidate)) return;
     const pset = unwrapPropertySet(candidate);
     if (!hasPropertyCandidates(pset)) return;
-
-    const key =
-      normalizeText(pset.GlobalId) ??
-      normalizeText(pset.Name) ??
-      String((pset as { expressID?: unknown }).expressID ?? sets.length);
-    if (seen.has(key)) return;
-    seen.add(key);
-    sets.push(pset);
+    candidates.push(pset);
   }
 
   function pushRelationTargets(value: unknown, targetKeys: string[]) {
@@ -174,7 +268,7 @@ function extractPropertySetsFromExpandedLine(line: IfcRecord): IfcRecord[] {
     }
   }
 
-  return sets.slice(0, MAX_PROPERTY_SETS_PER_ELEMENT);
+  return mergeIfcPropertySets(candidates).slice(0, MAX_PROPERTY_SETS_PER_ELEMENT);
 }
 
 async function getElementPropertySets(
@@ -187,6 +281,8 @@ async function getElementPropertySets(
     [true, false],
     [false, false]
   ];
+  const propertySetCollections: unknown[][] = [];
+  let propertySetReadFailed = false;
 
   for (const [recursive, includeTypeProperties] of attempts) {
     try {
@@ -196,22 +292,23 @@ async function getElementPropertySets(
         recursive,
         includeTypeProperties
       );
-      const normalized = toCollectionArray(psets)
-        .filter(isObject)
-        .map(unwrapPropertySet)
-        .filter(hasPropertyCandidates);
-      if (normalized.length > 0) return normalized;
+      propertySetCollections.push(toCollectionArray(psets));
     } catch {
       // Some authoring tools export type property references in a non-iterable
       // shape. Fall back to the expanded IFC line instead of failing the model.
+      propertySetReadFailed = true;
     }
   }
 
+  const mergedPropertySets = mergeIfcPropertySets(...propertySetCollections);
+  if (mergedPropertySets.length > 0 && !propertySetReadFailed) return mergedPropertySets;
+
   try {
     const expandedLine = ifcApi.GetLine(modelId, localId, true, true) as IfcRecord | null;
-    return expandedLine ? extractPropertySetsFromExpandedLine(expandedLine) : [];
+    const expandedPropertySets = expandedLine ? extractPropertySetsFromExpandedLine(expandedLine) : [];
+    return mergeIfcPropertySets(mergedPropertySets, expandedPropertySets);
   } catch {
-    return [];
+    return mergedPropertySets;
   }
 }
 
