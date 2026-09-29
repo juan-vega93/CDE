@@ -1,5 +1,48 @@
 create extension if not exists pgcrypto;
 
+-- Strict authoring scopes are independent of mutable legacy cde_bim_models rows.
+create table if not exists cde_bim_authoring_contexts (
+  id uuid primary key default gen_random_uuid(),
+  project_code text collate "C" not null check (btrim(project_code) <> ''),
+  model_key text collate "C" not null check (model_key like '/%'),
+  revision_id text collate "C" not null check (revision_id ~ '^sha256:[0-9a-f]{64}$'),
+  resolver_version text not null,
+  diagnostics jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (project_code, model_key, revision_id)
+);
+
+create table if not exists cde_bim_authoring_elements (
+  id uuid primary key default gen_random_uuid(),
+  context_id uuid not null references cde_bim_authoring_contexts(id) on delete cascade,
+  element_key text collate "C" not null,
+  root_local_id integer check (root_local_id > 0),
+  resolution_method text not null check (resolution_method in ('corroborated_aggregate', 'standalone', 'singleton_fallback')),
+  identity_confidence text not null check (identity_confidence in ('high', 'unknown')),
+  resolution_status text not null check (resolution_status in ('resolved', 'fallback')),
+  authoring_element_id text,
+  source_container text,
+  composition_evidence jsonb not null,
+  created_at timestamptz not null default now(),
+  unique (context_id, element_key),
+  unique (context_id, id)
+);
+
+create table if not exists cde_bim_authoring_members (
+  context_id uuid not null,
+  authoring_element_id uuid not null,
+  local_id integer not null check (local_id > 0),
+  geometry_status text not null check (geometry_status in ('present', 'absent', 'unknown')),
+  created_at timestamptz not null default now(),
+  primary key (context_id, local_id),
+  foreign key (context_id, authoring_element_id)
+    references cde_bim_authoring_elements(context_id, id) on delete cascade
+);
+
+create index if not exists cde_bim_authoring_members_element_idx
+  on cde_bim_authoring_members (authoring_element_id, local_id);
+
 create table if not exists cde_bim_models (
   id uuid primary key default gen_random_uuid(),
   project_code text not null,
