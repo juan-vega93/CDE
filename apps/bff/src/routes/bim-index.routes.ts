@@ -9,6 +9,7 @@ import {
   getBimPropertyCatalog,
   getBimPropertyIndex,
   getBimPropertySummary,
+  queryBimPropertyAuditRecords,
   queryBimPropertyLocalIds,
   getBimPropertyIndexSnapshot,
   getBimElementProperties,
@@ -20,6 +21,7 @@ import {
   type BimElementInput,
   type BimElementPropertyInput,
   type BimCost5DMeteringColumnInput,
+  type BimAuditOperator,
   type BimPropertyRef,
   type BimIndexJobStatus,
   type UpsertBimModelInput
@@ -188,6 +190,18 @@ function parsePropertyRef(value: unknown): BimPropertyRef | undefined {
   const setName = toText(data.setName);
   const propertyName = toText(data.propertyName);
   return setName && propertyName ? { setName, propertyName } : undefined;
+}
+
+function toBimAuditOperator(value: unknown): BimAuditOperator | undefined {
+  return value === "exists" ||
+    value === "missing" ||
+    value === "equals" ||
+    value === "not_equals" ||
+    value === "contains" ||
+    value === "empty" ||
+    value === "not_empty"
+    ? value
+    : undefined;
 }
 
 function parseCsvQuery(value: unknown): string[] | undefined {
@@ -764,6 +778,41 @@ router.post("/properties/query", async (req, res) => {
       ifcClass: toText(body.ifcClass),
       levelName: toText(body.levelName),
       maxIdsPerModel: Number.isFinite(maxIdsPerModel) ? maxIdsPerModel : undefined
+    });
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    return sendRouteError(res, error);
+  }
+});
+
+router.post("/properties/query/audit", async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    const projectCode = toProjectCode(body.projectCode);
+    const property = parsePropertyRef(body.property);
+    const operator = toBimAuditOperator(body.operator);
+
+    if (!projectCode || !property || !operator) {
+      return res.status(400).json({
+        success: false,
+        message: "projectCode, property y operator son obligatorios"
+      });
+    }
+
+    const maxResults =
+      typeof body.maxResults === "number" ? body.maxResults : Number(body.maxResults);
+
+    const data = await queryBimPropertyAuditRecords({
+      projectCode,
+      modelIds: toStringArray(body.modelIds),
+      modelKeys: toStringArray(body.modelKeys),
+      property,
+      operator,
+      value: typeof body.value === "string" ? body.value : undefined,
+      ifcClass: toText(body.ifcClass),
+      levelName: toText(body.levelName),
+      maxResults: Number.isFinite(maxResults) ? maxResults : undefined
     });
 
     return res.json({ success: true, data });

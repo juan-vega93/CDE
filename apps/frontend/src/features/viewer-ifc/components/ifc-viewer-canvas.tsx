@@ -679,6 +679,71 @@ async function loadSmartViewPropertyLocalIdsFromDatabase(input: {
     return null;
   }
 }
+
+type BimAuditQueryRecord = {
+  modelKey: string;
+  localId: number;
+  globalId: string | null;
+  ifcClass: string | null;
+  name: string | null;
+  levelName: string | null;
+  values: string[];
+  matches: boolean;
+};
+
+function isBimAuditQueryRecord(value: unknown): value is BimAuditQueryRecord {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<BimAuditQueryRecord>;
+  return (
+    typeof record.modelKey === "string" &&
+    typeof record.localId === "number" &&
+    Array.isArray(record.values) &&
+    typeof record.matches === "boolean"
+  );
+}
+
+async function loadBimAuditRecordsFromDatabase(input: {
+  projectCode?: string;
+  modelKeys: string[];
+  propertySet: string;
+  propertyName: string;
+  operator: AuditOperator;
+  value?: string;
+  ifcClass?: string;
+  levelName?: string;
+}): Promise<BimAuditQueryRecord[] | null> {
+  const projectCode = input.projectCode?.trim().toUpperCase();
+  const modelKeys = input.modelKeys.map((key) => key.trim()).filter(Boolean);
+  const propertySet = input.propertySet.trim();
+  const propertyName = input.propertyName.trim();
+  if (!projectCode || modelKeys.length === 0 || !propertySet || !propertyName) return null;
+
+  try {
+    const response = await bffFetch("/api/bim-index/properties/query/audit", {
+      method: "POST",
+      body: JSON.stringify({
+        projectCode,
+        modelKeys,
+        property: { setName: propertySet, propertyName },
+        operator: input.operator,
+        value: input.value,
+        ifcClass: input.ifcClass?.trim() || undefined,
+        levelName: input.levelName?.trim() || undefined,
+        maxResults: 250000
+      })
+    });
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { success?: boolean; data?: unknown };
+    if (!payload.success || !Array.isArray(payload.data)) return null;
+
+    return payload.data.filter(isBimAuditQueryRecord);
+  } catch (error) {
+    console.warn("[viewer-ifc] No se pudo ejecutar auditoria BIM en PostgreSQL:", error);
+    return null;
+  }
+}
+
 async function loadParameterAnalysisSummaryFromDatabase(input: {
   projectCode?: string;
   modelKeys: string[];
@@ -1690,6 +1755,14 @@ type ParameterValueBucket = {
   count: number;
   color: string;
   modelIdMap: OBC.ModelIdMap;
+  truncated?: boolean;
+};
+type ParameterAnalysisSummaryResult = {
+  buckets: ParameterValueBucket[];
+  totalElements: number;
+  missingValueCount: number;
+  valueBucketCount: number;
+  truncated: boolean;
 };
 type Cost5DPropertyRef = {
   set: string;
@@ -4426,89 +4499,86 @@ async function forEachModelIdMapChunk(
   return true;
 }
 
+function createParameterAnalysisModelLookup(input: {
+  projectCode?: string;
+  models: FederatedModelEntry[];
+}) {
+  const resolver = createLiveBimModelResolver(input);
+  const modelByRuntimeModelId = new Map(
+    input.models
+      .filter((model): model is FederatedModelEntry & { modelId: string } => Boolean(model.modelId))
+      .map((model) => [model.modelId, model])
+  );
+
+  function resolve(modelKeyOrDocumentPath: string) {
+    const runtimeModelId = resolver.toRuntimeModelId(modelKeyOrDocumentPath);
+    if (!runtimeModelId) return null;
+
+    const model = modelByRuntimeModelId.get(runtimeModelId);
+    return model ? { runtimeModelId, model } : null;
+  }
+
+  return { resolve };
+}
+
 function buildParameterAnalysisBucketsFromSummary({
+  projectCode,
   models,
   summary
 }: {
+  projectCode?: string;
   models: FederatedModelEntry[];
   summary: BimPropertySummaryPayload;
-}) {
-  const modelIdByKey = new Map(
-    models
-      .filter((model) => Boolean(model.modelId))
-      .map((model) => [model.key, model.modelId as string])
-  );
-  const modelByKey = new Map(models.map((model) => [model.key, model]));
-  const aggregated = new Map<string, OBC.ModelIdMap>();
-  const assignedIdsByModelKey = new Map<string, Set<number>>();
+}): ParameterAnalysisSummaryResult {
+  const modelLookup = createParameterAnalysisModelLookup({ projectCode, models });
+  const aggregated = new Map<
+    string,
+    { count: number; modelIdMap: OBC.ModelIdMap; truncated: boolean }
+  >();
 
   for (const bucket of summary.buckets) {
     const value = normalizeParameterBucketValue(bucket.value);
-    if (value === "Sin valor") continue;
+    const aggregate =
+      aggregated.get(value) ??
+      { count: 0, modelIdMap: {}, truncated: false };
 
-    const modelIdMap: OBC.ModelIdMap = {};
+    // `missingValueCount` is the canonical count for this semantic bucket.
+    // The summary can omit its local IDs when the response is bucket-limited.
+    if (value !== "Sin valor") {
+      aggregate.count += bucket.count;
+    }
+    aggregate.truncated = aggregate.truncated || Boolean(bucket.truncated);
 
     for (const [modelKey, localIds] of Object.entries(bucket.localIdsByModelKey ?? {})) {
-      const modelId = modelIdByKey.get(modelKey);
-      const model = modelByKey.get(modelKey);
-      if (!modelId || !model) continue;
-      const assignedIds = assignedIdsByModelKey.get(modelKey) ?? new Set<number>();
-      const expandedLocalIds = expandLocalIdsWithSpatialTree(
-        model,
+      const resolvedModel = modelLookup.resolve(modelKey);
+      if (!resolvedModel) continue;
+      addIdsToModelIdMap(
+        aggregate.modelIdMap,
+        resolvedModel.runtimeModelId,
         localIds.map(Number).filter(Number.isFinite)
       );
-      const unassignedLocalIds = expandedLocalIds.filter(
-        (localId) => !assignedIds.has(localId)
-      );
-      if (unassignedLocalIds.length === 0) continue;
-
-      addIdsToModelIdMap(modelIdMap, modelId, unassignedLocalIds);
-
-      for (const localId of unassignedLocalIds) {
-        assignedIds.add(localId);
-      }
-      assignedIdsByModelKey.set(modelKey, assignedIds);
     }
 
-    if (countModelIdMapElements(modelIdMap) > 0) {
-      aggregated.set(value, modelIdMap);
-    }
+    aggregated.set(value, aggregate);
   }
 
-  const missingMap: OBC.ModelIdMap = {};
-
-  for (const model of models) {
-    if (!model.modelId) continue;
-
-    const assignedIds = assignedIdsByModelKey.get(model.key) ?? new Set<number>();
-    const modelUniverseIds = flattenModelTreeNodes(model.spatialTree ?? [])
-      .filter(
-        (node) =>
-          isModelTreeElement(node) &&
-          typeof node.localId === "number"
-      )
-      .map((node) => node.localId as number);
-    const missingIds = Array.from(new Set(modelUniverseIds)).filter(
-      (localId) => !assignedIds.has(localId)
-    );
-
-    if (missingIds.length > 0) {
-      addIdsToModelIdMap(missingMap, model.modelId, missingIds);
-    }
+  if (summary.missingValueCount > 0) {
+    const missing =
+      aggregated.get("Sin valor") ??
+      { count: 0, modelIdMap: {}, truncated: false };
+    missing.count = summary.missingValueCount;
+    aggregated.set("Sin valor", missing);
   }
 
-  if (countModelIdMapElements(missingMap) > 0) {
-    aggregated.set("Sin valor", missingMap);
-  }
-
-  return Array.from(aggregated.entries())
-    .map(([value, modelIdMap]) => ({
+  const buckets = Array.from(aggregated.entries())
+    .map(([value, aggregate]) => ({
       value,
-      count: countModelIdMapElements(modelIdMap),
+      count: aggregate.count,
       color: PARAMETER_ANALYSIS_MISSING_COLOR,
-      modelIdMap
+      modelIdMap: aggregate.modelIdMap,
+      truncated: aggregate.truncated
     }))
-    .filter((bucket) => bucket.count > 0 && countModelIdMapElements(bucket.modelIdMap) > 0)
+    .filter((bucket) => bucket.count > 0)
     .sort((a, b) => {
       if (a.value === "Sin valor") return 1;
       if (b.value === "Sin valor") return -1;
@@ -4521,9 +4591,23 @@ function buildParameterAnalysisBucketsFromSummary({
           ? PARAMETER_ANALYSIS_MISSING_COLOR
           : getParameterAnalysisColor(index)
     }));
+
+  return {
+    buckets,
+    totalElements: summary.totalElements,
+    missingValueCount: summary.missingValueCount,
+    valueBucketCount: Math.max(
+      0,
+      summary.bucketCount - (summary.missingValueCount > 0 ? 1 : 0)
+    ),
+    truncated:
+      summary.bucketCount > summary.buckets.length ||
+      summary.buckets.some((bucket) => Boolean(bucket.truncated))
+  };
 }
 function buildParameterAnalysisBuckets({
   models,
+  projectCode,
   propertyIndex,
   propertySet,
   propertyName
@@ -4538,14 +4622,9 @@ function buildParameterAnalysisBuckets({
 
   const valueBuckets =
     propertyIndex.localIdsBySetPropertyValue[propertySet]?.[propertyName] ?? {};
-  const modelIdByKey = new Map(
-    models
-      .filter((model) => Boolean(model.modelId))
-      .map((model) => [model.key, model.modelId as string])
-  );
-  const modelByKey = new Map(models.map((model) => [model.key, model]));
+  const modelLookup = createParameterAnalysisModelLookup({ projectCode, models });
   const aggregated = new Map<string, OBC.ModelIdMap>();
-  const assignedIdsByModelKey = new Map<string, Set<number>>();
+  const assignedIdsByRuntimeModelId = new Map<string, Set<number>>();
   const rawValueEntries = Object.entries(valueBuckets).sort(([a], [b]) => {
     const aIsMissing = normalizeParameterBucketValue(a) === "Sin valor";
     const bIsMissing = normalizeParameterBucketValue(b) === "Sin valor";
@@ -4558,22 +4637,22 @@ function buildParameterAnalysisBuckets({
     const target = aggregated.get(value) ?? {};
 
     for (const [modelKey, localIds] of Object.entries(modelBuckets)) {
-      const modelId = modelIdByKey.get(modelKey);
-      const model = modelByKey.get(modelKey);
-      if (!modelId || !model) continue;
-      const assignedIds = assignedIdsByModelKey.get(modelKey) ?? new Set<number>();
+      const resolvedModel = modelLookup.resolve(modelKey);
+      if (!resolvedModel) continue;
+      const { runtimeModelId, model } = resolvedModel;
+      const assignedIds = assignedIdsByRuntimeModelId.get(runtimeModelId) ?? new Set<number>();
       const expandedLocalIds = expandLocalIdsWithSpatialTree(model, localIds);
       const unassignedLocalIds = expandedLocalIds.filter(
         (localId) => !assignedIds.has(localId)
       );
       if (unassignedLocalIds.length === 0) continue;
 
-      addIdsToModelIdMap(target, modelId, unassignedLocalIds);
+      addIdsToModelIdMap(target, runtimeModelId, unassignedLocalIds);
 
       for (const localId of unassignedLocalIds) {
         assignedIds.add(localId);
       }
-      assignedIdsByModelKey.set(modelKey, assignedIds);
+      assignedIdsByRuntimeModelId.set(runtimeModelId, assignedIds);
     }
 
     aggregated.set(value, target);
@@ -4584,10 +4663,14 @@ function buildParameterAnalysisBuckets({
   for (const model of models) {
     if (!model.modelId) continue;
 
-    const assignedIds = assignedIdsByModelKey.get(model.key) ?? new Set<number>();
+    const assignedIds = assignedIdsByRuntimeModelId.get(model.modelId) ?? new Set<number>();
+    const indexedModelUniverseIds = Object.entries(propertyIndex.localIdsByModelKey ?? {})
+      .filter(([modelKey]) => modelLookup.resolve(modelKey)?.runtimeModelId === model.modelId)
+      .flatMap(([, localIds]) => localIds);
     const modelUniverseIds =
-      propertyIndex.localIdsByModelKey?.[model.key] ??
-      flattenModelTreeNodes(model.spatialTree ?? [])
+      indexedModelUniverseIds.length > 0
+        ? indexedModelUniverseIds
+        : flattenModelTreeNodes(model.spatialTree ?? [])
         .filter(
           (node) =>
             isModelTreeElement(node) &&
@@ -5241,8 +5324,8 @@ function ParameterAnalysisPanel({
         isRealSmartViewSelectorValue
       ) ?? false)
   );
-  const [databaseBuckets, setDatabaseBuckets] = useState<
-    ParameterValueBucket[] | null
+  const [databaseAnalysis, setDatabaseAnalysis] = useState<
+    ParameterAnalysisSummaryResult | null
   >(null);
   const [databaseBucketsLoading, setDatabaseBucketsLoading] = useState(false);
   const modelKeySignature = useMemo(
@@ -5286,7 +5369,7 @@ function ParameterAnalysisPanel({
       (!databaseBucketsRequestKey ||
         (!databaseBucketsLoading &&
           databaseBucketsResolvedKey === databaseBucketsRequestKey &&
-          databaseBuckets === null))
+          databaseAnalysis === null))
   );
   const localBucketsSkippedForPerformance = Boolean(
     propertySet &&
@@ -5295,21 +5378,22 @@ function ParameterAnalysisPanel({
       localBucketsWouldBeHeavy &&
       !databaseBucketsLoading &&
       databaseBucketsResolvedKey === databaseBucketsRequestKey &&
-      databaseBuckets === null
+      databaseAnalysis === null
   );
   const localBuckets = useMemo(
     () =>
       shouldBuildLocalBuckets
         ? buildParameterAnalysisBuckets({
             models,
+            projectCode,
             propertyIndex,
             propertySet,
             propertyName
           })
         : [],
-    [models, propertyIndex, propertySet, propertyName, shouldBuildLocalBuckets]
+    [models, projectCode, propertyIndex, propertySet, propertyName, shouldBuildLocalBuckets]
   );
-  const buckets = databaseBuckets ?? localBuckets;
+  const buckets = databaseAnalysis?.buckets ?? localBuckets;
   const hasRealValueBuckets = buckets.some((bucket) => bucket.value !== "Sin valor");
   const displayBuckets = useMemo(
     () =>
@@ -5320,9 +5404,10 @@ function ParameterAnalysisPanel({
     [buckets, colorOverrides]
   );
   const colorableBuckets = displayBuckets.filter((bucket) => bucket.value !== "Sin valor");
-  const total = displayBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
-  const realValueCount = displayBuckets.filter((bucket) => bucket.value !== "Sin valor").length;
+  const total = databaseAnalysis?.totalElements ?? displayBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
+  const realValueCount = databaseAnalysis?.valueBucketCount ?? displayBuckets.filter((bucket) => bucket.value !== "Sin valor").length;
   const missingCount =
+    databaseAnalysis?.missingValueCount ??
     displayBuckets.find((bucket) => bucket.value === "Sin valor")?.count ?? 0;
   const maxCount = Math.max(...displayBuckets.map((bucket) => bucket.count), 1);
   const visibleBuckets = displayBuckets.filter(
@@ -5331,7 +5416,7 @@ function ParameterAnalysisPanel({
 
   useEffect(() => {
     let active = true;
-    setDatabaseBuckets(null);
+    setDatabaseAnalysis(null);
     setDatabaseBucketsResolvedKey("");
 
     const modelKeys = models.map((model) => model.key).filter(Boolean);
@@ -5358,15 +5443,17 @@ function ParameterAnalysisPanel({
     })
       .then(async (summary) => {
         if (!active) return;
-        let nextBuckets: ParameterValueBucket[] | null = null;
+        let nextAnalysis: ParameterAnalysisSummaryResult | null = null;
 
         if (summary) {
-          const summaryBuckets = buildParameterAnalysisBucketsFromSummary({ models, summary });
-          const hasSummaryValues = summaryBuckets.some((bucket) => bucket.value !== "Sin valor");
-          nextBuckets = hasSummaryValues ? summaryBuckets : null;
+          nextAnalysis = buildParameterAnalysisBucketsFromSummary({
+            projectCode,
+            models,
+            summary
+          });
         }
 
-        if (!nextBuckets) {
+        if (!nextAnalysis) {
           const runtimeBuckets = await buildRuntimeParameterAnalysisBuckets({
             models,
             propertySet,
@@ -5374,12 +5461,19 @@ function ParameterAnalysisPanel({
             shouldContinue: () => active
           });
           if (!active) return;
-          nextBuckets = runtimeBuckets.some((bucket) => bucket.value !== "Sin valor")
-            ? runtimeBuckets
-            : null;
+          if (runtimeBuckets.some((bucket) => bucket.value !== "Sin valor")) {
+            nextAnalysis = {
+              buckets: runtimeBuckets,
+              totalElements: runtimeBuckets.reduce((total, bucket) => total + bucket.count, 0),
+              missingValueCount:
+                runtimeBuckets.find((bucket) => bucket.value === "Sin valor")?.count ?? 0,
+              valueBucketCount: runtimeBuckets.filter((bucket) => bucket.value !== "Sin valor").length,
+              truncated: false
+            };
+          }
         }
 
-        setDatabaseBuckets(nextBuckets);
+        setDatabaseAnalysis(nextAnalysis);
         setDatabaseBucketsResolvedKey(databaseBucketsRequestKey);
       })
       .finally(() => {
@@ -5573,6 +5667,14 @@ function ParameterAnalysisPanel({
             El indice local tiene {parameterAnalysisLocalIdCount.toLocaleString()} elementos.
             Para evitar pausas del navegador, este analisis se debe resolver desde PostgreSQL.
             Pulsa Cargar parametros y vuelve a aplicar el analisis cuando el indice quede listo.
+          </div>
+        ) : null}
+
+        {databaseAnalysis?.truncated ? (
+          <div className="rounded border border-amber-800/70 bg-amber-950/40 p-3 text-xs text-amber-100">
+            PostgreSQL devolvio todos los conteos, pero algunos IDs graficos fueron limitados.
+            Los totales mostrados siguen siendo canónicos; las acciones visuales solo se aplican a
+            los IDs recibidos.
           </div>
         ) : null}
 
@@ -9825,19 +9927,25 @@ export function IfcViewerCanvas({
         })
       : null;
 
+    if (dbLocalIdsByModelKey) {
+      const modelResolver = createLiveBimModelResolver({ projectCode, models: analysisModels });
+      for (const [modelKey, localIds] of Object.entries(dbLocalIdsByModelKey)) {
+        const runtimeModelId = modelResolver.toRuntimeModelId(modelKey);
+        if (!runtimeModelId || localIds.length === 0) continue;
+        result[runtimeModelId] = new Set(localIds);
+      }
+
+      setBoundedModelIdMapCache(
+        smartViewModelIdMapCacheRef.current,
+        criteriaCacheKey,
+        result
+      );
+      return cloneModelIdMap(result);
+    }
+
     for (const model of analysisModels) {
       if (criteria.modelKey && model.key !== criteria.modelKey) continue;
       if (!model.modelId) continue;
-
-      if (dbLocalIdsByModelKey) {
-        const dbIds = dbLocalIdsByModelKey[model.key] ?? [];
-        if (dbIds.length > 0) {
-          result[model.modelId] = new Set(
-            expandLocalIdsWithSpatialTree(model, dbIds)
-          );
-        }
-        continue;
-      }
 
       const levelByLocalId = getCachedModelLevelMap(model);
       const candidateNodes = getCachedModelTreeNodes(model).filter((node) => {
@@ -9858,21 +9966,6 @@ export function IfcViewerCanvas({
       });
 
       if (candidateNodes.length === 0) continue;
-
-      if (dbLocalIdsByModelKey) {
-        const dbIds = new Set(dbLocalIdsByModelKey[model.key] ?? []);
-        if (dbIds.size === 0) continue;
-
-        const filteredIds = candidateNodes
-          .map((node) => node.localId as number)
-          .filter((localId) => dbIds.has(localId));
-
-        if (filteredIds.length > 0) {
-          result[model.modelId] = new Set(filteredIds);
-        }
-
-        continue;
-      }
 
       const indexedValueBuckets =
         criteria.propertySet && criteria.propertyName
@@ -10829,6 +10922,87 @@ export function IfcViewerCanvas({
     return records;
   }
 
+  async function buildDatabaseAuditResults(validRules: AuditRule[]) {
+    const modelResolver = createLiveBimModelResolver({ projectCode, models });
+    const involvedModels = models.filter((model) =>
+      validRules.some(
+        (rule) =>
+          !rule.modelKey ||
+          modelResolver.toRuntimeModelId(rule.modelKey) === model.modelId
+      )
+    );
+    if (
+      involvedModels.length === 0 ||
+      involvedModels.some((model) => !model.modelId || !modelResolver.fromRuntimeModelId(model.modelId))
+    ) {
+      return null;
+    }
+
+    const indexedModelRecords = await loadIndexedBimModels(projectCode);
+    const readyModelKeys = getReadyIndexedModelKeysForLoadedModels(
+      indexedModelRecords,
+      involvedModels
+    );
+    if (readyModelKeys.size !== involvedModels.length) return null;
+
+    const nextResults: AuditResult[] = [];
+    for (const rule of validRules) {
+      const ruleModels = involvedModels.filter(
+        (model) =>
+          !rule.modelKey ||
+          modelResolver.toRuntimeModelId(rule.modelKey) === model.modelId
+      );
+      if (ruleModels.length === 0) continue;
+
+      const records = await loadBimAuditRecordsFromDatabase({
+        projectCode,
+        modelKeys: ruleModels.map((model) => model.key),
+        propertySet: rule.propertySet,
+        propertyName: rule.propertyName,
+        operator: rule.operator,
+        value: rule.value,
+        ifcClass: rule.type,
+        levelName: rule.level
+      });
+      if (!records) {
+        throw new Error("No se pudo consultar la auditoria BIM en PostgreSQL.");
+      }
+
+      for (const record of records) {
+        const runtimeModelId = modelResolver.toRuntimeModelId(record.modelKey);
+        if (!runtimeModelId) {
+          return null;
+        }
+        const model = involvedModels.find((candidate) => candidate.modelId === runtimeModelId);
+        if (!model) return null;
+
+        nextResults.push({
+          id: `${rule.id}:${record.modelKey}:${record.localId}`,
+          ruleId: rule.id,
+          ruleName: rule.name || "Requisito sin nombre",
+          status: record.matches ? "pass" : "fail",
+          severity: rule.severity,
+          message: record.matches
+            ? "Cumple requisito"
+            : `No cumple: ${rule.propertySet} / ${rule.propertyName}`,
+          actualValue: record.values.length > 0 ? record.values.join(" | ") : "-",
+          modelKey: model.key,
+          modelId: runtimeModelId,
+          modelName: model.name,
+          localId: record.localId,
+          elementName: record.name ?? `Elemento ${record.localId}`,
+          type: record.ifcClass?.toUpperCase() ?? "",
+          level: record.levelName ?? "",
+          globalId: record.globalId ?? "",
+          propertySet: rule.propertySet,
+          propertyName: rule.propertyName
+        });
+      }
+    }
+
+    return nextResults;
+  }
+
   async function handleRunAudit() {
     if (auditRules.length === 0 || models.length === 0) return;
 
@@ -10845,9 +11019,24 @@ export function IfcViewerCanvas({
 
     setAuditLoading(true);
     setStatus("Ejecutando auditoria de modelos...");
-    setAuditMessage("Construyendo indice de elementos y propiedades...");
+    setAuditMessage("Consultando indice BIM en PostgreSQL...");
 
     try {
+      const databaseResults = await buildDatabaseAuditResults(validRules);
+      if (databaseResults !== null) {
+        setAuditResults(databaseResults);
+        setActiveAuditResultId(null);
+        const failed = databaseResults.filter((result) => result.status === "fail").length;
+        const message =
+          databaseResults.length > 0
+            ? `Auditoria completada desde PostgreSQL: ${databaseResults.length} evaluaciones, ${failed} fallas.`
+            : "Auditoria sin resultados: los filtros de regla no coinciden con elementos indexados.";
+        setAuditMessage(message);
+        setStatus(message);
+        return;
+      }
+
+      setAuditMessage("Modelos sin indice BIM disponible. Construyendo indice local de compatibilidad...");
       const analysisModels =
         auditIndexSignature === loadedModelsSignature
           ? models
@@ -14039,6 +14228,7 @@ async function handleIsolateModel(key: string) {
           {rightPanelTab === "parameters" && (
             <ParameterAnalysisPanel
               models={models}
+              projectCode={projectCode}
               propertyIndex={smartViewPropertyIndex}
               propertyCatalog={smartViewPropertyCatalog}
               propertyCatalogLoading={smartViewPropertyCatalogLoading}

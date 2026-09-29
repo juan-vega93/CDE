@@ -182,6 +182,38 @@ export type BimPropertyLocalIdsQueryInput = {
   maxIdsPerModel?: number;
 };
 
+export type BimAuditOperator =
+  | "exists"
+  | "missing"
+  | "equals"
+  | "not_equals"
+  | "contains"
+  | "empty"
+  | "not_empty";
+
+export type BimPropertyAuditQueryInput = {
+  projectCode: string;
+  modelIds?: string[];
+  modelKeys?: string[];
+  property: BimPropertyRef;
+  operator: BimAuditOperator;
+  value?: string;
+  ifcClass?: string;
+  levelName?: string;
+  maxResults?: number;
+};
+
+export type BimPropertyAuditQueryRecord = {
+  modelKey: string;
+  localId: number;
+  globalId: string | null;
+  ifcClass: string | null;
+  name: string | null;
+  levelName: string | null;
+  values: string[];
+  matches: boolean;
+};
+
 export type BimCost5DAggregationRow = {
   itemId: string;
   itemName: string;
@@ -1946,6 +1978,150 @@ export async function queryBimPropertyLocalIds(
   return Object.fromEntries(
     result.rows.map((row) => [row.model_key, row.local_ids.map(Number)])
   );
+}
+
+/**
+ * Evaluates the property operators used by the BIM audit against the canonical
+ * PostgreSQL index. A row is returned for every element matching the model,
+ * class and level filters; `matches` is the audit outcome for that element.
+ */
+export async function queryBimPropertyAuditRecords(
+  input: BimPropertyAuditQueryInput
+): Promise<BimPropertyAuditQueryRecord[]> {
+  ensureBimDatabaseEnabled();
+
+  const maxResults = Math.max(1, Math.min(input.maxResults ?? 250000, 250000));
+  const ifcClass = normalizeText(input.ifcClass);
+  const ifcClassWithoutIfc = ifcClass?.replace(/^ifc/i, "") ?? null;
+  const levelName = normalizeText(input.levelName);
+  const expectedValue = input.value?.trim() ?? "";
+
+  const result = await getDatabasePool().query<{
+    model_key: string;
+    local_id: number;
+    global_id: string | null;
+    ifc_class: string | null;
+    name: string | null;
+    level_name: string | null;
+    property_values: string[] | null;
+    matches: boolean;
+  }>(
+    `
+      with selected_models as (
+        select id, ${BIM_MODEL_KEY_ALIAS_SQL} as model_key
+        from cde_bim_models models
+        where models.project_code = $1
+          and models.status = 'ready'
+          and ($2::uuid[] is null or models.id = any($2::uuid[]))
+          and ${BIM_MODEL_KEY_FILTER_SQL}
+      ), candidate_elements as (
+        select
+          selected_models.model_key,
+          elements.id,
+          elements.local_id,
+          elements.global_id,
+          elements.ifc_class,
+          elements.name,
+          elements.level_name
+        from cde_bim_elements elements
+        join selected_models on selected_models.id = elements.bim_model_id
+        where (
+            $6::text is null
+            or upper(elements.ifc_class) = upper($6)
+            or upper(elements.ifc_class) = upper('IFC' || $7)
+          )
+          and ($8::text is null or coalesce(elements.level_name, '') = $8)
+      ), element_values as (
+        select
+          candidate_elements.*,
+          coalesce(property_matches.values, '{}'::text[]) as property_values
+        from candidate_elements
+        left join lateral (
+          select array_agg(
+            coalesce(
+              pv.value_text,
+              pv.value_number::text,
+              pv.value_bool::text,
+              pv.value_json::text,
+              '-'
+            )
+            order by pv.id
+          ) as values
+          from cde_bim_property_values pv
+          join cde_bim_properties properties on properties.id = pv.property_id
+          join cde_bim_property_sets sets on sets.id = properties.property_set_id
+          where pv.bim_element_id = candidate_elements.id
+            and lower(regexp_replace(regexp_replace(sets.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($4), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
+            and lower(regexp_replace(regexp_replace(properties.name, '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g')) = lower(regexp_replace(regexp_replace(trim($5), '[[:space:]]*\\([0-9]+\\)[[:space:]]*$', ''), '[[:space:]_.-]+', '', 'g'))
+        ) property_matches on true
+      )
+      select
+        model_key,
+        local_id,
+        global_id,
+        ifc_class,
+        name,
+        level_name,
+        property_values,
+        case $9::text
+          when 'exists' then cardinality(property_values) > 0
+          when 'missing' then cardinality(property_values) = 0
+          when 'equals' then exists (
+            select 1
+            from unnest(property_values) as property_value(value)
+            where lower(trim(property_value.value)) = lower(trim($10))
+          )
+          when 'not_equals' then cardinality(property_values) > 0 and not exists (
+            select 1
+            from unnest(property_values) as property_value(value)
+            where lower(trim(property_value.value)) = lower(trim($10))
+          )
+          when 'contains' then exists (
+            select 1
+            from unnest(property_values) as property_value(value)
+            where position(lower(trim($10)) in lower(trim(property_value.value))) > 0
+          )
+          when 'empty' then not exists (
+            select 1
+            from unnest(property_values) as property_value(value)
+            where lower(trim(property_value.value)) not in ('', '-', '--', 'n/a')
+          )
+          when 'not_empty' then exists (
+            select 1
+            from unnest(property_values) as property_value(value)
+            where lower(trim(property_value.value)) not in ('', '-', '--', 'n/a')
+          )
+          else false
+        end as matches
+      from element_values
+      order by model_key, local_id
+      limit $11
+    `,
+    [
+      input.projectCode,
+      input.modelIds?.length ? input.modelIds : null,
+      input.modelKeys?.length ? input.modelKeys : null,
+      input.property.setName,
+      input.property.propertyName,
+      ifcClass,
+      ifcClassWithoutIfc,
+      levelName,
+      input.operator,
+      expectedValue,
+      maxResults
+    ]
+  );
+
+  return result.rows.map((row) => ({
+    modelKey: row.model_key,
+    localId: Number(row.local_id),
+    globalId: row.global_id,
+    ifcClass: row.ifc_class,
+    name: row.name,
+    levelName: row.level_name,
+    values: (row.property_values ?? []).map(String),
+    matches: Boolean(row.matches)
+  }));
 }
 export async function getBimPropertyIndexSnapshot(input: {
   projectCode: string;

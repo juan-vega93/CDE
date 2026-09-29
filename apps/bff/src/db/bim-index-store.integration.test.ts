@@ -6,6 +6,7 @@ import {
   getBimElementProperties,
   getBimPropertyCatalog,
   getBimPropertyIndexSnapshot,
+  queryBimPropertyAuditRecords,
   queryBimPropertyLocalIds,
   upsertBimModel,
   upsertBimPropertyIndexSnapshot
@@ -229,6 +230,106 @@ test(
       propertyValue: "true"
     });
     assert.deepEqual(isolatedIds, {});
+
+    const equalityAudit = await queryBimPropertyAuditRecords({
+      projectCode,
+      modelKeys: [ifcModelKey],
+      property: { setName: "Pset_WallCommon", propertyName: "Reference" },
+      operator: "equals",
+      value: "test-wall-101"
+    });
+    assert.deepEqual(
+      equalityAudit.map((row) => ({ modelKey: row.modelKey, localId: row.localId, matches: row.matches })),
+      [
+        { modelKey: ifcModelKey, localId: 101, matches: true },
+        { modelKey: ifcModelKey, localId: 102, matches: false },
+        { modelKey: ifcModelKey, localId: 103, matches: false }
+      ]
+    );
+    assert.equal(equalityAudit[0]?.globalId, "TEST-GLOBAL-WALL-101");
+    assert.deepEqual(equalityAudit[0]?.values, ["TEST-WALL-101"]);
+
+    const existenceAudit = await queryBimPropertyAuditRecords({
+      projectCode,
+      modelKeys: [modelKey],
+      property: { setName: "Pset_WallCommon", propertyName: "Reference" },
+      operator: "exists",
+      ifcClass: "Wall",
+      levelName: "Level 01"
+    });
+    assert.deepEqual(
+      existenceAudit.map((row) => ({ localId: row.localId, matches: row.matches })),
+      [{ localId: 101, matches: true }]
+    );
+
+    const missingAudit = await queryBimPropertyAuditRecords({
+      projectCode,
+      modelKeys: [modelKey],
+      property: { setName: "Pset_WallCommon", propertyName: "Reference" },
+      operator: "missing"
+    });
+    assert.deepEqual(
+      missingAudit.map((row) => ({ localId: row.localId, matches: row.matches })),
+      [
+        { localId: 101, matches: false },
+        { localId: 102, matches: true },
+        { localId: 103, matches: true }
+      ]
+    );
+
+    const containsAudit = await queryBimPropertyAuditRecords({
+      projectCode,
+      modelKeys: [modelKey],
+      property: { setName: "Pset_WallCommon", propertyName: "Reference" },
+      operator: "contains",
+      value: "wall"
+    });
+    assert.equal(containsAudit.find((row) => row.localId === 101)?.matches, true);
+
+    const notEqualsAudit = await queryBimPropertyAuditRecords({
+      projectCode,
+      modelKeys: [modelKey],
+      property: { setName: "Pset_WallCommon", propertyName: "LoadBearing" },
+      operator: "not_equals",
+      value: "false"
+    });
+    assert.equal(notEqualsAudit.find((row) => row.localId === 101)?.matches, true);
+    assert.equal(notEqualsAudit.find((row) => row.localId === 102)?.matches, false);
+
+    const emptyAudit = await queryBimPropertyAuditRecords({
+      projectCode,
+      modelKeys: [modelKey],
+      property: { setName: "Pset_WallCommon", propertyName: "LoadBearing" },
+      operator: "empty"
+    });
+    assert.equal(emptyAudit.find((row) => row.localId === 101)?.matches, false);
+    assert.equal(emptyAudit.find((row) => row.localId === 102)?.matches, true);
+
+    const notEmptyAudit = await queryBimPropertyAuditRecords({
+      projectCode,
+      modelKeys: [modelKey],
+      property: { setName: "Pset_WallCommon", propertyName: "LoadBearing" },
+      operator: "not_empty"
+    });
+    assert.equal(notEmptyAudit.find((row) => row.localId === 101)?.matches, true);
+    assert.equal(notEmptyAudit.find((row) => row.localId === 102)?.matches, false);
+
+    const federatedCollisionAudit = await queryBimPropertyAuditRecords({
+      projectCode,
+      modelKeys: [modelKey, federatedModelKey],
+      property: { setName: "Pset_DoorCommon", propertyName: "FireRating" },
+      operator: "equals",
+      value: "TEST-OTHER-120"
+    });
+    assert.deepEqual(
+      federatedCollisionAudit
+      .filter((row) => row.localId === 101)
+      .map((row) => ({ modelKey: row.modelKey, matches: row.matches })),
+      [
+        { modelKey: federatedModelKey, matches: true },
+        { modelKey, matches: false }
+      ]
+    );
 
     const wallProperties = await getBimElementProperties({
       projectCode,
