@@ -1,6 +1,9 @@
 import * as WEBIFC from "web-ifc";
 import path from "path";
 import { prepareBimIfcInput, type BimProcessingContext } from "./bim-revision-identity";
+import { resolveAuthoringElements, type AuthoringEntityFact } from "./bim-authoring-resolver";
+import { readAuthoringGeometry, readAuthoringRelations } from "./bim-authoring-extraction";
+import { replaceAuthoringElementIndex } from "../db/bim-authoring-store";
 import {
   bulkUpsertBimElements,
   getBimIndexJob,
@@ -510,9 +513,9 @@ async function buildElementPayload(
   ifcApi: WEBIFC.IfcAPI,
   modelId: number,
   localId: number
-): Promise<BimElementInput | null> {
+): Promise<{ element: BimElementInput; authoring: AuthoringEntityFact }> {
   const line = ifcApi.GetLine(modelId, localId, false, false) as IfcRecord | null;
-  if (!line) return null;
+  if (!line) throw new Error(`Cannot read IFC element ${localId}`);
 
   const typeCode = Number(ifcApi.GetLineType(modelId, localId));
   const ifcClass = Number.isFinite(typeCode) ? ifcApi.GetNameFromTypeCode(typeCode) : undefined;
@@ -528,7 +531,29 @@ async function buildElementPayload(
   addProperty(properties, "Atributos IFC", "IFC Class", ifcClass);
   addProperty(properties, "Atributos IFC", "Express ID", localId, "number");
 
-  return {
+  // Read the two authoring properties from already expanded sets before legacy display caps.
+  // Conflicting values cannot corroborate authorship; never pick an arbitrary winner.
+  const ids = new Set<string>();
+  const containers = new Set<string>();
+  for (const pset of psets) {
+    for (const property of getPropertyCandidates(pset)) {
+      if (!isObject(property)) continue;
+      const name = normalizeText(property.Name)?.toLowerCase();
+      const target = name === "id elemento" ? ids : name === "contenedor origen" ? containers : undefined;
+      if (!target) continue;
+      const value = getPropertyValue(property);
+      if (value) target.add(value);
+    }
+  }
+  const hasRepresentation = line.Representation == null ? false : true;
+  const authoring: AuthoringEntityFact = {
+    localId, globalId: normalizeText(line.GlobalId), ifcClass: ifcClass ?? "",
+    name: normalizeText(line.Name), tag: normalizeText(line.Tag),
+    authoringElementId: ids.size === 1 ? [...ids][0] : undefined,
+    sourceContainer: containers.size === 1 ? [...containers][0] : undefined,
+    hasRepresentation, geometryStatus: hasRepresentation ? "unknown" : "absent"
+  };
+  const element: BimElementInput = {
     localId,
     globalId: normalizeText(line.GlobalId),
     ifcClass,
@@ -542,6 +567,7 @@ async function buildElementPayload(
     },
     properties
   };
+  return { element, authoring };
 }
 
 export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInput): Promise<{
@@ -600,6 +626,8 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
     if (openedModelId < 0) throw new Error("No se pudo abrir el IFC para indexar propiedades");
 
     const localIds = getIfcElementIds(ifcApi, openedModelId);
+    const authoringRelations = readAuthoringRelations(ifcApi, openedModelId, new Set(localIds));
+    const authoringEntities: AuthoringEntityFact[] = [];
     const totalBatches = Math.ceil(localIds.length / SERVER_INDEX_BATCH_SIZE);
 
     await upsertBimIndexJob({
@@ -636,14 +664,16 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
 
       const batchIds = localIds.slice(index, index + SERVER_INDEX_BATCH_SIZE);
       const elements: BimElementInput[] = [];
+      const authoringBatch: AuthoringEntityFact[] = [];
 
       for (const localId of batchIds) {
-        const element = await buildElementPayload(ifcApi, openedModelId, localId);
-        if (!element) continue;
+        const { element, authoring } = await buildElementPayload(ifcApi, openedModelId, localId);
+        authoringBatch.push(authoring);
         elementCount += 1;
         propertyCount += element.properties?.length ?? 0;
         elements.push(element);
       }
+      authoringEntities.push(...readAuthoringGeometry(ifcApi, openedModelId, authoringBatch));
 
       if (elements.length > 0) {
         await bulkUpsertBimElements(model.id, elements, {
@@ -672,6 +702,14 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
     if (localIds.length === 0) {
       await bulkUpsertBimElements(model.id, [], { finalize: false });
     }
+
+    // Batches have committed, but neither model nor job is ready until authoring commits.
+    const finalJob = await getBimIndexJob({ projectCode: input.projectCode, documentPath: input.documentPath, sourceHash: input.sourceHash });
+    if (finalJob?.status === "cancelled") throw new BimIndexingCancelledError();
+    if (finalJob && finalJob.status !== "processing") throw new Error(`El job BIM dejó de estar activo (estado: ${finalJob.status}).`);
+    if (timeoutMs !== undefined && Date.now() - startedAt >= timeoutMs) throw new BimIndexingTimeoutError(timeoutMs);
+    const authoringIndex = resolveAuthoringElements({ context, entities: authoringEntities, relations: authoringRelations });
+    await replaceAuthoringElementIndex(authoringIndex);
 
     await upsertBimModel({
       projectCode: input.projectCode,
