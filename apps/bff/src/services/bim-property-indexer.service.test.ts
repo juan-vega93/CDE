@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeIfcPropertySets } from "./bim-property-indexer.service";
+import {
+  createBimIndexProgress,
+  mergeIfcPropertySets,
+  readAdaptiveIfcPropertySets
+} from "./bim-property-indexer.service";
+import { getBimModelTerminalStatus } from "../db/bim-index-store";
 
 test("merges partial web-ifc property-set variants by stable IFC identity", () => {
   const partialTypeSet = {
@@ -96,4 +101,79 @@ test("does not collapse distinct same-name property sets without stable IFC iden
     ),
     ["FirstProperty", "SecondProperty", "SharedProperty", "SharedProperty"]
   );
+});
+
+test("keeps the complete second web-ifc variant and verifies divergence with the third traversal", async () => {
+  const calls: Array<[boolean, boolean]> = [];
+  const partial = {
+    expressID: 10,
+    Name: { value: "Pset_Common" },
+    HasProperties: [{ expressID: 101, Name: { value: "Reference" } }]
+  };
+  const complete = {
+    expressID: 10,
+    Name: { value: "Pset_Common" },
+    HasProperties: [
+      { expressID: 101, Name: { value: "Reference" }, NominalValue: { value: "A-01" } },
+      { expressID: 102, Name: { value: "Status" }, NominalValue: { value: "Approved" } }
+    ]
+  };
+
+  const sets = await readAdaptiveIfcPropertySets({
+    readPropertySets: async (recursive, includeTypeProperties) => {
+      calls.push([recursive, includeTypeProperties]);
+      if (recursive && includeTypeProperties) return [partial];
+      if (recursive && !includeTypeProperties) return [complete];
+      return [complete];
+    }
+  });
+
+  assert.deepEqual(calls, [
+    [true, true],
+    [true, false],
+    [false, false]
+  ]);
+  assert.equal(sets.length, 1);
+  assert.equal((sets[0].HasProperties as unknown[]).length, 2);
+});
+
+test("skips the third property-set traversal when principal variants agree", async () => {
+  const calls: Array<[boolean, boolean]> = [];
+  const complete = {
+    expressID: 20,
+    Name: { value: "Pset_Stable" },
+    HasProperties: [{ expressID: 201, Name: { value: "Code" }, NominalValue: { value: "X" } }]
+  };
+
+  const sets = await readAdaptiveIfcPropertySets({
+    readPropertySets: async (recursive, includeTypeProperties) => {
+      calls.push([recursive, includeTypeProperties]);
+      return [complete];
+    }
+  });
+
+  assert.deepEqual(calls, [
+    [true, true],
+    [true, false]
+  ]);
+  assert.equal(sets.length, 1);
+});
+
+test("reports durable batch progress and never reports partial index as ready", () => {
+  const progress = createBimIndexProgress({
+    modelKey: "ifc:/test/model.ifc",
+    processedElements: 250,
+    totalElements: 600,
+    propertyCount: 1200,
+    currentBatch: 1,
+    totalBatches: 3,
+    now: new Date("2026-01-02T03:04:05.000Z")
+  });
+
+  assert.equal(progress.progressPercent, 41.67);
+  assert.equal(progress.processedElements, 250);
+  assert.equal(progress.totalBatches, 3);
+  assert.equal(progress.progressUpdatedAt, "2026-01-02T03:04:05.000Z");
+  assert.equal(getBimModelTerminalStatus("cancelled"), "failed");
+  assert.notEqual(getBimModelTerminalStatus("processing"), "ready");
 });

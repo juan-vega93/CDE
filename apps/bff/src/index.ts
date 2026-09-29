@@ -26,9 +26,26 @@ import {
   systemAdminRoute
 } from "./middleware/authorization.middleware";
 import type { Permission } from "./security/policies";
+import { recoverInterruptedBimIndexJobs } from "./db/bim-index-store";
 
 
 const PORT = 4000;
+const BIM_INDEX_ORPHAN_RECHECK_MS = 5 * 60_000;
+
+async function recoverBimIndexJobsAtStartup(): Promise<void> {
+  try {
+    const result = await recoverInterruptedBimIndexJobs({
+      staleAfterMs: BIM_INDEX_ORPHAN_RECHECK_MS
+    });
+    if (result.interruptedJobs > 0 || result.reconciledModels > 0) {
+      console.warn("[bim-index] Se recuperaron estados BIM interrumpidos:", result);
+    }
+  } catch (error) {
+    // Startup must remain available if the optional BIM database is
+    // temporarily unavailable; a later retry remains safe.
+    console.warn("[bim-index] No se pudieron recuperar jobs interrumpidos:", error);
+  }
+}
 
 function projectOrSystemAdminWorkflowRoute() {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -196,10 +213,17 @@ export function createApp() {
 
 if (require.main === module) {
   const app = createApp();
+  void recoverBimIndexJobsAtStartup()
+    .finally(() => {
+      app.listen(PORT, "0.0.0.0", () => {
+        console.log(`BFF running on http://0.0.0.0:${PORT}`);
+      });
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`BFF running on http://0.0.0.0:${PORT}`);
-  });
+      // A crash immediately before restart still has a fresh heartbeat. Check
+      // once after the grace period so it cannot remain `processing` forever.
+      const retry = setTimeout(() => void recoverBimIndexJobsAtStartup(), BIM_INDEX_ORPHAN_RECHECK_MS);
+      retry.unref();
+    });
 }
 
 

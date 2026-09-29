@@ -5,6 +5,20 @@ export type BimModelStatus = "pending" | "processing" | "ready" | "failed" | "st
 export type BimPropertyValueType = "text" | "number" | "boolean" | "date" | "json";
 export type BimIndexJobStatus = "pending" | "processing" | "ready" | "failed" | "cancelled";
 
+export const BIM_INDEX_INTERRUPTED_MESSAGE =
+  "Indexación BIM interrumpida porque el proceso BFF anterior dejó de ejecutarse.";
+
+/**
+ * cde_bim_models deliberately has no `cancelled` state: a cancelled index is
+ * not usable by DB-first consumers, so its model is represented as failed with
+ * an explicit cancellation/interruption message rather than as `ready`.
+ */
+export function getBimModelTerminalStatus(jobStatus: BimIndexJobStatus): BimModelStatus | undefined {
+  if (jobStatus === "ready") return "ready";
+  if (jobStatus === "failed" || jobStatus === "cancelled") return "failed";
+  return undefined;
+}
+
 export type UpsertBimIndexJobInput = {
   projectCode: string;
   documentPath: string;
@@ -222,6 +236,7 @@ export type BimCost5DAggregationRow = {
   elementCount: number;
   modelCount: number;
   modelKeys: string[];
+  localIdsByModelKey: Record<string, number[]>;
 };
 
 export type BimCost5DAggregation = {
@@ -849,7 +864,8 @@ export async function bulkUpsertBimElements(
 
 export async function upsertBimIndexJob(input: UpsertBimIndexJobInput) {
   ensureBimDatabaseEnabled();
-  const result = await getDatabasePool().query<BimIndexJobRow>(
+  const pool = getDatabasePool();
+  const result = await pool.query<BimIndexJobRow>(
     `
       insert into cde_bim_index_jobs (
         project_code,
@@ -898,7 +914,114 @@ export async function upsertBimIndexJob(input: UpsertBimIndexJobInput) {
       JSON.stringify(input.stats ?? {})
     ]
   );
-  return toIndexJob(result.rows[0]);
+  const job = toIndexJob(result.rows[0]);
+
+  // A cancelled/failed job must never leave its matching model in the
+  // ambiguous `processing` state. We intentionally do not infer `ready` from
+  // a job alone: only the indexer can declare a fully persisted model ready.
+  if (input.status === "failed" || input.status === "cancelled") {
+    await pool.query(
+      `
+        update cde_bim_models
+        set
+          status = 'failed',
+          error_message = coalesce($1, error_message, 'Indexación BIM no completada.'),
+          updated_at = now()
+        where project_code = $2
+          and document_path = $3
+          and coalesce(source_hash, '') = coalesce($4, '')
+          and status in ('processing', 'ready')
+      `,
+      [
+        normalizeText(input.errorMessage) ??
+          (input.status === "cancelled" ? "Indexación BIM cancelada." : "Indexación BIM fallida."),
+        input.projectCode,
+        input.documentPath,
+        normalizeText(input.sourceHash)
+      ]
+    );
+  }
+
+  return job;
+}
+
+export async function getBimIndexJob(input: {
+  projectCode: string;
+  documentPath: string;
+  sourceHash?: string;
+}) {
+  ensureBimDatabaseEnabled();
+  const result = await getDatabasePool().query<BimIndexJobRow>(
+    `
+      select *
+      from cde_bim_index_jobs
+      where project_code = $1
+        and document_path = $2
+        and coalesce(source_hash, '') = coalesce($3, '')
+      limit 1
+    `,
+    [input.projectCode, input.documentPath, normalizeText(input.sourceHash)]
+  );
+  return result.rows[0] ? toIndexJob(result.rows[0]) : null;
+}
+
+/**
+ * Resolves server-side jobs that cannot still be owned by this BFF process.
+ * The heartbeat is `updated_at`, refreshed after each persisted batch. A
+ * grace period prevents a concurrent, recently active BFF from being treated
+ * as interrupted. Partial rows are intentionally retained for diagnostics.
+ */
+export async function recoverInterruptedBimIndexJobs(
+  options: { staleAfterMs?: number; projectCode?: string } = {}
+) {
+  if (!isDatabaseEnabled()) return { interruptedJobs: 0, reconciledModels: 0 };
+
+  const staleAfterMs = Math.max(60_000, Math.min(options.staleAfterMs ?? 5 * 60_000, 24 * 60 * 60_000));
+  const client = await getDatabasePool().connect();
+  try {
+    await client.query("begin");
+    const interrupted = await client.query<BimIndexJobRow>(
+      `
+        update cde_bim_index_jobs
+        set
+          status = 'failed',
+          finished_at = now(),
+          error_message = $1,
+          updated_at = now()
+        where status = 'processing'
+          and updated_at < now() - ($2::bigint * interval '1 millisecond')
+          and ($3::text is null or project_code = $3)
+        returning *
+      `,
+      [BIM_INDEX_INTERRUPTED_MESSAGE, staleAfterMs, normalizeText(options.projectCode)]
+    );
+
+    const reconciled = await client.query<{ id: string }>(
+      `
+        update cde_bim_models as model
+        set
+          status = 'failed',
+          error_message = coalesce(job.error_message, $1),
+          updated_at = now()
+        from cde_bim_index_jobs as job
+        where model.project_code = job.project_code
+          and model.document_path = job.document_path
+          and coalesce(model.source_hash, '') = coalesce(job.source_hash, '')
+          and model.status in ('processing', 'ready')
+          and job.status in ('failed', 'cancelled')
+          and ($2::text is null or job.project_code = $2)
+        returning model.id
+      `,
+      [BIM_INDEX_INTERRUPTED_MESSAGE, normalizeText(options.projectCode)]
+    );
+    await client.query("commit");
+    return { interruptedJobs: interrupted.rowCount ?? 0, reconciledModels: reconciled.rowCount ?? 0 };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listBimIndexJobs(input: {
@@ -1210,12 +1333,14 @@ export async function getBimCost5DAggregation(
     element_count: string;
     model_count: string;
     model_keys: string[];
+    local_ids_by_model_key: Record<string, number[]> | null;
   }>(
     `
       with base as (
         select
           ${BIM_MODEL_KEY_ALIAS_SQL} as model_key,
-          elements.id as element_id
+          elements.id as element_id,
+          elements.local_id
         from cde_bim_elements elements
         join cde_bim_models models on models.id = elements.bim_model_id
         where models.project_code = $1
@@ -1226,6 +1351,7 @@ export async function getBimCost5DAggregation(
         select
           base.model_key,
           base.element_id,
+          base.local_id,
           item_id_value.value_key as item_id,
           item_name_value.value_key as item_name,
           item_unit_value.value_key as item_unit,
@@ -1316,27 +1442,42 @@ export async function getBimCost5DAggregation(
           limit 1
         ) quantity_value on true
       )
-      select
-        coalesce(nullif(item_id, ''), 'Sin partida') as item_id,
-        coalesce(nullif(item_name, ''), '-') as item_name,
-        coalesce(nullif(item_unit, ''), '-') as item_unit,
-        case
-          when $10::text is null or $11::text is null then count(*)::double precision
-          else coalesce(sum(quantity_value), 0)
-        end::text as quantity,
-        count(*)::text as element_count,
-        count(distinct model_key)::text as model_count,
-        array_agg(distinct model_key order by model_key) as model_keys
-      from enriched
-      group by
-        coalesce(nullif(item_id, ''), 'Sin partida'),
-        coalesce(nullif(item_name, ''), '-'),
-        coalesce(nullif(item_unit, ''), '-')
+      , grouped_models as (
+        select
+          coalesce(nullif(item_id, ''), 'Sin partida') as item_id,
+          coalesce(nullif(item_name, ''), '-') as item_name,
+          coalesce(nullif(item_unit, ''), '-') as item_unit,
+          model_key,
+          array_agg(local_id order by local_id) as local_ids,
+          count(*)::int as element_count,
+          coalesce(sum(quantity_value), 0) as quantity
+        from enriched
+        group by
+          coalesce(nullif(item_id, ''), 'Sin partida'),
+          coalesce(nullif(item_name, ''), '-'),
+          coalesce(nullif(item_unit, ''), '-'),
+          model_key
+      ), grouped_rows as (
+        select
+          item_id,
+          item_name,
+          item_unit,
+          case
+            when $10::text is null or $11::text is null
+              then sum(element_count)::double precision
+            else sum(quantity)
+          end::text as quantity,
+          sum(element_count)::text as element_count,
+          count(*)::text as model_count,
+          array_agg(model_key order by model_key) as model_keys,
+          jsonb_object_agg(model_key, to_jsonb(local_ids) order by model_key) as local_ids_by_model_key
+        from grouped_models
+        group by item_id, item_name, item_unit
+      )
+      select *
+      from grouped_rows
       order by
-        case
-          when $10::text is null or $11::text is null then count(*)::double precision
-          else coalesce(sum(quantity_value), 0)
-        end desc,
+        quantity::double precision desc,
         item_id asc
       limit $12
     `,
@@ -1350,7 +1491,13 @@ export async function getBimCost5DAggregation(
     quantity: Number(row.quantity),
     elementCount: Number(row.element_count),
     modelCount: Number(row.model_count),
-    modelKeys: row.model_keys ?? []
+    modelKeys: row.model_keys ?? [],
+    localIdsByModelKey: Object.fromEntries(
+      Object.entries(row.local_ids_by_model_key ?? {}).map(([modelKey, localIds]) => [
+        modelKey,
+        Array.isArray(localIds) ? localIds.map(Number).filter(Number.isFinite) : []
+      ])
+    )
   }));
 
   return {

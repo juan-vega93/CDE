@@ -376,6 +376,7 @@ type Cost5DServerAggregation = {
     elementCount: number;
     modelCount: number;
     modelKeys: string[];
+    localIdsByModelKey: Record<string, number[]>;
   }>;
   totals: {
     quantity: number;
@@ -423,20 +424,49 @@ async function loadCost5DAggregationFromDatabase(input: {
   }
 }
 
-function serverCostRowsToCost5DRows(data: Cost5DServerAggregation | null): Cost5DRow[] | null {
+function resolvePersistentLocalIdsToModelIdMap(
+  localIdsByModelKey: Record<string, number[]>,
+  resolver: ReturnType<typeof createLiveBimModelResolver>
+) {
+  const modelIdMap: OBC.ModelIdMap = {};
+
+  for (const [modelKey, localIds] of Object.entries(localIdsByModelKey)) {
+    const runtimeModelId = resolver.toRuntimeModelId(modelKey);
+    if (!runtimeModelId) continue;
+    addIdsToModelIdMap(modelIdMap, runtimeModelId, localIds);
+  }
+
+  return modelIdMap;
+}
+
+function serverCostRowsToCost5DRows(
+  data: Cost5DServerAggregation | null,
+  resolver: ReturnType<typeof createLiveBimModelResolver>
+): Cost5DRow[] | null {
   if (!data) return null;
 
-  return data.rows.map((row) => ({
-    key: `db:${row.itemId}:${row.itemName}:${row.itemUnit}`,
-    itemId: row.itemId,
-    itemName: row.itemName,
-    itemUnit: row.itemUnit,
-    quantity: row.quantity,
-    elementCount: row.elementCount,
-    geometryCount: 0,
-    modelCount: row.modelCount,
-    modelIdMap: {}
-  }));
+  return data.rows.map((row) => {
+    const modelIdMap = resolvePersistentLocalIdsToModelIdMap(
+      row.localIdsByModelKey ?? {},
+      resolver
+    );
+
+    return {
+      key: `db:${row.itemId}:${row.itemName}:${row.itemUnit}`,
+      itemId: row.itemId,
+      itemName: row.itemName,
+      itemUnit: row.itemUnit,
+      quantity: row.quantity,
+      elementCount: row.elementCount,
+      geometryCount: countModelIdMapElements(modelIdMap),
+      modelCount: row.modelCount,
+      modelIdMap,
+      unresolvedElementCount: Math.max(
+        0,
+        row.elementCount - countModelIdMapElements(modelIdMap)
+      )
+    };
+  });
 }
 
 type Cost5DServerMeteringRows = {
@@ -1784,6 +1814,7 @@ type Cost5DRow = {
   geometryCount: number;
   modelCount: number;
   modelIdMap: OBC.ModelIdMap;
+  unresolvedElementCount?: number;
 };
 type MeteringColumn = Cost5DPropertyRef & {
   id: string;
@@ -1791,7 +1822,8 @@ type MeteringColumn = Cost5DPropertyRef & {
 };
 type MeteringRow = {
   key: string;
-  modelId: string;
+  modelId?: string;
+  persistentModelKey?: string;
   modelName: string;
   localId: number;
   type: string;
@@ -4985,7 +5017,8 @@ function getSuggestedCost5DMapping(
 
 function buildCost5DValueLookup(
   propertyIndex: SmartViewPropertyIndex,
-  ref: Cost5DPropertyRef
+  ref: Cost5DPropertyRef,
+  resolver: ReturnType<typeof createLiveBimModelResolver>
 ) {
   const lookup = new Map<string, string>();
   if (!ref.set || !ref.property) return lookup;
@@ -4995,10 +5028,31 @@ function buildCost5DValueLookup(
 
   for (const [value, modelBuckets] of Object.entries(valueBuckets)) {
     for (const [modelKey, ids] of Object.entries(modelBuckets)) {
+      const runtimeModelId = resolver.toRuntimeModelId(modelKey);
+      if (!runtimeModelId) continue;
       for (const localId of ids) {
-        lookup.set(`${modelKey}:${localId}`, value);
+        lookup.set(`${runtimeModelId}:${localId}`, value);
       }
     }
+  }
+
+  return lookup;
+}
+
+function buildCost5DElementIdentityLookup(
+  propertyIndex: SmartViewPropertyIndex,
+  resolver: ReturnType<typeof createLiveBimModelResolver>
+) {
+  const lookup = new Map<string, string>();
+
+  for (const [key, identity] of Object.entries(propertyIndex.elementIdentityByKey ?? {})) {
+    const separator = key.lastIndexOf(":");
+    if (separator < 0) continue;
+
+    const runtimeModelId = resolver.toRuntimeModelId(key.slice(0, separator));
+    const localId = Number(key.slice(separator + 1));
+    if (!runtimeModelId || !Number.isFinite(localId)) continue;
+    lookup.set(`${runtimeModelId}:${localId}`, identity);
   }
 
   return lookup;
@@ -5026,6 +5080,7 @@ function parseCost5DQuantity(value: string) {
 
 function buildCost5DRows({
   models,
+  projectCode,
   propertyIndex,
   mapping
 }: {
@@ -5035,23 +5090,29 @@ function buildCost5DRows({
   mapping: Cost5DMapping;
 }) {
   const rows = new Map<string, Cost5DRow>();
-  const modelByKey = new Map(models.map((model) => [model.key, model]));
+  const resolver = createLiveBimModelResolver({ projectCode, models });
+  const modelByRuntimeModelId = new Map(
+    models
+      .filter((model): model is FederatedModelEntry & { modelId: string } => Boolean(model.modelId))
+      .map((model) => [model.modelId, model])
+  );
   const universeByModelKey = propertyIndex.localIdsByModelKey ?? {};
-  const elementIdentityByKey = propertyIndex.elementIdentityByKey ?? {};
+  const elementIdentityByKey = buildCost5DElementIdentityLookup(propertyIndex, resolver);
   const countedIdentities = new Set<string>();
-  const itemIdLookup = buildCost5DValueLookup(propertyIndex, mapping.itemId);
-  const itemNameLookup = buildCost5DValueLookup(propertyIndex, mapping.itemName);
-  const itemUnitLookup = buildCost5DValueLookup(propertyIndex, mapping.itemUnit);
-  const quantityLookup = buildCost5DValueLookup(propertyIndex, mapping.quantity);
+  const itemIdLookup = buildCost5DValueLookup(propertyIndex, mapping.itemId, resolver);
+  const itemNameLookup = buildCost5DValueLookup(propertyIndex, mapping.itemName, resolver);
+  const itemUnitLookup = buildCost5DValueLookup(propertyIndex, mapping.itemUnit, resolver);
+  const quantityLookup = buildCost5DValueLookup(propertyIndex, mapping.quantity, resolver);
   const hasQuantityMapping =
     Boolean(mapping.quantity.set.trim()) && Boolean(mapping.quantity.property.trim());
 
   for (const [modelKey, localIds] of Object.entries(universeByModelKey)) {
-    const model = modelByKey.get(modelKey);
-    if (!model?.modelId) continue;
+    const runtimeModelId = resolver.toRuntimeModelId(modelKey);
+    const model = runtimeModelId ? modelByRuntimeModelId.get(runtimeModelId) : undefined;
+    if (!model || !runtimeModelId) continue;
 
     for (const localId of localIds) {
-      const elementKey = `${modelKey}:${localId}`;
+      const elementKey = `${runtimeModelId}:${localId}`;
       const itemId = itemIdLookup.get(elementKey) || "Sin partida";
       const itemName = itemNameLookup.get(elementKey) || "Sin nombre";
       const itemUnit = itemUnitLookup.get(elementKey) || "-";
@@ -5060,7 +5121,7 @@ function buildCost5DRows({
       const quantity = parsedQuantity ?? (hasQuantityMapping ? 0 : 1);
       const key = `${itemId}::${itemName}::${itemUnit}`;
       const identityKey = `${key}::${
-        elementIdentityByKey[elementKey] ?? `${modelKey}:local:${localId}`
+        elementIdentityByKey.get(elementKey) ?? `${modelKey}:local:${localId}`
       }`;
       const row =
         rows.get(key) ??
@@ -5082,9 +5143,9 @@ function buildCost5DRows({
         countedIdentities.add(identityKey);
       }
 
-      const currentIds = row.modelIdMap[model.modelId] ?? new Set<number>();
+      const currentIds = row.modelIdMap[runtimeModelId] ?? new Set<number>();
       currentIds.add(localId);
-      row.modelIdMap[model.modelId] = currentIds;
+      row.modelIdMap[runtimeModelId] = currentIds;
       row.geometryCount = countModelIdMapElements(row.modelIdMap);
       rows.set(key, row);
     }
@@ -5107,6 +5168,7 @@ function buildCost5DRows({
 
 function buildMeteringRows({
   models,
+  projectCode,
   propertyIndex,
   columns
 }: {
@@ -5116,13 +5178,21 @@ function buildMeteringRows({
   columns: MeteringColumn[];
 }) {
   const rows: MeteringRow[] = [];
+  const resolver = createLiveBimModelResolver({ projectCode, models });
+  const modelByRuntimeModelId = new Map(
+    models
+      .filter((model): model is FederatedModelEntry & { modelId: string } => Boolean(model.modelId))
+      .map((model) => [model.modelId, model])
+  );
   const lookups = columns.map((column) =>
-    buildCost5DValueLookup(propertyIndex, column)
+    buildCost5DValueLookup(propertyIndex, column, resolver)
   );
   const universeByModelKey = propertyIndex.localIdsByModelKey ?? {};
 
-  outer: for (const model of models) {
-    if (!model.modelId) continue;
+  outer: for (const [modelKey, localIds] of Object.entries(universeByModelKey)) {
+    const runtimeModelId = resolver.toRuntimeModelId(modelKey);
+    const model = runtimeModelId ? modelByRuntimeModelId.get(runtimeModelId) : undefined;
+    if (!model || !runtimeModelId) continue;
 
     const nodeByLocalId = new Map<number, ModelTreeNode>();
     for (const node of flattenModelTreeNodes(model.spatialTree ?? [])) {
@@ -5131,17 +5201,17 @@ function buildMeteringRows({
       }
     }
 
-    const localIds = universeByModelKey[model.key] ?? [];
     for (const localId of localIds) {
       if (rows.length >= MAX_METERING_ROWS) break outer;
 
-      const elementKey = `${model.key}:${localId}`;
+      const elementKey = `${runtimeModelId}:${localId}`;
       const node = nodeByLocalId.get(localId);
       const values = lookups.map((lookup) => lookup.get(elementKey) ?? "-");
 
       rows.push({
         key: elementKey,
-        modelId: model.modelId,
+        modelId: runtimeModelId,
+        persistentModelKey: modelKey,
         modelName: model.name,
         localId,
         type: node?.type || "-",
@@ -6121,9 +6191,9 @@ function Cost5DPanel({
         .filter((key): key is string => Boolean(key)),
     [models]
   );
-  const runtimeModelIdByKey = useMemo(
-    () => new Map(models.map((model) => [model.key, model.modelId])),
-    [models]
+  const liveModelResolver = useMemo(
+    () => createLiveBimModelResolver({ projectCode, models }),
+    [models, projectCode]
   );
   const selectorSource = useMemo(
     () => getSmartViewSelectorSource(propertyIndex, propertyCatalog, loadedModelKeys),
@@ -6198,13 +6268,13 @@ function Cost5DPanel({
     () =>
       shouldUseServerCost5D
         ? []
-        : buildCost5DRows({ models, propertyIndex, mapping }),
-    [models, propertyIndex, mapping, shouldUseServerCost5D]
+        : buildCost5DRows({ models, projectCode, propertyIndex, mapping }),
+    [models, projectCode, propertyIndex, mapping, shouldUseServerCost5D]
   );
 
   const serverRows = useMemo(
-    () => serverCostRowsToCost5DRows(serverAggregation),
-    [serverAggregation]
+    () => serverCostRowsToCost5DRows(serverAggregation, liveModelResolver),
+    [liveModelResolver, serverAggregation]
   );
   const rows = serverRows ?? localRows;
   const filteredRows = useMemo(() => {
@@ -6243,25 +6313,27 @@ function Cost5DPanel({
     () =>
       serverMeteringRows?.rows.map((row) => ({
         key: row.key,
-        modelId: runtimeModelIdByKey.get(row.modelKey) ?? row.modelKey,
+        modelId: liveModelResolver.toRuntimeModelId(row.modelKey) ?? undefined,
+        persistentModelKey: row.modelKey,
         modelName: row.modelName,
         localId: row.localId,
         type: row.className,
         name: row.elementName,
         values: row.values
       })) ?? [],
-    [runtimeModelIdByKey, serverMeteringRows]
+    [liveModelResolver, serverMeteringRows]
   );
   const meteringRows = useMemo(
     () =>
       mode === "metrados" && !shouldUseServerMetering
         ? buildMeteringRows({
             models,
+            projectCode,
             propertyIndex,
             columns: activeMeteringColumns
           })
         : [],
-    [activeMeteringColumns, mode, models, propertyIndex, shouldUseServerMetering]
+    [activeMeteringColumns, mode, models, projectCode, propertyIndex, shouldUseServerMetering]
   );
   const filteredMeteringRows = useMemo(() => {
     if (shouldUseServerMetering) return serverVisibleMeteringRows;
@@ -6363,6 +6435,25 @@ function Cost5DPanel({
       `metrados-${Date.now()}.csv`,
       buildMeteringCsv(visibleMeteringRows, activeMeteringColumns),
       "text/csv;charset=utf-8"
+    );
+  }
+
+  function handleSelectMeteringRow(row: MeteringRow) {
+    if (!row.modelId) {
+      void onSelectModelIdMap(
+        {},
+        "",
+        `No se puede seleccionar ${row.name}: el modelo persistente ${
+          row.persistentModelKey ?? "desconocido"
+        } no esta cargado en el visor.`
+      );
+      return;
+    }
+
+    void onSelectModelIdMap(
+      { [row.modelId]: new Set([row.localId]) },
+      `Elemento seleccionado: ${row.name}.`,
+      "No se pudo seleccionar el elemento."
     );
   }
 
@@ -6585,13 +6676,7 @@ function Cost5DPanel({
                         <td className="max-w-[220px] truncate px-2 py-2 text-zinc-100">
                           <button
                             type="button"
-                            onClick={() =>
-                              onSelectModelIdMap(
-                                { [row.modelId]: new Set([row.localId]) },
-                                `Elemento seleccionado: ${row.name}.`,
-                                "No se pudo seleccionar el elemento."
-                              )
-                            }
+                            onClick={() => handleSelectMeteringRow(row)}
                             title={row.name}
                             className="max-w-full truncate text-left hover:text-white"
                           >
@@ -10649,6 +10734,10 @@ export function IfcViewerCanvas({
     const modules = modulesRef.current;
     const viewer = viewerRef.current;
     if (!modules || !viewer) return;
+    if (countModelIdMapElements(sourceMap) === 0) {
+      setStatus(errorStatus);
+      return;
+    }
 
     const token = beginRenderOperation();
 
@@ -10692,10 +10781,13 @@ export function IfcViewerCanvas({
   }
 
   async function handleSelectCost5DRow(row: Cost5DRow) {
+    const unresolvedSuffix = row.unresolvedElementCount
+      ? ` ${row.unresolvedElementCount} elemento(s) no se pueden seleccionar porque su modelo no esta cargado.`
+      : "";
     await handleSelectModelIdMap(
       row.modelIdMap,
-      `Partida seleccionada: ${row.itemId} - ${row.itemName} (${row.elementCount} elementos, ${row.quantity} ${row.itemUnit}).`,
-      "No se pudo seleccionar la partida 5D."
+      `Partida seleccionada: ${row.itemId} - ${row.itemName} (${row.elementCount} elementos, ${row.quantity} ${row.itemUnit}).${unresolvedSuffix}`,
+      "No se pudo seleccionar la partida 5D: ninguno de sus modelos persistentes esta cargado en el visor."
     );
   }
 

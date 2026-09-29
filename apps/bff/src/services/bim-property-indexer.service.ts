@@ -2,6 +2,7 @@ import * as WEBIFC from "web-ifc";
 import path from "path";
 import {
   bulkUpsertBimElements,
+  getBimIndexJob,
   upsertBimIndexJob,
   upsertBimModel,
   type BimElementInput,
@@ -13,6 +14,33 @@ const SERVER_INDEX_BATCH_SIZE = 250;
 const MAX_PROPERTY_SETS_PER_ELEMENT = 64;
 const MAX_PROPERTIES_PER_SET = 120;
 const PLACEHOLDER_VALUES = new Set(["", "-", "sin valor", "null", "undefined"]);
+
+export type BimIndexProgress = {
+  stage: "server-web-ifc";
+  modelKey: string;
+  indexVersion: number;
+  processedElements: number;
+  totalElements: number;
+  propertyCount: number;
+  progressPercent: number;
+  currentBatch: number;
+  totalBatches: number;
+  progressUpdatedAt: string;
+};
+
+class BimIndexingCancelledError extends Error {
+  constructor() {
+    super("La indexación BIM fue cancelada antes de procesar el siguiente lote.");
+    this.name = "BimIndexingCancelledError";
+  }
+}
+
+class BimIndexingTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`La indexación BIM superó el tiempo máximo configurado (${timeoutMs} ms).`);
+    this.name = "BimIndexingTimeoutError";
+  }
+}
 
 function resolveWebIfcWasmPath(): string {
   const wasmFile = require.resolve("web-ifc/web-ifc-node.wasm");
@@ -181,6 +209,17 @@ function getPropertySetCompleteness(pset: IfcRecord): number {
   return score;
 }
 
+function getPropertySetCollectionSignature(collection: IfcRecord[]): string {
+  return collection
+    .map((pset, occurrence) => {
+      const identity =
+        getPropertySetStableIdentity(pset) ?? getPropertySetFallbackIdentity(pset, occurrence);
+      return `${identity}:${getPropertySetCompleteness(pset)}`;
+    })
+    .sort()
+    .join("|");
+}
+
 /**
  * Merges the partial shapes returned by web-ifc property helpers. Stable IFC
  * identity wins over display names; when no stable identity exists, a property
@@ -271,45 +310,69 @@ function extractPropertySetsFromExpandedLine(line: IfcRecord): IfcRecord[] {
   return mergeIfcPropertySets(candidates).slice(0, MAX_PROPERTY_SETS_PER_ELEMENT);
 }
 
-async function getElementPropertySets(
-  ifcApi: WEBIFC.IfcAPI,
-  modelId: number,
-  localId: number
-): Promise<IfcRecord[]> {
-  const attempts: Array<[boolean, boolean]> = [
-    [true, true],
-    [true, false],
-    [false, false]
-  ];
-  const propertySetCollections: unknown[][] = [];
+export async function readAdaptiveIfcPropertySets(input: {
+  readPropertySets: (recursive: boolean, includeTypeProperties: boolean) => Promise<unknown>;
+  readExpandedLine?: () => IfcRecord | null;
+}): Promise<IfcRecord[]> {
   let propertySetReadFailed = false;
+  const collections: unknown[][] = [];
 
-  for (const [recursive, includeTypeProperties] of attempts) {
+  // The first two variants are both required. The documented real-world case
+  // has a partial (true, true) result and complete sets in (true, false).
+  for (const [recursive, includeTypeProperties] of [
+    [true, true],
+    [true, false]
+  ] as const) {
     try {
-      const psets = await ifcApi.properties.getPropertySets(
-        modelId,
-        localId,
-        recursive,
-        includeTypeProperties
-      );
-      propertySetCollections.push(toCollectionArray(psets));
+      collections.push(toCollectionArray(await input.readPropertySets(recursive, includeTypeProperties)));
     } catch {
-      // Some authoring tools export type property references in a non-iterable
-      // shape. Fall back to the expanded IFC line instead of failing the model.
       propertySetReadFailed = true;
     }
   }
 
-  const mergedPropertySets = mergeIfcPropertySets(...propertySetCollections);
-  if (mergedPropertySets.length > 0 && !propertySetReadFailed) return mergedPropertySets;
+  const firstTwoMerged = mergeIfcPropertySets(...collections);
+  const firstSignature = getPropertySetCollectionSignature(mergeIfcPropertySets(collections[0] ?? []));
+  const secondSignature = getPropertySetCollectionSignature(mergeIfcPropertySets(collections[1] ?? []));
+  const variantsDisagree = firstSignature !== secondSignature;
+
+  // Only pay for the third web-ifc traversal when the two principal variants
+  // disagree (or one failed). That disagreement is evidence that the helper
+  // is returning an incomplete shape; merge every available representation.
+  if (propertySetReadFailed || variantsDisagree || firstTwoMerged.length === 0) {
+    try {
+      collections.push(toCollectionArray(await input.readPropertySets(false, false)));
+    } catch {
+      propertySetReadFailed = true;
+    }
+  }
+
+  const mergedPropertySets = mergeIfcPropertySets(...collections);
+  // A successful merged result is sufficient even if the variants differed:
+  // that divergence already triggered the third helper variant above. The
+  // expanded line remains a fallback only for an API failure or no usable set.
+  if (!input.readExpandedLine || (!propertySetReadFailed && mergedPropertySets.length > 0)) {
+    return mergedPropertySets;
+  }
 
   try {
-    const expandedLine = ifcApi.GetLine(modelId, localId, true, true) as IfcRecord | null;
+    const expandedLine = input.readExpandedLine();
     const expandedPropertySets = expandedLine ? extractPropertySetsFromExpandedLine(expandedLine) : [];
     return mergeIfcPropertySets(mergedPropertySets, expandedPropertySets);
   } catch {
     return mergedPropertySets;
   }
+}
+
+async function getElementPropertySets(
+  ifcApi: WEBIFC.IfcAPI,
+  modelId: number,
+  localId: number
+): Promise<IfcRecord[]> {
+  return readAdaptiveIfcPropertySets({
+    readPropertySets: (recursive, includeTypeProperties) =>
+      ifcApi.properties.getPropertySets(modelId, localId, recursive, includeTypeProperties),
+    readExpandedLine: () => ifcApi.GetLine(modelId, localId, true, true) as IfcRecord | null
+  });
 }
 
 function getPropertyValue(property: IfcRecord): string | undefined {
@@ -412,6 +475,36 @@ function getIfcElementIds(ifcApi: WEBIFC.IfcAPI, modelId: number): number[] {
   return [...elementIds].sort((a, b) => a - b);
 }
 
+export function createBimIndexProgress(input: {
+  modelKey: string;
+  processedElements: number;
+  totalElements: number;
+  propertyCount: number;
+  currentBatch: number;
+  totalBatches: number;
+  now?: Date;
+}): BimIndexProgress {
+  const totalElements = Math.max(0, input.totalElements);
+  const processedElements = Math.max(0, Math.min(input.processedElements, totalElements));
+  return {
+    stage: "server-web-ifc",
+    modelKey: input.modelKey,
+    indexVersion: BIM_INDEX_SCHEMA_VERSION,
+    processedElements,
+    totalElements,
+    propertyCount: Math.max(0, input.propertyCount),
+    progressPercent: totalElements === 0 ? 100 : Math.round((processedElements / totalElements) * 10000) / 100,
+    currentBatch: Math.max(0, input.currentBatch),
+    totalBatches: Math.max(0, input.totalBatches),
+    progressUpdatedAt: (input.now ?? new Date()).toISOString()
+  };
+}
+
+function getConfiguredBimIndexTimeoutMs(): number | undefined {
+  const value = Number(process.env.BFF_BIM_INDEX_MAX_DURATION_MS);
+  return Number.isFinite(value) && value > 0 ? Math.max(60_000, Math.floor(value)) : undefined;
+}
+
 async function buildElementPayload(
   ifcApi: WEBIFC.IfcAPI,
   modelId: number,
@@ -455,6 +548,8 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
   elementCount: number;
   propertyCount: number;
 }> {
+  const timeoutMs = getConfiguredBimIndexTimeoutMs();
+  const startedAt = Date.now();
   await upsertBimIndexJob({
     projectCode: input.projectCode,
     documentPath: input.documentPath,
@@ -463,7 +558,14 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
     stats: {
       stage: "server-web-ifc",
       modelKey: input.modelKey,
-      indexVersion: BIM_INDEX_SCHEMA_VERSION
+      indexVersion: BIM_INDEX_SCHEMA_VERSION,
+      processedElements: 0,
+      totalElements: 0,
+      propertyCount: 0,
+      progressPercent: 0,
+      currentBatch: 0,
+      totalBatches: 0,
+      progressUpdatedAt: new Date().toISOString()
     }
   });
 
@@ -495,8 +597,40 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
     if (openedModelId < 0) throw new Error("No se pudo abrir el IFC para indexar propiedades");
 
     const localIds = getIfcElementIds(ifcApi, openedModelId);
+    const totalBatches = Math.ceil(localIds.length / SERVER_INDEX_BATCH_SIZE);
+
+    await upsertBimIndexJob({
+      projectCode: input.projectCode,
+      documentPath: input.documentPath,
+      sourceHash: input.sourceHash,
+      status: "processing",
+      stats: createBimIndexProgress({
+        modelKey: input.modelKey,
+        processedElements: 0,
+        totalElements: localIds.length,
+        propertyCount: 0,
+        currentBatch: 0,
+        totalBatches
+      })
+    });
 
     for (let index = 0; index < localIds.length; index += SERVER_INDEX_BATCH_SIZE) {
+      // This boundary is deliberately between batches: web-ifc and the DB
+      // transaction for a batch are allowed to finish cleanly before a manual
+      // cancellation or configured timeout stops later work.
+      const activeJob = await getBimIndexJob({
+        projectCode: input.projectCode,
+        documentPath: input.documentPath,
+        sourceHash: input.sourceHash
+      });
+      if (activeJob?.status === "cancelled") throw new BimIndexingCancelledError();
+      if (activeJob && activeJob.status !== "processing") {
+        throw new Error(`El job BIM dejó de estar activo (estado: ${activeJob.status}).`);
+      }
+      if (timeoutMs !== undefined && Date.now() - startedAt >= timeoutMs) {
+        throw new BimIndexingTimeoutError(timeoutMs);
+      }
+
       const batchIds = localIds.slice(index, index + SERVER_INDEX_BATCH_SIZE);
       const elements: BimElementInput[] = [];
 
@@ -510,13 +644,30 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
 
       if (elements.length > 0) {
         await bulkUpsertBimElements(model.id, elements, {
-          finalize: index + SERVER_INDEX_BATCH_SIZE >= localIds.length
+          // Final status is committed explicitly below together with the
+          // terminal job status, never as an incidental effect of a batch.
+          finalize: false
         });
       }
+
+      await upsertBimIndexJob({
+        projectCode: input.projectCode,
+        documentPath: input.documentPath,
+        sourceHash: input.sourceHash,
+        status: "processing",
+        stats: createBimIndexProgress({
+          modelKey: input.modelKey,
+          processedElements: Math.min(index + batchIds.length, localIds.length),
+          totalElements: localIds.length,
+          propertyCount,
+          currentBatch: Math.floor(index / SERVER_INDEX_BATCH_SIZE) + 1,
+          totalBatches
+        })
+      });
     }
 
     if (localIds.length === 0) {
-      await bulkUpsertBimElements(model.id, [], { finalize: true });
+      await bulkUpsertBimElements(model.id, [], { finalize: false });
     }
 
     await upsertBimModel({
@@ -543,17 +694,22 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
       sourceHash: input.sourceHash,
       status: "ready",
       stats: {
-        stage: "server-web-ifc",
-        modelKey: input.modelKey,
-        indexVersion: BIM_INDEX_SCHEMA_VERSION,
-        elementCount,
-        propertyCount
+        ...createBimIndexProgress({
+          modelKey: input.modelKey,
+          processedElements: localIds.length,
+          totalElements: localIds.length,
+          propertyCount,
+          currentBatch: totalBatches,
+          totalBatches
+        }),
+        elementCount
       }
     });
 
     return { modelId: model.id, elementCount, propertyCount };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const cancelled = error instanceof BimIndexingCancelledError;
     await upsertBimModel({
       projectCode: input.projectCode,
       documentId: input.documentId,
@@ -576,14 +732,17 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
       projectCode: input.projectCode,
       documentPath: input.documentPath,
       sourceHash: input.sourceHash,
-      status: "failed",
+      status: cancelled ? "cancelled" : "failed",
       errorMessage,
       stats: {
         stage: "server-web-ifc",
         modelKey: input.modelKey,
         indexVersion: BIM_INDEX_SCHEMA_VERSION,
+        processedElements: elementCount,
+        propertyCount,
+        progressUpdatedAt: new Date().toISOString(),
         elementCount,
-        propertyCount
+        terminalStatus: cancelled ? "cancelled" : "failed"
       }
     });
     throw error;

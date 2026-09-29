@@ -3,11 +3,17 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import {
   bulkUpsertBimElements,
+  getBimCost5DAggregation,
+  getBimCost5DMeteringRows,
   getBimElementProperties,
+  getBimIndexJob,
+  getBimModelByDocument,
   getBimPropertyCatalog,
   getBimPropertyIndexSnapshot,
   queryBimPropertyAuditRecords,
   queryBimPropertyLocalIds,
+  recoverInterruptedBimIndexJobs,
+  upsertBimIndexJob,
   upsertBimModel,
   upsertBimPropertyIndexSnapshot
 } from "./bim-index-store";
@@ -86,6 +92,11 @@ test(
               setName: "Pset_WallCommon",
               name: "Reference",
               value: "TEST-WALL-101"
+            },
+            {
+              setName: "Pset_Cost",
+              name: "ItemCode",
+              value: "TEST-ITEM-101"
             }
           ]
         },
@@ -144,6 +155,11 @@ test(
               setName: "Pset_DoorCommon",
               name: "FireRating",
               value: "TEST-OTHER-120"
+            },
+            {
+              setName: "Pset_Cost",
+              name: "ItemCode",
+              value: "TEST-ITEM-101"
             }
           ]
         }
@@ -209,7 +225,12 @@ test(
       projectCode,
       modelKeys: [modelKey]
     });
-    assert.deepEqual(catalog.sets, ["Pset_DoorCommon", "Pset_SlabCommon", "Pset_WallCommon"]);
+    assert.deepEqual(catalog.sets, [
+      "Pset_Cost",
+      "Pset_DoorCommon",
+      "Pset_SlabCommon",
+      "Pset_WallCommon"
+    ]);
     assert.deepEqual(catalog.propertiesBySet.Pset_WallCommon, ["LoadBearing", "Reference"]);
     assert.deepEqual(catalog.valuesBySetAndProperty.Pset_WallCommon.LoadBearing, [
       { value: "true", count: 1 }
@@ -331,6 +352,46 @@ test(
       ]
     );
 
+    const costAggregation = await getBimCost5DAggregation({
+      projectCode,
+      modelKeys: [ifcModelKey, federatedModelKey],
+      itemId: { setName: "Pset_Cost", propertyName: "ItemCode" }
+    });
+    const sharedCostRow = costAggregation.rows.find(
+      (row) => row.itemId === "TEST-ITEM-101"
+    );
+    assert.ok(sharedCostRow);
+    assert.equal(sharedCostRow.elementCount, 2);
+    assert.equal(sharedCostRow.modelCount, 2);
+    assert.deepEqual(sharedCostRow.localIdsByModelKey, {
+      [ifcModelKey]: [101],
+      [federatedModelKey]: [101]
+    });
+
+    const meteringRows = await getBimCost5DMeteringRows({
+      projectCode,
+      modelKeys: [ifcModelKey, federatedModelKey],
+      columns: [
+        {
+          id: "item-code",
+          label: "Item code",
+          ref: { setName: "Pset_Cost", propertyName: "ItemCode" }
+        }
+      ],
+      limit: 20,
+      offset: 0
+    });
+    assert.deepEqual(
+      meteringRows.rows
+        .filter((row) => row.localId === 101 && row.values[0] === "TEST-ITEM-101")
+        .map((row) => ({ modelKey: row.modelKey, localId: row.localId }))
+        .sort((left, right) => left.modelKey.localeCompare(right.modelKey)),
+      [
+        { modelKey: federatedModelKey, localId: 101 },
+        { modelKey: ifcModelKey, localId: 101 }
+      ]
+    );
+
     const wallProperties = await getBimElementProperties({
       projectCode,
       modelKey: ifcModelKey,
@@ -341,6 +402,17 @@ test(
     assert.equal(wallProperties.globalId, "TEST-GLOBAL-WALL-101");
     assert.equal(wallProperties.ifcClass, "IfcWall");
     assert.deepEqual(wallProperties.propertySets, [
+      {
+        name: "Pset_Cost",
+        properties: [
+          {
+            name: "ItemCode",
+            value: "TEST-ITEM-101",
+            valueType: "text",
+            unit: null
+          }
+        ]
+      },
       {
         name: "Pset_WallCommon",
         properties: [
@@ -415,3 +487,52 @@ test(
 
 // localId is the current store contract. This test does not claim it is universally
 // equivalent to an IFC Express ID outside the current server web-ifc indexer.
+
+test(
+  "BIM recovery marks only an orphaned synthetic processing run as failed",
+  { skip: !databaseUrl },
+  async () => {
+    await cleanupTestData();
+    const documentPath = "/TEST-BIM-ISOLATED/orphan.ifc";
+    const sourceHash = `test-orphan-${runId}`;
+    await upsertBimModel({
+      projectCode: isolatedProjectCode,
+      documentPath,
+      documentName: "orphan.ifc",
+      sourceHash,
+      modelKey: "ifc:/test-bim-isolated/orphan.ifc",
+      status: "processing"
+    });
+    await upsertBimIndexJob({
+      projectCode: isolatedProjectCode,
+      documentPath,
+      sourceHash,
+      status: "processing",
+      stats: { stage: "server-web-ifc" }
+    });
+    await getDatabasePool().query(
+      `
+        update cde_bim_index_jobs
+        set updated_at = now() - interval '10 minutes'
+        where project_code = $1 and document_path = $2
+      `,
+      [isolatedProjectCode, documentPath]
+    );
+
+    const result = await recoverInterruptedBimIndexJobs({
+      projectCode: isolatedProjectCode,
+      staleAfterMs: 60_000
+    });
+    assert.equal(result.interruptedJobs, 1);
+    assert.equal(result.reconciledModels, 1);
+
+    const job = await getBimIndexJob({ projectCode: isolatedProjectCode, documentPath, sourceHash });
+    assert.equal(job?.status, "failed");
+    const model = await getBimModelByDocument({
+      projectCode: isolatedProjectCode,
+      documentPath,
+      sourceHash
+    });
+    assert.equal(model?.status, "failed");
+  }
+);
