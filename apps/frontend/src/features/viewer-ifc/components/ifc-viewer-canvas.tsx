@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties
 } from "react";
 import * as THREE from "three";
@@ -24,6 +25,10 @@ import {
   type ViewerSource
 } from "@/features/viewer-ifc/lib/resolve-viewer-source";
 import { setupViewerModules } from "@/features/viewer-ifc/modules";
+import { parameterVisibilityKey, type VisibilityPolicy } from "@/features/viewer-ifc/lib/visibility-policy";
+const EMPTY_VISIBILITY_KEYS: ReadonlySet<string> = new Set();
+const subscribeEmptyVisibility = () => () => {};
+const getEmptyVisibility = () => EMPTY_VISIBILITY_KEYS;
 import {
   IfcViewerToolbar,
   type ViewerSnapConfig
@@ -5339,7 +5344,9 @@ function ParameterAnalysisPanel({
   onBuildPropertyIndex,
   onApplyColors,
   onSelectBucket,
-  onSetBucketVisibility,
+  onToggleBucketVisibility,
+  hiddenBucketKeys,
+  propertySet, setPropertySet, propertyName, setPropertyName,
   onRestoreVisibility,
   onClear
 }: {
@@ -5358,19 +5365,18 @@ function ParameterAnalysisPanel({
     buckets: ParameterValueBucket[]
   ) => Promise<void>;
   onSelectBucket: (bucket: ParameterValueBucket) => void;
-  onSetBucketVisibility: (
-    bucket: ParameterValueBucket,
-    visible: boolean
-  ) => Promise<void>;
+  onToggleBucketVisibility: (set: string, property: string, bucket: ParameterValueBucket) => Promise<void>;
+  hiddenBucketKeys: ReadonlySet<string>;
+  propertySet: string;
+  setPropertySet: (value: string) => void;
+  propertyName: string;
+  setPropertyName: (value: string) => void;
   onRestoreVisibility: () => Promise<void>;
   onClear: () => void;
 }) {
-  const [propertySet, setPropertySet] = useState("");
-  const [propertyName, setPropertyName] = useState("");
   const [chartMode, setChartMode] = useState<"bars" | "donut">("bars");
-  const [hiddenBucketValues, setHiddenBucketValues] = useState<Set<string>>(
-    () => new Set()
-  );
+  const isBucketHidden = (value: string) =>
+    hiddenBucketKeys.has(parameterVisibilityKey(propertySet, propertyName, value));
   const [colorOverrides, setColorOverrides] = useState<Record<string, string>>(
     {}
   );
@@ -5469,9 +5475,9 @@ function ParameterAnalysisPanel({
     () =>
       buckets.map((bucket) => ({
         ...bucket,
-        color: colorOverrides[bucket.value] ?? bucket.color
+        color: colorOverrides[parameterVisibilityKey(propertySet, propertyName, bucket.value)] ?? bucket.color
       })),
-    [buckets, colorOverrides]
+    [buckets, colorOverrides, propertySet, propertyName]
   );
   const colorableBuckets = displayBuckets.filter((bucket) => bucket.value !== "Sin valor");
   const total = databaseAnalysis?.totalElements ?? displayBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
@@ -5481,7 +5487,7 @@ function ParameterAnalysisPanel({
     displayBuckets.find((bucket) => bucket.value === "Sin valor")?.count ?? 0;
   const maxCount = Math.max(...displayBuckets.map((bucket) => bucket.count), 1);
   const visibleBuckets = displayBuckets.filter(
-    (bucket) => !hiddenBucketValues.has(bucket.value)
+    (bucket) => !isBucketHidden(bucket.value)
   );
 
   useEffect(() => {
@@ -5575,66 +5581,24 @@ function ParameterAnalysisPanel({
     if (!properties.includes(propertyName)) {
       setPropertyName(properties[0] ?? "");
     }
-  }, [propertyName, propertySet, selectorSource.propertiesBySet, selectorSource.sets]);
-
-  useEffect(() => {
-    setHiddenBucketValues(new Set());
-    setColorOverrides({});
-  }, [propertyName, propertySet]);
+  }, [propertyName, propertySet, selectorSource.propertiesBySet, selectorSource.sets, setPropertyName, setPropertySet]);
 
   async function handleApplyColors() {
     await onApplyColors(propertySet, propertyName, colorableBuckets);
-
-    for (const bucket of colorableBuckets) {
-      if (hiddenBucketValues.has(bucket.value)) {
-        await onSetBucketVisibility(bucket, false);
-      }
-    }
   }
-
   async function handleChangeBucketColor(bucket: ParameterValueBucket, color: string) {
-    const nextOverrides = {
-      ...colorOverrides,
-      [bucket.value]: color
-    };
-
-    setColorOverrides(nextOverrides);
-    const nextBuckets = displayBuckets.map((item) =>
+    setColorOverrides((current) => ({
+      ...current, [parameterVisibilityKey(propertySet, propertyName, bucket.value)]: color
+    }));
+    const nextBuckets = colorableBuckets.map((item) =>
       item.value === bucket.value ? { ...item, color } : item
     );
-    const nextColorableBuckets = nextBuckets.filter((item) => item.value !== "Sin valor");
-
-    await onApplyColors(propertySet, propertyName, nextColorableBuckets);
-
-    for (const item of nextColorableBuckets) {
-      if (hiddenBucketValues.has(item.value)) {
-        await onSetBucketVisibility(item, false);
-      }
-    }
+    await onApplyColors(propertySet, propertyName, nextBuckets);
   }
-
   async function handleToggleBucket(bucket: ParameterValueBucket) {
-    const nextHiddenValues = new Set(hiddenBucketValues);
-    const willBeVisible = hiddenBucketValues.has(bucket.value);
-
-    if (willBeVisible) {
-      nextHiddenValues.delete(bucket.value);
-    } else {
-      nextHiddenValues.add(bucket.value);
-    }
-
-    setHiddenBucketValues(nextHiddenValues);
-    await onRestoreVisibility();
-
-    for (const item of displayBuckets) {
-      if (nextHiddenValues.has(item.value)) {
-        await onSetBucketVisibility(item, false);
-      }
-    }
+    await onToggleBucketVisibility(propertySet, propertyName, bucket);
   }
-
   async function handleRestoreVisibility() {
-    setHiddenBucketValues(new Set());
     await onRestoreVisibility();
   }
 
@@ -5803,7 +5767,7 @@ function ParameterAnalysisPanel({
             <div className="mt-4 space-y-1">
               {displayBuckets.map((bucket) => {
                 const percent = Math.round((bucket.count / Math.max(total, 1)) * 100);
-                const isHidden = hiddenBucketValues.has(bucket.value);
+                const isHidden = isBucketHidden(bucket.value);
                 return (
                   <div
                     key={bucket.value}
@@ -5849,7 +5813,7 @@ function ParameterAnalysisPanel({
             {displayBuckets.map((bucket) => {
               const width = Math.max(4, Math.round((bucket.count / maxCount) * 100));
               const percent = Math.round((bucket.count / Math.max(total, 1)) * 100);
-              const isHidden = hiddenBucketValues.has(bucket.value);
+              const isHidden = isBucketHidden(bucket.value);
               return (
                 <div
                   key={bucket.value}
@@ -7785,6 +7749,14 @@ export function IfcViewerCanvas({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewerFrameRef = useRef<HTMLDivElement | null>(null);
   const modulesRef = useRef<ReturnType<typeof setupViewerModules> | null>(null);
+  const [visibilityPolicy, setVisibilityPolicy] = useState<VisibilityPolicy | null>(null);
+  const hiddenBucketKeys = useSyncExternalStore(
+    visibilityPolicy?.subscribe ?? subscribeEmptyVisibility,
+    visibilityPolicy?.getSnapshot ?? getEmptyVisibility,
+    getEmptyVisibility
+  );
+  const [parameterPropertySet, setParameterPropertySet] = useState("");
+  const [parameterPropertyName, setParameterPropertyName] = useState("");
   const viewerRef = useRef<ViewerRuntime | null>(null);
   const modelsGroupRef = useRef<THREE.Group | null>(null);
   const selectionDataTimeoutRef = useRef<number | null>(null);
@@ -7850,7 +7822,17 @@ export function IfcViewerCanvas({
   }, [measurementSnapConfig]);
   const [containmentLoading, setContainmentLoading] = useState(false);
   const [associationsLoading, setAssociationsLoading] = useState(false);
-  const [models, setModels] = useState<FederatedModelEntry[]>([]);
+  const [modelEntries, setModels] = useState<FederatedModelEntry[]>([]);
+  const modelVisibilitySignature = JSON.stringify(
+    [...hiddenBucketKeys].filter((key) => key.startsWith("model:")).sort()
+  );
+  const models = useMemo(() => {
+    const hiddenModels = new Set<string>(JSON.parse(modelVisibilitySignature));
+    return modelEntries.map((model) => ({
+      ...model,
+      visible: model.modelId ? !hiddenModels.has(`model:${model.modelId}`) : model.visible
+    }));
+  }, [modelEntries, modelVisibilitySignature]);
   const [savedSmartViews, setSavedSmartViews] = useState<SavedSmartView[]>([]);
   const [auditRules, setAuditRules] = useState<AuditRule[]>([]);
   const [auditResults, setAuditResults] = useState<AuditResult[]>([]);
@@ -8467,6 +8449,7 @@ export function IfcViewerCanvas({
                 
 
         modulesRef.current = modules;
+        setVisibilityPolicy(modules.visibility);
         modules.bcfTopics.enabled = true;
 
         await modules.bcfTopics.setup({
@@ -8877,7 +8860,9 @@ export function IfcViewerCanvas({
       } catch (error) {
         console.warn("[viewer-ifc] Error limpiando clipping planes antes de dispose:", error);
       }
+      modulesRef.current?.visibility.dispose();
       modulesRef.current = null;
+      setVisibilityPolicy(null);
       viewerRef.current = null;
       rendererRef.current = null;
       modelsGroupRef.current = null;
@@ -10219,10 +10204,12 @@ export function IfcViewerCanvas({
     const viewer = viewerRef.current;
     if (!modules || !viewer) return;
 
+    const token = beginRenderOperation();
     setStatus("Aplicando SmartView...");
 
     try {
       const modelIdMap = await getSmartViewModelIdMap(criteria);
+      if (!isRenderOperationCurrent(token)) return;
       const matchCount = Object.values(modelIdMap).reduce(
         (total, ids) => total + ids.size,
         0
@@ -10237,7 +10224,6 @@ export function IfcViewerCanvas({
         await modules.visibility.isolate(modelIdMap);
       } catch (visibilityError) {
         console.warn("[viewer-ifc] SmartView visibility isolate failed:", visibilityError);
-        await modules.visibility.showAll();
       }
 
       try {
@@ -10282,7 +10268,7 @@ export function IfcViewerCanvas({
     beginRenderOperation();
 
     try {
-      await modules.visibility.showAll();
+      await modules.visibility.clearFocus();
       await waitForNextFrame();
       await modules.coloring.restoreAllColors();
       await modules.selection.clearSelection();
@@ -10404,18 +10390,10 @@ export function IfcViewerCanvas({
     const modules = modulesRef.current;
     if (!modules) return false;
 
-    return forEachModelIdMapChunk(
-      modelIdMap,
-      async (chunk) => {
-        if (visible) {
-          await modules.visibility.show(chunk);
-        } else {
-          await modules.visibility.hide(chunk);
-        }
-      },
-      MODEL_ID_MAP_RENDER_CHUNK_SIZE,
-      () => isRenderOperationCurrent(token)
-    );
+    if (!isRenderOperationCurrent(token)) return false;
+    if (visible) await modules.visibility.show(modelIdMap);
+    else await modules.visibility.hide(modelIdMap);
+    return true;
   }
 
   async function applyChunkedColorSelections(
@@ -10464,8 +10442,7 @@ export function IfcViewerCanvas({
     const token = beginRenderOperation();
 
     try {
-      await modules.visibility.showAll();
-      await waitForNextFrame();
+      await modules.visibility.reconcile();
 
       const coloredMap: OBC.ModelIdMap = {};
       const seenKeys = new Set<string>();
@@ -10668,7 +10645,7 @@ export function IfcViewerCanvas({
 
     if (!modules) return false;
 
-    await modules.visibility.showAll();
+    await modules.visibility.reconcile();
     await waitForNextFrame();
     if (!isRenderOperationCurrent(token)) return false;
     await resetContextGhostOpacity();
@@ -10791,52 +10768,30 @@ export function IfcViewerCanvas({
     );
   }
 
-  async function handleSetParameterBucketVisibility(
-    bucket: ParameterValueBucket,
-    visible: boolean
+  async function handleToggleParameterBucketVisibility(
+    propertySet: string, propertyName: string, bucket: ParameterValueBucket
   ) {
-    const modules = modulesRef.current;
-    if (!modules) return;
-
-    const token = beginRenderOperation();
-
+    const visibility = modulesRef.current?.visibility;
+    if (!visibility) return;
     try {
-      const modelIdMap = await expandModelIdMapForRendering(bucket.modelIdMap);
-      const elementCount = countModelIdMapElements(modelIdMap);
-      if (elementCount > MODEL_ID_MAP_RENDER_CHUNK_SIZE) {
-        setStatus(`${visible ? "Mostrando" : "Ocultando"} ${bucket.value} por lotes...`);
-      }
-
-      const completed = await applyChunkedVisibility(modelIdMap, visible, token);
-      if (!completed || !isRenderOperationCurrent(token)) return;
-
-      setStatus(visible ? `Grupo visible: ${bucket.value}.` : `Grupo oculto: ${bucket.value}.`);
+      await visibility.toggleBucket(
+        parameterVisibilityKey(propertySet, propertyName, bucket.value),
+        () => expandModelIdMapForRendering(bucket.modelIdMap)
+      );
       requestViewerRefresh();
     } catch (error) {
       console.error("[viewer-ifc] Error cambiando visibilidad de parametro:", error);
-      setStatus("No se pudo cambiar la visibilidad del grupo.");
+      setStatus("No se pudo aplicar la visibilidad del grupo.");
     }
   }
-
   async function handleRestoreParameterVisibility() {
-    const modules = modulesRef.current;
-    if (!modules) return;
-
-    beginRenderOperation();
-
-    try {
-      await modules.visibility.showAll();
-      await waitForNextFrame();
-      setStatus("Todos los grupos del analisis estan visibles.");
-      requestViewerRefresh();
-    } catch (error) {
-      console.error("[viewer-ifc] Error restableciendo visibilidad:", error);
-      setStatus("No se pudo restablecer la visibilidad.");
-    }
+    await modulesRef.current?.visibility.clearParameters();
+    requestViewerRefresh();
   }
 
   async function handleClearParameterAnalysis() {
     beginRenderOperation();
+    await modulesRef.current?.visibility.clearParameters();
     await handleClearSmartView();
     setStatus("Analisis de parametros limpiado.");
   }
@@ -11380,19 +11335,16 @@ export function IfcViewerCanvas({
     }
   }
 
-  function handleToggleModelVisibility(key: string) {
-    setModels((prev) =>
-      prev.map((model) => {
-        if (model.key !== key) return model;
-
-        model.object.visible = !model.visible;
-        return { ...model, visible: !model.visible };
-      })
-    );
-
-    requestViewerRefresh();
+  async function handleToggleModelVisibility(key: string) {
+    const visibility = modulesRef.current?.visibility;
+    const model = models.find((entry) => entry.key === key);
+    if (!visibility || !model?.modelId) return;
+    const visible = visibility.getSnapshot().has("model:" + model.modelId);
+    const pending = visibility.setModelVisible(model.modelId, visible);
+    setModels((prev) => prev.map((entry) => entry.key === key ? { ...entry, visible } : entry));
+    try { await pending; requestViewerRefresh(); }
+    catch (error) { console.error("[viewer-ifc] Model visibility failed:", error); }
   }
-
   async function handleFocusModel(key: string) {
   const viewer = viewerRef.current;
   const target = models.find((model) => model.key === key);
@@ -11410,29 +11362,16 @@ export function IfcViewerCanvas({
 }
 
 async function handleIsolateModel(key: string) {
-  const target = models.find((model) => model.key === key);
-  if (!target) return;
-
-  try {
-    setModels((prev) =>
-      prev.map((model) => {
-        const shouldBeVisible = model.key === key;
-        model.object.visible = shouldBeVisible;
-
-        return {
-          ...model,
-          visible: shouldBeVisible,
-          isolated: shouldBeVisible
-        };
-      })
-    );
-
-    setStatus(`Modelo aislado: ${target.name}`);
-    requestViewerRefresh();
-  } catch (error) {
-    console.error("[viewer-ifc] Error isolating model:", error);
-    setStatus("Error aislando modelo. Revisa la consola.");
-  }
+  const visibility = modulesRef.current?.visibility;
+  if (!visibility || !models.some((model) => model.key === key)) return;
+  const pending = Promise.all(models.map((model) => model.modelId
+    ? visibility.setModelVisible(model.modelId, model.key === key)
+    : Promise.resolve()));
+  setModels((prev) => prev.map((model) => ({
+    ...model, visible: model.key === key, isolated: model.key === key
+  })));
+  try { await pending; requestViewerRefresh(); }
+  catch (error) { console.error("[viewer-ifc] Model isolation failed:", error); }
 }
 
   function handleRemoveModel(key: string) {
@@ -11863,6 +11802,7 @@ async function handleIsolateModel(key: string) {
   }
 
   async function handleResetView() {
+    beginRenderOperation();
     const viewer = viewerRef.current;
     const modules = modulesRef.current;
     const modelsGroup = modelsGroupRef.current;
@@ -13352,12 +13292,15 @@ async function handleIsolateModel(key: string) {
   }
 
   async function handleApplyViewpoint(viewpoint: ViewerViewpoint) {
+    const token = beginRenderOperation();
     const viewer = viewerRef.current;
     const modules = modulesRef.current;
 
     if (!viewer || !modules) return;
 
     await ensureViewpointModelsLoaded(viewpoint);
+    if (!isRenderOperationCurrent(token)) return;
+    await modules.visibility.applyHiddenMap(viewpoint.visibility.hidden);
     const linkedTopicForClipping = topics.find(
       (topic) => topic.viewpointId === viewpoint.id
     );
@@ -13399,7 +13342,7 @@ async function handleIsolateModel(key: string) {
             transition: true,
             applyClippings: false,
             clippingsVisibility: true,
-            applyVisibility: true
+            applyVisibility: false
           });
 
           if (viewpoint.display?.selectedColor) {
@@ -13419,8 +13362,7 @@ async function handleIsolateModel(key: string) {
       }
     }
 
-    // 2) Fallback: aplicar nuestro viewpoint custom
-    await modules.visibility.showAll();
+    // Viewpoint visibility composes with parameter/manual restrictions.
     await modules.selection.clearSelection();
 
     if (modules.coloring) {
@@ -13428,7 +13370,15 @@ async function handleIsolateModel(key: string) {
     }
 
     await applyViewpoint(viewer, modules, viewpoint, {
+      applyVisibility: false,
       applyModelsState: async (modelsState) => {
+        if (!isRenderOperationCurrent(token)) return;
+        await Promise.all(models.map((model) => {
+          const match = modelsState.find((item) => item.documentPath === model.source.documentPath);
+          return match && model.modelId
+            ? modules.visibility.setModelVisible(model.modelId, match.visible)
+            : Promise.resolve();
+        }));
         setModels((prev) =>
           prev.map((model) => {
             const match = modelsState.find(
@@ -13440,7 +13390,7 @@ async function handleIsolateModel(key: string) {
 
             if (!match) return model;
 
-            model.object.visible = match.visible;
+            model.object.visible = true;
 
             return {
               ...model,
@@ -14330,7 +14280,12 @@ async function handleIsolateModel(key: string) {
               onBuildPropertyIndex={handleBuildSmartViewPropertyIndex}
               onApplyColors={handleApplyParameterColors}
               onSelectBucket={handleSelectParameterBucket}
-              onSetBucketVisibility={handleSetParameterBucketVisibility}
+              onToggleBucketVisibility={handleToggleParameterBucketVisibility}
+              hiddenBucketKeys={hiddenBucketKeys}
+              propertySet={parameterPropertySet}
+              setPropertySet={setParameterPropertySet}
+              propertyName={parameterPropertyName}
+              setPropertyName={setParameterPropertyName}
               onRestoreVisibility={handleRestoreParameterVisibility}
               onClear={handleClearParameterAnalysis}
             />

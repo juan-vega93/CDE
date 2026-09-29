@@ -26,6 +26,7 @@ type CaptureViewpointExtra = {
 };
 
 type ApplyViewpointExtra = {
+  applyVisibility?: boolean;
   applyModelsState?: (
     modelsState: NonNullable<ViewerViewpoint["federated"]>["modelsState"]
   ) => Promise<void> | void;
@@ -108,6 +109,10 @@ export async function applyViewpoint(
   const controls = viewer.camera.controls;
   if (!controls) return;
 
+  if (extra?.applyVisibility !== false) {
+    await modules.visibility.applyHiddenMap(viewpoint.visibility.hidden);
+  }
+
   const [x, y, z] = viewpoint.camera.position;
   const [tx, ty, tz] = viewpoint.camera.target;
 
@@ -120,8 +125,6 @@ export async function applyViewpoint(
       console.warn("[viewpoint] error restoring clipping state:", error);
     }
   }
-
-  await modules.visibility.applyHiddenMap(viewpoint.visibility.hidden);
 
   if (viewpoint.federated?.modelsState && extra?.applyModelsState) {
     await extra.applyModelsState(viewpoint.federated.modelsState);

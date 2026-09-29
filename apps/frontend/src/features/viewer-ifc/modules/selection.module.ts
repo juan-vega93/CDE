@@ -111,7 +111,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
   }
 
   async function clearSelection() {
-    highlighter.clear("select");
+    await highlighter.clear("select");
     await refreshFragments();
   }
 
