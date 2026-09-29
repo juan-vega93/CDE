@@ -1,5 +1,6 @@
 import * as WEBIFC from "web-ifc";
 import path from "path";
+import { prepareBimIfcInput, type BimProcessingContext } from "./bim-revision-identity";
 import {
   bulkUpsertBimElements,
   getBimIndexJob,
@@ -547,7 +548,9 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
   modelId: string;
   elementCount: number;
   propertyCount: number;
+  context: BimProcessingContext;
 }> {
+  const { ifcBytes, context } = prepareBimIfcInput(input);
   const timeoutMs = getConfiguredBimIndexTimeoutMs();
   const startedAt = Date.now();
   await upsertBimIndexJob({
@@ -593,7 +596,7 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
   try {
     ifcApi.SetWasmPath(resolveWebIfcWasmPath(), true);
     await ifcApi.Init(undefined, true);
-    openedModelId = ifcApi.OpenModel(new Uint8Array(input.ifcBuffer));
+    openedModelId = ifcApi.OpenModel(ifcBytes);
     if (openedModelId < 0) throw new Error("No se pudo abrir el IFC para indexar propiedades");
 
     const localIds = getIfcElementIds(ifcApi, openedModelId);
@@ -706,7 +709,7 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
       }
     });
 
-    return { modelId: model.id, elementCount, propertyCount };
+    return { modelId: model.id, elementCount, propertyCount, context };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const cancelled = error instanceof BimIndexingCancelledError;
