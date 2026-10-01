@@ -2,90 +2,91 @@
 
 Updated: 2026-10-01 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: 67c7758636282bbfdba0884d7802143e198419f8 (entrada de Fase 3A; no merge-base)
-HEAD: commit que introduce el checkpoint 3A; resolver con `git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-01-fase-3a.md`.
+Base: 8e4a48a06adb8dd4c1d7baa40eac5aea18a43d88 (entrada de Fase 3B; no merge-base)
+HEAD: commit que introduce el checkpoint 3B; resolver con `git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-01-fase-3b.md`.
 
-Código y estado se entregan en un único commit. La referencia anterior obtiene su hash sin autorreferencia en el contenido del commit.
+Código y checkpoint se entregan en un único commit; la referencia Git evita autorreferencia del hash.
 
 ## Current phase
 
-Fase 3A — Modelo puro de Quantity Provenance. Sin conexión a consumidores de producción.
+Fase 3B — Motor puro y versionado de políticas diagnósticas de cantidades. No conectado a producción.
 
 ## Status
 
 COMPLETE
 
-Corresponde a Fase 3A, no a todo el programa BIM Core.
+Corresponde sólo al alcance de Fase 3B.
 
 ## Completed
 
-- QuantityObservation puro con BimProcessingContext canónico, localId y sources cerradas stored_parameter / ifc_quantity / viewer_geometry.
-- Identidad estructural de property/quantity, raw preservado, numeric opcional conservador y unidad explícita con evidencia o unknown.
-- Observaciones repetidas conservadas, incluidas root/children; asociación AuthoringElement opcional sin consolidar.
-- 24 pruebas nuevas y 59 de regresión BIM correctas; typecheck BFF y lint dirigido correctos.
-- Fase 2C.1 permanece cerrada; su checkpoint se conserva intacto.
+- evaluateQuantityPolicy con tres políticas v1: ENTITY_SUM, AUTHORING_ROOT_ONLY y AUTHORING_SINGLE_OBSERVATION; ninguna es política contractual OCI.
+- Filtrado por source e identidad estructural exactos; numericValue finito, sin volver a interpretar raw.
+- Unidades exactas o uniformes; unknown sólo si todas son unknown y se permite explícitamente. Sin conversión.
+- Un único contexto por evaluación; trazabilidad de toda key, incluidos rechazos y bloqueos; resultados resolved/ambiguous/not_evaluable.
+- Orden canónico para resultados deterministas; keys duplicadas generan ambigüedad, no deduplicación.
+- QuantityObservation 3A, AuthoringElement, selección y 5D productivo permanecen sin modificar.
 
 ## In progress
 
-None. Sin siguiente fase de implementación autorizada.
+None. Siguiente fase sin definir ni autorizar.
 
 ## Blocked
 
-None para el modelo puro. La fixture OCI excluye cantidades: no permite afirmar que los valores del test son Metrados reales. Es una limitación de evidencia, no un bloqueo del contrato.
+None para el motor puro. No hay cantidades OCI reales completas en la fixture; los ejemplos de reglas son sintéticos y no validan totales reales.
 
 ## Decisions
 
-- La entidad IFC es dueña original de la observación; AuthoringElement sólo puede enriquecerla en el mismo contexto.
-- Clave por contexto, localId, source, locator estructural y occurrenceIndex de entrada. Sin value como identidad, GUID inventado ni matching cross-revision.
-- Numeric sólo para números JS finitos o strings decimales simples. Locale/comma, unidades embebidas y otros casos ambiguos permanecen raw sin numeric.
-- No inferir unidades ni herencia del modelo. Explicit exige referencia a property o unidad IFC; sin evidencia, unknown.
-- Sin prioridades entre fuentes, sumas ni deduplicación. El builder no recupera datos ya perdidos por extracción.
-- Actualizar este archivo en hitos; checkpoints inmutables. Correcciones posteriores requieren otra instantánea.
+- policyId cerrado + version=1 + purpose=diagnostic; nueva semántica requerirá nueva versión. Configuración completa devuelta en el resultado.
+- ENTITY_SUM suma toda observación elegible, incluso valores iguales o varias observaciones de una entidad.
+- ROOT_ONLY exige exactamente una observación root o standalone elegible por grupo observado. Children quedan excluidos; no hay fallback al child.
+- SINGLE_OBSERVATION exige exactamente una elegible por grupo, independientemente del rol.
+- Cero candidatas por grupo es not_evaluable; varias candidatas o roles contradictorios son ambiguous. Si también hay un bloqueo, prevalece not_evaluable y se conservan todos los diagnósticos.
+- Unidades se comprueban antes de seleccionar por rol, incluidos children. Un conflicto bloquea el resultado completo: nunca se publica un subtotal como resultado resuelto.
+- El universo de grupos procede de observaciones que coinciden con el target, incluidas no numéricas; no se infieren grupos ausentes de la entrada.
+- Checkpoints previos inmutables; este estado se actualiza sólo en hitos.
 
 ## Dependencies
 
-- Identidades BIM Core: reutiliza BimProcessingContext; no reconstruye modelKey/revisionId.
-- Extractor/property indexer: futura alimentación requiere conservar tipo IFC, ocurrencia y unidad antes del aplanado. No se modifica ni se solicita implementación en esta fase.
-- Viewer: getItemsVolume ya calcula volumen, pero no entrega QuantityObservation por entidad; aquí sólo se representa la categoría, sin cambiar el viewer.
-- 5D: sigue consumiendo índice y reglas actuales. Cualquier consolidación necesita alcance posterior explícito.
-- Documents/Platform/FRAG: sin cambios ni acción pendiente para esta fase.
-- CONTROL TOWER: revisión del checkpoint y evaluación de integración con rama destino pendientes.
+- QuantityObservation/BimProcessingContext: consumo de contratos 3A existentes, sin cambiarlos.
+- AuthoringElement: las políticas authoring requieren enriquecimiento externo dentro del mismo contexto. Si falta, diagnóstico; no DB ni inferencia.
+- Extractor: futura alimentación aún requiere preservar procedencia antes del aplanado; fuera del scope actual.
+- 5D: ninguna integración. Definir/aprobar política contractual y alimentación real requiere una fase posterior.
+- Viewer/Documents/Platform/FRAG: sin cambios ni acciones externas necesarias para esta fase.
+- CONTROL TOWER: revisar evidencias y evaluar integración con rama destino; no se ha realizado merge ni push.
 
 ## Contracts / API changes
 
-Contrato interno nuevo en `apps/bff/src/services/bim-quantity-provenance.ts`: tipos, normalizeQuantityNumericValue y createQuantityObservation. Sin API pública nueva ni modificada; ningún consumidor de producción conectado.
+Nuevo contrato interno en `apps/bff/src/services/bim-quantity-policy.ts`: QuantityTarget, QuantityPolicy, QuantityEvaluation y evaluateQuantityPolicy. Sin endpoints ni consumidores productivos nuevos.
 
 ## Database changes
 
-None. Sin tablas, migraciones, persistencia, reindexación ni backfill.
+None. Sin tablas, migraciones, persistencia, reindexación o backfill.
 
 ## Tests / Evidence
 
-Ejecutados el 2026-10-01 antes del commit:
-
-- `tsx --test src/services/bim-quantity-provenance.test.ts` → 24/24.
-- `tsx --test src/services/bim-quantity-provenance.test.ts src/services/bim-authoring-resolver.test.ts src/services/bim-property-indexer.service.test.ts src/services/bim-model-identity.test.ts src/services/bim-revision-identity.test.ts` → 83/83, 0 failed, 0 skipped.
-- `npm run typecheck` en BFF → exit 0.
-- ESLint dirigido sobre ambos archivos nuevos, preset instalado eslint-config-next/typescript → 0 errores/0 warnings. BFF no tiene configuración ESLint propia; su script lint ejecuta tsc.
-- Tests/tipos: imagen cde-cde-portal-bff, src readonly, cwd /app/apps/bff, network none; tsx en /app/node_modules/.bin/tsx. Lint: imagen frontend con src BFF readonly, sin cambiar configuración.
-- Branch, HEAD y working tree verificados; diff/check y staged diff revisados antes del commit. No suites DB ni frontend repetidas: no cambian sus consumidores.
-- OCI: 187 IDs reales con valor/contexto SINTÉTICOS. Roots y children se preservan como 187 observaciones; no se demuestra una suma OCI real.
+- `tsx --test --test-reporter=spec src/services/bim-quantity-policy.test.ts src/services/bim-quantity-provenance.test.ts`: 56/56 (32 motor + 24 de 3A), 0 fallidas, 0 skipped.
+- `npm run typecheck` en BFF: exit 0.
+- ESLint dirigido a los dos archivos nuevos con preset TypeScript instalado: 0 errores y 0 warnings.
+- Docker local sin red, src readonly; tests/typecheck en cde-cde-portal-bff, cwd /app/apps/bff; lint en imagen frontend usando herramientas, sin modificar frontend.
+- Branch/HEAD/working tree comprobados; git diff --check y staged diff revisados antes del commit.
+- Sin tipos compartidos modificados; no suites PostgreSQL ni frontend necesarias para esta fase.
 
 ## Risks
 
-- El índice plano pierde tipo, unidad, raw original y multiplicidad; no reclasificarlo por nombre/valor como ifc_quantity.
-- occurrenceIndex requiere procedencia conservada; no promete estabilidad entre extracciones reordenadas.
-- El modelo puro recibe contexto tipado/evidencia extraída; no sustituye validación de inputs HTTP no confiables.
-- No hay evidencia nueva sobre 34249.502 ni se declara 2010.568 correcto.
-- Integración con rama destino no evaluada; validación visual de 2C.1 sigue pendiente, sin bloquear esta fase pura.
+- No se ha validado 34249.502 ni 2010.568 como total correcto; fixture OCI usada sólo para IDs/estructura con cantidades sintéticas.
+- Validación/enriquecimiento de entradas debe garantizar pertenencia real al AuthoringElement. El motor no la demuestra ni consulta persistencia.
+- Ausencia total de observaciones de un grupo no es detectable sin un universo externo; no inventar cobertura completa.
+- Suma JS determinista mediante orden canónico; sin aritmética decimal exacta ni redondeo de negocio. Overflow bloquea resultado.
+- ENTITY_SUM puede resolver con observaciones no numéricas excluidas: la traza y contadores explican esa elegibilidad, no certifican completitud contractual.
+- Integración con rama destino no evaluada. Validación visual previa de 2C.1 sigue pendiente, sin bloquear este motor puro.
 
 ## Next milestone
 
-Revisión del contrato y definición explícita de la siguiente fase. No iniciar automáticamente alimentación, persistencia, consolidación ni corrección 5D.
+Revisar reglas y evidencia; definir explícitamente siguiente fase. No conectar a 5D ni seleccionar una política contractual automáticamente.
 
 ## Last checkpoint
 
-Commit: el que introduce el checkpoint; resoluble mediante el comando HEAD anterior.
-Checkpoint document: [2026-10-01-fase-3a.md](../checkpoints/bim-core/2026-10-01-fase-3a.md)
+Commit: el que introduce el checkpoint, resoluble por el comando HEAD anterior.
+Checkpoint document: [2026-10-01-fase-3b.md](../checkpoints/bim-core/2026-10-01-fase-3b.md)
 
-Sin push. `docs/diagnostico-integracion-avance-geobim.md` permanece untracked, sin abrir ni modificar.
+Sin push. `docs/diagnostico-integracion-avance-geobim.md` sigue untracked y fuera del carril, sin abrir ni modificar.
