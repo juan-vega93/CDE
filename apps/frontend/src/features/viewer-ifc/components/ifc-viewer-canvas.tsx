@@ -102,6 +102,7 @@ type FederatedModelEntry = {
   key: string;
   name: string;
   source: ViewerSource;
+  bimContext?: import("../lib/viewer-bim-context").ViewerBimContext;
   object: THREE.Object3D<THREE.Object3DEventMap>;
   runtimeModel: RuntimeIfcModel;
   visible: boolean;
@@ -8784,6 +8785,7 @@ export function IfcViewerCanvas({
             key: getModelEntryKey(currentSource),
             name: currentName,
             source: currentSource,
+            bimContext: result.bimContext,
             object,
             runtimeModel: result.model as RuntimeIfcModel,
             visible: true,
@@ -11501,6 +11503,7 @@ async function handleIsolateModel(key: string) {
           key: getModelEntryKey(source),
           name,
           source,
+          bimContext: result.bimContext,
           object,
           runtimeModel: result.model as RuntimeIfcModel,
           visible: true,

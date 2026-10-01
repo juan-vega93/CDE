@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { getFragContentSha256, isFragContentSha256 } from "../services/bim-derivatives.service";
 import {
   getDocuments,
   getDocumentById,
@@ -370,6 +371,18 @@ router.get(
 
     const { buffer, contentType, fileName, size } =
       await getDocumentContent(documentPath, documentVersionId);
+
+    // Bind a resolved FRAG source to these exact response bytes, even if its path was overwritten.
+    const expectedFragSha256 = req.query.expectedFragSha256;
+    if (expectedFragSha256 !== undefined) {
+      if (!documentPath.toLowerCase().endsWith(".frag") || !isFragContentSha256(expectedFragSha256)) {
+        return res.status(400).json({ success: false, message: "Checksum FRAG invalido" });
+      }
+      if (getFragContentSha256(buffer) !== expectedFragSha256) {
+        return res.status(409).json({ success: false, message: "El artefacto FRAG cambio; vuelve a resolver la fuente del visor" });
+      }
+      res.setHeader("Cache-Control", "no-store");
+    }
 
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);

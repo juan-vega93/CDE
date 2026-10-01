@@ -6,7 +6,8 @@ import type {
 import { mapWorkflowStatusToUiStatus } from "./status-mapping.service";
 import { NextcloudAdapter } from "../adapters/nextcloud.adapter";
 import { generateFragFromBuffer, generateFragFromDocument } from "./fragments.service";
-import { indexBimPropertiesFromBuffer } from "./bim-property-indexer.service";
+import { indexBimPropertiesFromBuffer, indexPreparedBimProperties } from "./bim-property-indexer.service";
+import { prepareBimIfcInput, type BimProcessingContext } from "./bim-revision-identity";
 import path from "path";
 import { getWorkPackageLinks } from "./work-package-links.service";
 import type { FolderItem } from "../types/folder.types";
@@ -21,6 +22,8 @@ import {
 } from "../db/bim-index-store";
 import {
   buildBimDerivativeId,
+  getDerivativeBimContext,
+  getFragContentSha256,
   deleteBimDerivativesForSource,
   findBimDerivative,
   findBimDerivativeRecord,
@@ -203,7 +206,8 @@ type DocumentExplorerCacheEntry = {
 const documentExplorerCache = new Map<string, DocumentExplorerCacheEntry>();
 const fragGenerationQueue: string[] = [];
 const queuedFragGenerationPaths = new Set<string>();
-const activeFragGenerationPromises = new Map<string, Promise<{ fragPath: string }>>();
+type GeneratedFrag = { fragPath: string; bimContext?: BimProcessingContext; fragContentSha256?: string };
+const activeFragGenerationPromises = new Map<string, Promise<GeneratedFrag>>();
 const activeBimPropertyIndexPromises = new Map<string, Promise<{
   documentPath: string;
   status: "ready";
@@ -997,6 +1001,7 @@ export async function getViewerSource(
   modelUrl: string;
   fragPath?: string;
   generated?: boolean;
+  bimContext?: BimProcessingContext;
 }> {
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
   const BFF_BASE_URL =
@@ -1049,12 +1054,15 @@ export async function getViewerSource(
           derivativeStatus: "generated",
           phase: "frag-viewer-source"
         });
+        const bimContext = getDerivativeBimContext(registeredDerivative);
+        const integrityQuery = bimContext ? `&expectedFragSha256=${registeredDerivative.fragContentSha256}` : "";
         return {
           kind: "frag",
+          ...(bimContext ? { bimContext } : {}),
           fragPath: registeredDerivative.fragPath,
           modelUrl: `${BFF_BASE_URL}/api/documents/content?path=${encodeURIComponent(
             registeredDerivative.fragPath
-          )}`
+          )}${integrityQuery}`
         };
       }
     } catch (error) {
@@ -1081,6 +1089,8 @@ export async function getViewerSource(
         versionKey: identity.versionKey,
         fragPath,
         status: "generated",
+        sourceBimRevisionId: null,
+        fragContentSha256: null,
         generatedAt: new Date().toISOString()
       });
 
@@ -1114,15 +1124,10 @@ export async function getViewerSource(
   if (shouldAutoGenerate) {
     try {
       const result = await generateAndStoreFrag(documentPath);
-
-      return {
-        kind: "frag",
-        fragPath: result.fragPath,
-        generated: true,
-        modelUrl: `${BFF_BASE_URL}/api/documents/content?path=${encodeURIComponent(
-          result.fragPath
-        )}`
-      };
+      const bimContext = result.bimContext;
+      return { kind: "frag", fragPath: result.fragPath, generated: true,
+        ...(bimContext ? { bimContext } : {}),
+        modelUrl: `${BFF_BASE_URL}/api/documents/content?path=${encodeURIComponent(result.fragPath)}${bimContext ? `&expectedFragSha256=${result.fragContentSha256}` : ""}` };
     } catch (error) {
       console.warn(
         "[documents.service] No se pudo regenerar FRAG, fallback a IFC:",
@@ -1143,9 +1148,7 @@ export async function getViewerSource(
   };
 }
 
-export async function generateAndStoreFrag(documentPath: string): Promise<{
-  fragPath: string;
-}> {
+export async function generateAndStoreFrag(documentPath: string): Promise<GeneratedFrag> {
   const cleanDocumentPath = normalizePortalPath(documentPath);
   const activeGeneration = activeFragGenerationPromises.get(cleanDocumentPath);
 
@@ -1161,9 +1164,7 @@ export async function generateAndStoreFrag(documentPath: string): Promise<{
   return generationPromise;
 }
 
-async function generateAndStoreFragInternal(documentPath: string): Promise<{
-  fragPath: string;
-}> {
+async function generateAndStoreFragInternal(documentPath: string): Promise<GeneratedFrag> {
   const useMock = process.env.USE_NEXTCLOUD_MOCK !== "false";
 
   if (!documentPath.trim()) {
@@ -1190,7 +1191,9 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
           derivativeStatus: "generated",
           phase: "frag-existing"
         });
-        return { fragPath: existingDerivative.fragPath };
+        const bimContext = getDerivativeBimContext(existingDerivative);
+        return { fragPath: existingDerivative.fragPath,
+          ...(bimContext ? { bimContext, fragContentSha256: existingDerivative.fragContentSha256! } : {}) };
       }
     } catch {
       // Si no se puede comprobar, regeneramos para dejar el derivado consistente.
@@ -1207,7 +1210,9 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
     versionKey: identity.versionKey,
     fragPath: identity.fragPath,
     status: "pending",
-    generatedAt: null
+    generatedAt: null,
+    sourceBimRevisionId: null,
+    fragContentSha256: null
   });
 
   void registerBimIndexCandidate(identity, {
@@ -1217,8 +1222,11 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
 
   const fragPath = identity.fragPath;
   try {
-        const ifcFile = await getDocumentContent(documentPath);
-    const fragBytes = await generateFragFromBuffer(ifcFile.buffer);
+    const ifcFile = await getDocumentContent(documentPath);
+    const prepared = prepareBimIfcInput({ projectCode: identity.projectCode, documentPath: identity.sourcePath, ifcBuffer: ifcFile.buffer });
+    const fragBytes = await generateFragFromBuffer(prepared.ifcBytes);
+    const sourceBimRevisionId = prepared.context.revisionId;
+    const fragContentSha256 = getFragContentSha256(fragBytes);
 
     await ensureDerivedFolderExists(fragPath);
 
@@ -1233,6 +1241,8 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
       JSON.stringify(
         {
           derivativeId: identity.id,
+          sourceBimRevisionId,
+          fragContentSha256,
           sourcePath: identity.sourcePath,
           sourceName: identity.sourceName,
           fileId: identity.fileId,
@@ -1257,6 +1267,8 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
       versionKey: identity.versionKey,
       fragPath,
       status: "generated",
+      sourceBimRevisionId,
+      fragContentSha256,
       generatedAt: new Date().toISOString()
     });
 
@@ -1265,9 +1277,13 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
       phase: "frag-generated"
     });
 
-    void indexDocumentBimProperties(documentPath).catch((error) => {
+    void indexPreparedBimProperties({ projectCode: identity.projectCode, documentPath: identity.sourcePath,
+      documentName: identity.sourceName, documentId: identity.fileId ?? undefined,
+      modelKey: getBimIndexModelKey(identity), sourceHash: getBimIndexSourceHash(identity), sourceVersion: identity.versionId
+    }, prepared).catch((error) => {
       console.warn("[documents.service] No se pudo indexar propiedades BIM en servidor:", error);
     });
+    return { fragPath, bimContext: prepared.context, fragContentSha256 };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     upsertBimDerivative({
@@ -1293,7 +1309,6 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<{
     throw error;
   }
 
-  return { fragPath };
 }
 
 export async function moveDerivedFolderForFolderMove(

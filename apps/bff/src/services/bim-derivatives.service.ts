@@ -1,6 +1,8 @@
 import { createHash } from "crypto";
 import path from "path";
 import { readJsonFile, writeJsonFile } from "../utils/json-store";
+import { isBimRevisionId, type BimProcessingContext } from "./bim-revision-identity";
+import { toCanonicalBimModelKey } from "./bim-model-identity";
 
 export type BimDerivativeStatus = "generated" | "failed" | "pending";
 
@@ -17,7 +19,28 @@ export type BimDerivativeRecord = {
   error?: string | null;
   generatedAt?: string | null;
   updatedAt: string;
+  sourceBimRevisionId?: string | null;
+  /** Integrity of the generated FRAG bytes, never an IFC revision identity. */
+  fragContentSha256?: string | null;
 };
+
+export function isFragContentSha256(value: unknown): value is string {
+  return typeof value === "string" && value.length === 64 && /^[0-9a-f]+$/.test(value);
+}
+
+export function getDerivativeBimContext(record: BimDerivativeRecord): BimProcessingContext | undefined {
+  if (record.status !== "generated" || !isBimRevisionId(record.sourceBimRevisionId) ||
+    !isFragContentSha256(record.fragContentSha256)) return undefined;
+  try {
+    const modelKey = toCanonicalBimModelKey(record.sourcePath);
+    if (!record.projectCode.trim()) return undefined;
+    return { projectCode: record.projectCode, modelKey, revisionId: record.sourceBimRevisionId };
+  } catch { return undefined; }
+}
+
+export function getFragContentSha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
 
 type BimDerivativesStore = {
   records: BimDerivativeRecord[];

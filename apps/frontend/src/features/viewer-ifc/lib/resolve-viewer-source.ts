@@ -1,4 +1,5 @@
 import { bffFetch, getBffUrl } from "@/services/bff-client";
+import type { ViewerBimContext } from "./viewer-bim-context";
 
 type ResolveViewerSourceParams = {
   documentId?: string;
@@ -44,6 +45,7 @@ export type ViewerSource =
     }
   | {
       kind: "frag";
+      bimContext?: ViewerBimContext;
       modelUrl: string;
       metadataUrl?: string;
       documentPath?: string;

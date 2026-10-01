@@ -1,5 +1,6 @@
 import * as WEBIFC from "web-ifc";
 import path from "path";
+import { toCanonicalBimModelKey } from "./bim-model-identity";
 import { prepareBimIfcInput, type BimProcessingContext } from "./bim-revision-identity";
 import { resolveAuthoringElements, type AuthoringEntityFact } from "./bim-authoring-resolver";
 import { readAuthoringGeometry, readAuthoringRelations } from "./bim-authoring-extraction";
@@ -576,7 +577,18 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
   propertyCount: number;
   context: BimProcessingContext;
 }> {
-  const { ifcBytes, context } = prepareBimIfcInput(input);
+  return indexPreparedBimProperties(input, prepareBimIfcInput(input));
+}
+
+/** Internal coordinated pipeline: prepared bytes must remain owned and unchanged by the caller. */
+export async function indexPreparedBimProperties(
+  input: Omit<IndexBimPropertiesInput, "ifcBuffer">,
+  prepared: ReturnType<typeof prepareBimIfcInput>
+): Promise<{ modelId: string; elementCount: number; propertyCount: number; context: BimProcessingContext }> {
+  const { ifcBytes, context } = prepared;
+  if (context.projectCode !== input.projectCode || context.modelKey !== toCanonicalBimModelKey(input.documentPath)) {
+    throw new Error("Prepared IFC context does not match indexing scope");
+  }
   const timeoutMs = getConfiguredBimIndexTimeoutMs();
   const startedAt = Date.now();
   await upsertBimIndexJob({

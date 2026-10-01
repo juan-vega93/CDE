@@ -3,6 +3,7 @@ import * as OBC from "@thatopen/components";
 import type { ViewerSource } from "@/features/viewer-ifc/lib/resolve-viewer-source";
 import { initializeFragments } from "@/features/viewer-ifc/lib/fragments";
 import { bffAssetFetch } from "@/services/bff-client";
+import { getLoadedBimContext } from "./viewer-bim-context";
 
 type LoadViewerModelParams = {
   components: OBC.Components;
@@ -139,6 +140,7 @@ export async function loadViewerModel({
 
     return {
       model,
+      bimContext: getLoadedBimContext(source),
       fragments,
       workerUrl
     };
@@ -175,6 +177,7 @@ export async function loadViewerModel({
 
   return {
     model,
+    bimContext: undefined,
     fragments,
     workerUrl
   };
