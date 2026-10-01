@@ -9,7 +9,7 @@ export type QuantityOrigin =
       propertySetLocalId?: number; propertyLocalId?: number; valueField?: "NominalValue" }>
   | Readonly<{ source: "ifc_quantity"; quantitySet: string; quantityName: string;
       quantityType: "IfcQuantityVolume" | "IfcQuantityArea" | "IfcQuantityLength" |
-        "IfcQuantityCount" | "IfcQuantityWeight" | "IfcQuantityTime";
+        "IfcQuantityCount" | "IfcQuantityWeight" | "IfcQuantityTime" | "IfcQuantityNumber";
       quantitySetLocalId?: number; quantityLocalId?: number }>
   | Readonly<{ source: "viewer_geometry"; metric: "volume" | "area";
       calculation: string }>;

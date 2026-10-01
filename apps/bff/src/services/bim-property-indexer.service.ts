@@ -5,6 +5,7 @@ import { prepareBimIfcInput, type BimProcessingContext } from "./bim-revision-id
 import { resolveAuthoringElements, type AuthoringEntityFact } from "./bim-authoring-resolver";
 import { readAuthoringGeometry, readAuthoringRelations } from "./bim-authoring-extraction";
 import { replaceAuthoringElementIndex } from "../db/bim-authoring-store";
+import { extractIfcQuantityObservations } from "./bim-quantity-extraction";
 import {
   bulkUpsertBimElements,
   getBimIndexJob,
@@ -576,6 +577,8 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
   elementCount: number;
   propertyCount: number;
   context: BimProcessingContext;
+  quantityObservations: ReturnType<typeof extractIfcQuantityObservations>["quantityObservations"];
+  quantityExtractionDiagnostics: ReturnType<typeof extractIfcQuantityObservations>["quantityExtractionDiagnostics"];
 }> {
   return indexPreparedBimProperties(input, prepareBimIfcInput(input));
 }
@@ -584,7 +587,7 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
 export async function indexPreparedBimProperties(
   input: Omit<IndexBimPropertiesInput, "ifcBuffer">,
   prepared: ReturnType<typeof prepareBimIfcInput>
-): Promise<{ modelId: string; elementCount: number; propertyCount: number; context: BimProcessingContext }> {
+): Promise<{ modelId: string; elementCount: number; propertyCount: number; context: BimProcessingContext } & ReturnType<typeof extractIfcQuantityObservations>> {
   const { ifcBytes, context } = prepared;
   if (context.projectCode !== input.projectCode || context.modelKey !== toCanonicalBimModelKey(input.documentPath)) {
     throw new Error("Prepared IFC context does not match indexing scope");
@@ -721,6 +724,7 @@ export async function indexPreparedBimProperties(
     if (finalJob && finalJob.status !== "processing") throw new Error(`El job BIM dejó de estar activo (estado: ${finalJob.status}).`);
     if (timeoutMs !== undefined && Date.now() - startedAt >= timeoutMs) throw new BimIndexingTimeoutError(timeoutMs);
     const authoringIndex = resolveAuthoringElements({ context, entities: authoringEntities, relations: authoringRelations });
+    const quantities = extractIfcQuantityObservations(ifcApi, openedModelId, context, authoringIndex);
     await replaceAuthoringElementIndex(authoringIndex);
 
     await upsertBimModel({
@@ -759,7 +763,7 @@ export async function indexPreparedBimProperties(
       }
     });
 
-    return { modelId: model.id, elementCount, propertyCount, context };
+    return { modelId: model.id, elementCount, propertyCount, context, ...quantities };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const cancelled = error instanceof BimIndexingCancelledError;

@@ -8,6 +8,7 @@ import { resolveAuthoringElementByLocalId, getAuthoringElementMembers } from "..
 import { indexBimPropertiesFromBuffer } from "./bim-property-indexer.service";
 import { prepareBimIfcInput } from "./bim-revision-identity";
 import { createAuthoringIfcFixture } from "./fixtures/bim-authoring-ifc.fixture";
+import { createQuantityIfcFixture } from "./fixtures/bim-quantity-ifc.fixture";
 
 const enabled = Boolean(process.env.DATABASE_URL?.trim());
 const projectCode = `TEST-AUTHORING-PIPELINE-${randomUUID()}`;
@@ -136,6 +137,16 @@ test("IFC pipeline feeds the strict authoring index", { skip: !enabled }, async 
     assert.equal(result.elementCount, 0);
     assert.equal((await pool.query("select count(*)::int as n from cde_bim_authoring_contexts where project_code=$1 and revision_id=$2", [projectCode, result.context.revisionId])).rows[0].n, 1);
     assert.equal((await counts(result.context.revisionId)).members, 0);
+    assert.equal((await getBimIndexJob(input))?.status, "ready");
+  });
+  await t.test("real quantity fixture returns observations while authoring persistence stays revision-scoped", async () => {
+    const result = await indexBimPropertiesFromBuffer({ ...input, ifcBuffer: createQuantityIfcFixture() });
+    const metrado = result.quantityObservations.filter((o) => o.origin.source === "stored_parameter" && o.origin.propertySet === "Datos_Partida");
+    assert.equal(metrado.length, 9);
+    assert.equal(metrado.find((o) => o.localId === 303708)?.authoring?.identityKey, "aggregate:303839");
+    assert.equal((await resolveAuthoringElementByLocalId(result.context, 303708))?.identityKey, "aggregate:303839");
+    assert.ok(result.quantityObservations.every((o) => o.context.revisionId === result.context.revisionId));
+    assert.deepEqual(result.quantityExtractionDiagnostics, []);
     assert.equal((await getBimIndexJob(input))?.status, "ready");
   });
 });
