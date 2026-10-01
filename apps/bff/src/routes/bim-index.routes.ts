@@ -1,4 +1,5 @@
 import { Router, type Response } from "express";
+import bimAuthoringRoutes from "./bim-authoring.routes";
 import { indexDocumentBimProperties } from "../services/documents.service";
 import {
   bulkUpsertBimElements,
@@ -28,6 +29,8 @@ import {
 } from "../db/bim-index-store";
 
 const router = Router();
+// Inherits authenticateRequest and projectBimIndexRoute from the application mount.
+router.use("/authoring", bimAuthoringRoutes);
 
 const MAX_ELEMENTS_PER_BATCH = 1200;
 const METERING_EXPORT_PAGE_SIZE = 500;

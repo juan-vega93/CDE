@@ -4,6 +4,11 @@ import { toCanonicalBimModelKey, type CanonicalBimModelKey } from "./bim-model-i
 declare const bimRevisionId: unique symbol;
 export type BimRevisionId = string & { readonly [bimRevisionId]: true };
 
+/** Validate an already computed revision identity; never hash transport metadata. */
+export function isBimRevisionId(value: unknown): value is BimRevisionId {
+  return typeof value === "string" && value.length === 71 && /^sha256:[0-9a-f]{64}$/.test(value);
+}
+
 export type BimProcessingContext = Readonly<{
   projectCode: string;
   modelKey: CanonicalBimModelKey;

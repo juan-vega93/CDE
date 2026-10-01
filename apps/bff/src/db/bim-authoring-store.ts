@@ -1,11 +1,11 @@
 import { getDatabasePool } from "./client";
 import { toCanonicalBimModelKey } from "../services/bim-model-identity";
-import type { BimProcessingContext } from "../services/bim-revision-identity";
+import { isBimRevisionId, type BimProcessingContext } from "../services/bim-revision-identity";
 import type { AuthoringElementResolution, AuthoringModelContext, AuthoringResolution } from "../services/bim-authoring-resolver";
 
 function contextValues(context: AuthoringModelContext): string[] {
   if (!context.projectCode.trim() || toCanonicalBimModelKey(context.modelKey) !== context.modelKey ||
-    !/^sha256:[0-9a-f]{64}$/.test(context.revisionId)) {
+    !isBimRevisionId(context.revisionId)) {
     throw new Error("A strict canonical BIM revision context is required");
   }
   return [context.projectCode, context.modelKey, context.revisionId];
