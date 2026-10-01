@@ -8445,6 +8445,11 @@ export function IfcViewerCanvas({
           components,
           world
         });
+        modules.selection.setBimContextResolver((runtimeModelId) =>
+          loadedModelResultsRef.current.find((result) =>
+            String(result.model.modelId) === runtimeModelId
+          )?.bimContext
+        );
         
         const raycaster = components.get(OBC.Raycasters).get(world);       
                 
@@ -8863,6 +8868,7 @@ export function IfcViewerCanvas({
         console.warn("[viewer-ifc] Error limpiando clipping planes antes de dispose:", error);
       }
       modulesRef.current?.visibility.dispose();
+      modulesRef.current?.selection.dispose();
       modulesRef.current = null;
       setVisibilityPolicy(null);
       viewerRef.current = null;
@@ -11605,7 +11611,7 @@ async function handleIsolateModel(key: string) {
     const modules = modulesRef.current;
     if (!modules) return;
 
-    const map = modules.selection.getSelectionModelIdMap();
+    const map = modules.selection.getPropertiesModelIdMap();
     if (Object.keys(map).length === 0) return;
 
     const selectedCount = countModelIdMapElements(map);

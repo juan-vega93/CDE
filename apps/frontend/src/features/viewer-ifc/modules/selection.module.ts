@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
+import { attachLogicalAuthoringSelection } from "../lib/logical-authoring-selection";
+import { resolveAuthoringSelection } from "../lib/resolve-authoring-selection";
+import type { ViewerBimContext } from "../lib/viewer-bim-context";
 
 type SetupSelectionParams = {
   components: OBC.Components;
@@ -12,13 +15,14 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
 
   const highlighter = components.get(OBF.Highlighter);
   const fragments = components.get(OBC.FragmentsManager);
+  let getBimContext: (runtimeModelId: string) => ViewerBimContext | undefined = () => undefined;
 
   async function refreshFragments() {
     await fragments.core.update(true);
   }
 
   async function getSelectedContainmentData(): Promise<Record<string, unknown>[]> {
-    const modelIdMap = getSelectionModelIdMap();
+    const modelIdMap = getPropertiesModelIdMap();
     const results: Record<string, unknown>[] = [];
 
     for (const [modelId, localIds] of Object.entries(modelIdMap)) {
@@ -48,7 +52,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
   }
 
   async function getSelectedAssociationsData(): Promise<Record<string, unknown>[]> {
-    const modelIdMap = getSelectionModelIdMap();
+    const modelIdMap = getPropertiesModelIdMap();
     const results: Record<string, unknown>[] = [];
 
     for (const [modelId, localIds] of Object.entries(modelIdMap)) {
@@ -87,6 +91,27 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
     }
   });
 
+  const logicalSelection = attachLogicalAuthoringSelection({
+    highlighter,
+    resolve: resolveAuthoringSelection,
+    pick: async () => {
+      // The public declaration also covers plain Three intersections; only a
+      // Fragments hit has the runtime identity used by Highlighter.highlight.
+      const hit = await components.get(OBC.Raycasters).get(world).castRay() as
+        (THREE.Intersection & { localId?: number; fragments?: { modelId: string } }) | null;
+      return typeof hit?.localId !== "number" || !hit.fragments?.modelId
+        ? undefined : { runtimeModelId: hit.fragments.modelId, localId: hit.localId };
+    },
+    getContext: (id) => fragments.list.has(id) ? getBimContext(id) : undefined,
+    reportError: (error) => console.warn("[viewer-ifc] Authoring selection resolution failed:", error)
+  });
+  const canvas = world.renderer?.three.domElement;
+  canvas?.addEventListener("mouseup", logicalSelection.onMouseUp, true);
+
+  function getPropertiesModelIdMap(): OBC.ModelIdMap {
+    return logicalSelection.getPrimaryModelIdMap() ?? getSelectionModelIdMap();
+  }
+
   highlighter.events.select.onHighlight.add(() => {
     void refreshFragments();
   });
@@ -116,7 +141,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
   }
 
   async function getSelectedItemsData(): Promise<Record<string, unknown>[]> {
-    const modelIdMap = getSelectionModelIdMap();
+    const modelIdMap = getPropertiesModelIdMap();
     const results: Record<string, unknown>[] = [];
 
     for (const [modelId, localIds] of Object.entries(modelIdMap)) {
@@ -158,6 +183,15 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
   return {
     highlighter,
     getSelectionModelIdMap,
+    getPropertiesModelIdMap,
+    getLogicalSelection: logicalSelection.getLogicalSelection,
+    setBimContextResolver(resolver: typeof getBimContext) {
+      getBimContext = resolver;
+    },
+    dispose() {
+      canvas?.removeEventListener("mouseup", logicalSelection.onMouseUp, true);
+      logicalSelection.dispose();
+    },
     getSelectedItemsData,
     getSelectedContainmentData,
     getSelectedAssociationsData,

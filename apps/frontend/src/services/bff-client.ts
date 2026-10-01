@@ -52,13 +52,14 @@ async function getSessionAccessToken(): Promise<string | undefined> {
 
 type BffFetchOptions = RequestInit & {
   accessToken?: string;
+  retryUnauthorized?: boolean;
 };
 
 export async function bffFetch(
   path: string,
   options: BffFetchOptions = {}
 ): Promise<Response> {
-  const { accessToken: accessTokenOverride, ...fetchOptions } = options;
+  const { accessToken: accessTokenOverride, retryUnauthorized = true, ...fetchOptions } = options;
   let accessToken = accessTokenOverride || (await getSessionAccessToken());
 
   const buildHeaders = () => {
@@ -82,7 +83,7 @@ export async function bffFetch(
     cache: fetchOptions.cache ?? "no-store"
   });
 
-  if (response.status === 401) {
+  if (response.status === 401 && retryUnauthorized) {
     cachedAccessToken = null;
     accessToken = await waitForSessionAccessToken();
     response = await fetch(`${RESOLVED_BFF_URL}${path}`, {
