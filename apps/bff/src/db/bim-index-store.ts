@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { getDatabasePool, isDatabaseEnabled } from "./client";
+import { getBimReadDatabase, lockBimIndexScope, withBimPublishedRead } from "./bim-index-generations";
 
 export type BimModelStatus = "pending" | "processing" | "ready" | "failed" | "stale";
 export type BimPropertyValueType = "text" | "number" | "boolean" | "date" | "json";
@@ -20,6 +21,7 @@ export function getBimModelTerminalStatus(jobStatus: BimIndexJobStatus): BimMode
 }
 
 export type UpsertBimIndexJobInput = {
+  generationId?: string;
   projectCode: string;
   documentPath: string;
   sourceHash?: string;
@@ -59,6 +61,7 @@ function toIndexJob(row: BimIndexJobRow) {
 }
 
 export type UpsertBimModelInput = {
+  preserveExisting?: boolean;
   projectCode: string;
   documentId?: string;
   documentPath: string;
@@ -403,15 +406,15 @@ function valueColumns(property: BimElementPropertyInput) {
   };
 }
 
-async function upsertPropertySet(client: PoolClient, modelId: string, name: string) {
+async function upsertPropertySet(client: PoolClient, modelId: string, name: string, generationId?: string) {
   const result = await client.query<{ id: string }>(
     `
-      insert into cde_bim_property_sets (bim_model_id, name)
-      values ($1, $2)
-      on conflict (bim_model_id, name) do update set name = excluded.name
+      insert into cde_bim_property_sets (bim_model_id, name, generation_id)
+      values ($1, $2, $3)
+      on conflict ${generationId ? "(generation_id, name) where generation_id is not null" : "(bim_model_id, name) where generation_id is null"} do update set name = excluded.name
       returning id
     `,
-    [modelId, name]
+    [modelId, name, generationId ?? null]
   );
   return result.rows[0].id;
 }
@@ -437,8 +440,17 @@ async function upsertProperty(
 
 export async function upsertBimModel(input: UpsertBimModelInput) {
   ensureBimDatabaseEnabled();
-  const result = await getDatabasePool().query<BimModelRow>(
-    `
+  const client = await getDatabasePool().connect();
+  try {
+    await client.query("begin");
+    const scopeId = await lockBimIndexScope(client, input.projectCode, input.documentPath);
+    const canonical = await client.query("select id from cde_bim_index_generations where scope_id=$1 limit 1", [scopeId]);
+    if (input.preserveExisting || canonical.rowCount) {
+      const existing = await client.query<BimModelRow>(`select * from cde_bim_models where project_code=$1 and document_path=$2 and coalesce(source_hash,'')=coalesce($3,'')`, [input.projectCode, input.documentPath, normalizeText(input.sourceHash)]);
+      if (existing.rows[0]) { await client.query("commit"); return toModel(existing.rows[0]); }
+    }
+    const result = await client.query<BimModelRow>(
+      `
       insert into cde_bim_models (
         project_code,
         document_id,
@@ -473,32 +485,35 @@ export async function upsertBimModel(input: UpsertBimModelInput) {
         updated_at = now()
       returning *
     `,
-    [
-      input.projectCode,
-      normalizeText(input.documentId),
-      input.documentPath,
-      input.documentName,
-      normalizeText(input.sourceVersion),
-      normalizeText(input.sourceHash),
-      input.modelKey,
-      normalizeText(input.runtimeModelId),
-      input.status ?? "pending",
-      input.elementCount ?? 0,
-      input.propertyCount ?? 0,
-      normalizeText(input.errorMessage),
-      JSON.stringify(input.metadata ?? {})
-    ]
-  );
+      [
+        input.projectCode,
+        normalizeText(input.documentId),
+        input.documentPath,
+        input.documentName,
+        normalizeText(input.sourceVersion),
+        normalizeText(input.sourceHash),
+        input.modelKey,
+        normalizeText(input.runtimeModelId),
+        input.status ?? "pending",
+        input.elementCount ?? 0,
+        input.propertyCount ?? 0,
+        normalizeText(input.errorMessage),
+        JSON.stringify(input.metadata ?? {})
+      ]
+    );
 
-  return toModel(result.rows[0]);
+    await client.query("commit");
+    return toModel(result.rows[0]);
+  } catch (error) { await client.query("rollback"); throw error; }
+  finally { client.release(); }
 }
 
-export async function listBimModels(projectCode: string) {
+async function read_listBimModels(projectCode: string) {
   ensureBimDatabaseEnabled();
-  const result = await getDatabasePool().query<BimModelRow>(
+  const result = await getBimReadDatabase().query<BimModelRow>(
     `
       select *
-      from cde_bim_models
+      from cde_bim_visible_models
       where project_code = $1
       order by document_name asc, updated_at desc
     `,
@@ -563,7 +578,7 @@ export async function getBimModelByDocument(input: {
   const result = await getDatabasePool().query<BimModelRow>(
     `
       select *
-      from cde_bim_models
+      from cde_bim_visible_models
       where project_code = $1
         and document_path = $2
         and ($3::text is null or coalesce(source_hash, '') = $3)
@@ -587,7 +602,7 @@ function getCompatibleBimModelKeys(value: string): string[] {
   );
 }
 
-export async function getBimElementProperties(input: {
+async function read_getBimElementProperties(input: {
   projectCode: string;
   modelKey: string;
   localId: number;
@@ -598,10 +613,10 @@ export async function getBimElementProperties(input: {
     return null;
   }
 
-  const modelResult = await getDatabasePool().query<BimModelRow>(
+  const modelResult = await getBimReadDatabase().query<BimModelRow>(
     `
       select models.*
-      from cde_bim_models models
+      from cde_bim_visible_models models
       where models.project_code = $1
         and (
           lower(models.model_key) = any($2::text[])
@@ -617,7 +632,7 @@ export async function getBimElementProperties(input: {
   const model = modelResult.rows[0];
   if (!model) return null;
 
-  const elementResult = await getDatabasePool().query<{
+  const elementResult = await getBimReadDatabase().query<{
     id: string;
     local_id: number;
     global_id: string | null;
@@ -627,7 +642,7 @@ export async function getBimElementProperties(input: {
   }>(
     `
       select id, local_id, global_id, ifc_class, name, metadata
-      from cde_bim_elements
+      from cde_bim_visible_elements
       where bim_model_id = $1 and local_id = $2
       limit 1
     `,
@@ -636,7 +651,7 @@ export async function getBimElementProperties(input: {
   const element = elementResult.rows[0];
   if (!element) return null;
 
-  const propertyResult = await getDatabasePool().query<{
+  const propertyResult = await getBimReadDatabase().query<{
     set_name: string;
     property_name: string;
     value_type: BimPropertyValueType;
@@ -701,7 +716,7 @@ export async function getBimElementProperties(input: {
 export async function bulkUpsertBimElements(
   modelId: string,
   elements: BimElementInput[],
-  options: { finalize?: boolean } = {}
+  options: { finalize?: boolean; generationId?: string } = {}
 ) {
   ensureBimDatabaseEnabled();
   const pool = getDatabasePool();
@@ -709,6 +724,17 @@ export async function bulkUpsertBimElements(
 
   try {
     await client.query("begin");
+    const model = (await client.query<{ project_code: string; document_path: string }>("select project_code,document_path from cde_bim_models where id=$1", [modelId])).rows[0];
+    if (!model) throw new Error("BIM_MODEL_NOT_FOUND");
+    if (options.generationId) {
+      const generation = await client.query(`select id from cde_bim_index_generations where id=$1 and bim_model_id=$2 and status='building' for update`, [options.generationId, modelId]);
+      if (!generation.rowCount) throw new Error("GENERATION_NOT_BUILDING");
+      if (options.finalize) throw new Error("EXPLICIT_GENERATION_PUBLICATION_REQUIRED");
+    } else {
+      const scopeId = await lockBimIndexScope(client, model.project_code, model.document_path);
+      const canonical = await client.query("select id from cde_bim_index_generations where scope_id=$1 limit 1", [scopeId]);
+      if (canonical.rowCount) throw new Error("GENERATION_CONTEXT_REQUIRED");
+    }
     let propertyValueCount = 0;
     const propertySetIdByName = new Map<string, string>();
     const propertyIdBySetAndName = new Map<string, string>();
@@ -717,7 +743,7 @@ export async function bulkUpsertBimElements(
       const cached = propertySetIdByName.get(setName);
       if (cached) return cached;
 
-      const id = await upsertPropertySet(client, modelId, setName);
+      const id = await upsertPropertySet(client, modelId, setName, options.generationId);
       propertySetIdByName.set(setName, id);
       return id;
     }
@@ -751,10 +777,11 @@ export async function bulkUpsertBimElements(
             element_identity,
             has_geometry,
             metadata,
+            generation_id,
             updated_at
           )
-          values ($1, $2, $3, $4, $5, $6, $7, $8::text[], $9, $10, $11::jsonb, now())
-          on conflict (bim_model_id, local_id)
+          values ($1, $2, $3, $4, $5, $6, $7, $8::text[], $9, $10, $11::jsonb, $12, now())
+          on conflict ${options.generationId ? "(generation_id, local_id) where generation_id is not null" : "(bim_model_id, local_id) where generation_id is null"}
           do update set
             global_id = excluded.global_id,
             ifc_class = excluded.ifc_class,
@@ -779,7 +806,8 @@ export async function bulkUpsertBimElements(
           element.spatialPath ?? [],
           normalizeText(element.elementIdentity),
           element.hasGeometry ?? true,
-          JSON.stringify(element.metadata ?? {})
+          JSON.stringify(element.metadata ?? {}),
+          options.generationId ?? null
         ]
       );
 
@@ -828,7 +856,7 @@ export async function bulkUpsertBimElements(
       }
     }
 
-    await client.query(
+    if (!options.generationId) await client.query(
       `
         update cde_bim_models
         set
@@ -864,9 +892,12 @@ export async function bulkUpsertBimElements(
 
 export async function upsertBimIndexJob(input: UpsertBimIndexJobInput) {
   ensureBimDatabaseEnabled();
-  const pool = getDatabasePool();
-  const result = await pool.query<BimIndexJobRow>(
-    `
+  const pool = await getDatabasePool().connect();
+  try {
+    await pool.query("begin");
+    const scopeId = await lockBimIndexScope(pool, input.projectCode, input.documentPath);
+    const result = await pool.query<BimIndexJobRow>(
+      `
       insert into cde_bim_index_jobs (
         project_code,
         document_path,
@@ -876,6 +907,7 @@ export async function upsertBimIndexJob(input: UpsertBimIndexJobInput) {
         finished_at,
         error_message,
         stats,
+        generation_id,
         updated_at
       )
       values (
@@ -887,11 +919,12 @@ export async function upsertBimIndexJob(input: UpsertBimIndexJobInput) {
         case when $4 in ('ready', 'failed', 'cancelled') then now() else null end,
         $5,
         $6::jsonb,
+        $7,
         now()
       )
       on conflict (project_code, document_path, coalesce(source_hash, ''))
       do update set
-        status = excluded.status,
+        status = excluded.status, generation_id = coalesce(excluded.generation_id,cde_bim_index_jobs.generation_id),
         started_at = case
           when excluded.status = 'processing' then coalesce(cde_bim_index_jobs.started_at, now())
           else cde_bim_index_jobs.started_at
@@ -903,25 +936,36 @@ export async function upsertBimIndexJob(input: UpsertBimIndexJobInput) {
         error_message = excluded.error_message,
         stats = excluded.stats,
         updated_at = now()
+      where (excluded.generation_id is null and cde_bim_index_jobs.generation_id is null)
+        or (excluded.generation_id is not null and (cde_bim_index_jobs.generation_id is null or
+          (select sequence from cde_bim_index_generations where id=excluded.generation_id) >=
+          (select sequence from cde_bim_index_generations where id=cde_bim_index_jobs.generation_id)))
+        or (excluded.generation_id is null and excluded.status='cancelled' and cde_bim_index_jobs.status='processing')
       returning *
     `,
-    [
-      input.projectCode,
-      input.documentPath,
-      normalizeText(input.sourceHash),
-      input.status,
-      normalizeText(input.errorMessage),
-      JSON.stringify(input.stats ?? {})
-    ]
-  );
-  const job = toIndexJob(result.rows[0]);
+      [
+        input.projectCode,
+        input.documentPath,
+        normalizeText(input.sourceHash),
+        input.status,
+        normalizeText(input.errorMessage),
+        JSON.stringify(input.stats ?? {}),
+        input.generationId ?? null
+      ]
+    );
+    if (!result.rows[0]) {
+      const existing = await pool.query<BimIndexJobRow>("select * from cde_bim_index_jobs where project_code=$1 and document_path=$2 and coalesce(source_hash,'')=coalesce($3,'')", [input.projectCode, input.documentPath, normalizeText(input.sourceHash)]);
+      await pool.query("commit");
+      return toIndexJob(existing.rows[0]);
+    }
+    const job = toIndexJob(result.rows[0]);
 
-  // A cancelled/failed job must never leave its matching model in the
-  // ambiguous `processing` state. We intentionally do not infer `ready` from
-  // a job alone: only the indexer can declare a fully persisted model ready.
-  if (input.status === "failed" || input.status === "cancelled") {
-    await pool.query(
-      `
+    // A cancelled/failed job must never leave its matching model in the
+    // ambiguous `processing` state. We intentionally do not infer `ready` from
+    // a job alone: only the indexer can declare a fully persisted model ready.
+    if (input.status === "failed" || input.status === "cancelled") {
+      await pool.query(
+        `
         update cde_bim_models
         set
           status = 'failed',
@@ -931,18 +975,23 @@ export async function upsertBimIndexJob(input: UpsertBimIndexJobInput) {
           and document_path = $3
           and coalesce(source_hash, '') = coalesce($4, '')
           and status in ('processing', 'ready')
+          and not exists(select 1 from cde_bim_index_generations where scope_id=$5)
       `,
-      [
-        normalizeText(input.errorMessage) ??
+        [
+          normalizeText(input.errorMessage) ??
           (input.status === "cancelled" ? "Indexación BIM cancelada." : "Indexación BIM fallida."),
-        input.projectCode,
-        input.documentPath,
-        normalizeText(input.sourceHash)
-      ]
-    );
-  }
+          input.projectCode,
+          input.documentPath,
+          normalizeText(input.sourceHash),
+          scopeId
+        ]
+      );
+    }
 
-  return job;
+    await pool.query("commit");
+    return job;
+  } catch (error) { await pool.query("rollback"); throw error; }
+  finally { pool.release(); }
 }
 
 export async function getBimIndexJob(input: {
@@ -1008,6 +1057,7 @@ export async function recoverInterruptedBimIndexJobs(
           and model.document_path = job.document_path
           and coalesce(model.source_hash, '') = coalesce(job.source_hash, '')
           and model.status in ('processing', 'ready')
+          and not exists(select 1 from cde_bim_index_generations g join cde_bim_index_scopes s on s.id=g.scope_id where s.project_code=model.project_code collate "C" and s.canonical_model_key=cde_bim_document_key(model.document_path) collate "C")
           and job.status in ('failed', 'cancelled')
           and ($2::text is null or job.project_code = $2)
         returning model.id
@@ -1045,10 +1095,10 @@ export async function listBimIndexJobs(input: {
   return result.rows.map(toIndexJob);
 }
 
-export async function getBimIndexOverview(projectCode: string) {
+async function read_getBimIndexOverview(projectCode: string) {
   ensureBimDatabaseEnabled();
   const [models, jobs, snapshots] = await Promise.all([
-    getDatabasePool().query<{
+    getBimReadDatabase().query<{
       total: string;
       ready: string;
       pending: string;
@@ -1070,12 +1120,12 @@ export async function getBimIndexOverview(projectCode: string) {
           coalesce(sum(element_count), 0)::text as elements,
           coalesce(sum(property_count), 0)::text as properties,
           max(indexed_at) as last_indexed_at
-        from cde_bim_models
+        from cde_bim_visible_models
         where project_code = $1
       `,
       [projectCode]
     ),
-    getDatabasePool().query<{
+    getBimReadDatabase().query<{
       total: string;
       pending: string;
       processing: string;
@@ -1098,7 +1148,7 @@ export async function getBimIndexOverview(projectCode: string) {
       `,
       [projectCode]
     ),
-    getDatabasePool().query<{
+    getBimReadDatabase().query<{
       total: string;
       last_updated_at: Date | null;
     }>(
@@ -1142,7 +1192,7 @@ export async function getBimIndexOverview(projectCode: string) {
     }
   };
 }
-export async function getBimPropertyCatalog(input: {
+async function read_getBimPropertyCatalog(input: {
   projectCode: string;
   modelIds?: string[];
   modelKeys?: string[];
@@ -1150,7 +1200,7 @@ export async function getBimPropertyCatalog(input: {
 }): Promise<BimPropertyCatalog> {
   ensureBimDatabaseEnabled();
   const maxValues = Math.max(10, Math.min(input.maxValuesPerProperty ?? 100, 500));
-  const pool = getDatabasePool();
+  const pool = getBimReadDatabase();
   const params = [
     input.projectCode,
     input.modelIds?.length ? input.modelIds : null,
@@ -1168,8 +1218,8 @@ export async function getBimPropertyCatalog(input: {
         from cde_bim_property_values pv
         join cde_bim_properties properties on properties.id = pv.property_id
         join cde_bim_property_sets sets on sets.id = properties.property_set_id
-        join cde_bim_elements elements on elements.id = pv.bim_element_id
-        join cde_bim_models models on models.id = elements.bim_model_id
+        join cde_bim_visible_elements elements on elements.id = pv.bim_element_id
+        join cde_bim_visible_models models on models.id = elements.bim_model_id
         where models.project_code = $1
           and models.status = 'ready'
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
@@ -1193,8 +1243,8 @@ export async function getBimPropertyCatalog(input: {
           from cde_bim_property_values pv
           join cde_bim_properties properties on properties.id = pv.property_id
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
-          join cde_bim_elements elements on elements.id = pv.bim_element_id
-          join cde_bim_models models on models.id = elements.bim_model_id
+          join cde_bim_visible_elements elements on elements.id = pv.bim_element_id
+          join cde_bim_visible_models models on models.id = elements.bim_model_id
           where models.project_code = $1
             and models.status = 'ready'
             and ($2::uuid[] is null or models.id = any($2::uuid[]))
@@ -1296,7 +1346,7 @@ function normalizePropertyRef(ref: BimPropertyRef | undefined): BimPropertyRef |
   return setName && propertyName ? { setName, propertyName } : null;
 }
 
-export async function getBimCost5DAggregation(
+async function read_getBimCost5DAggregation(
   input: BimCost5DAggregationInput
 ): Promise<BimCost5DAggregation> {
   ensureBimDatabaseEnabled();
@@ -1325,7 +1375,7 @@ export async function getBimCost5DAggregation(
     limit
   ];
 
-  const result = await getDatabasePool().query<{
+  const result = await getBimReadDatabase().query<{
     item_id: string | null;
     item_name: string | null;
     item_unit: string | null;
@@ -1341,8 +1391,8 @@ export async function getBimCost5DAggregation(
           ${BIM_MODEL_KEY_ALIAS_SQL} as model_key,
           elements.id as element_id,
           elements.local_id
-        from cde_bim_elements elements
-        join cde_bim_models models on models.id = elements.bim_model_id
+        from cde_bim_visible_elements elements
+        join cde_bim_visible_models models on models.id = elements.bim_model_id
         where models.project_code = $1
           and models.status = 'ready'
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
@@ -1511,7 +1561,7 @@ export async function getBimCost5DAggregation(
   };
 }
 
-export async function getBimCost5DMeteringRows(
+async function read_getBimCost5DMeteringRows(
   input: BimCost5DMeteringRowsInput
 ): Promise<BimCost5DMeteringRowsResult> {
   ensureBimDatabaseEnabled();
@@ -1564,11 +1614,11 @@ export async function getBimCost5DMeteringRows(
           )
   `;
 
-  const countResult = await getDatabasePool().query<{ total: string }>(
+  const countResult = await getBimReadDatabase().query<{ total: string }>(
     `
       select count(*)::text as total
-      from cde_bim_elements elements
-      join cde_bim_models models on models.id = elements.bim_model_id
+      from cde_bim_visible_elements elements
+      join cde_bim_visible_models models on models.id = elements.bim_model_id
       where ${whereSql}
     `,
     commonParams
@@ -1585,7 +1635,7 @@ export async function getBimCost5DMeteringRows(
     propertyName: column.ref.propertyName
   }));
 
-  const result = await getDatabasePool().query<{
+  const result = await getBimReadDatabase().query<{
     model_id: string;
     model_key: string;
     document_name: string;
@@ -1611,8 +1661,8 @@ export async function getBimCost5DMeteringRows(
           models.id as model_id,
           ${BIM_MODEL_KEY_ALIAS_SQL} as model_key,
           models.document_name
-        from cde_bim_elements elements
-        join cde_bim_models models on models.id = elements.bim_model_id
+        from cde_bim_visible_elements elements
+        join cde_bim_visible_models models on models.id = elements.bim_model_id
         where ${whereSql}
         order by
           models.document_name asc,
@@ -1698,7 +1748,7 @@ export async function getBimCost5DMeteringRows(
     })
   };
 }
-export async function getBimPropertyIndex(input: {
+async function read_getBimPropertyIndex(input: {
   projectCode: string;
   modelIds?: string[];
   modelKeys?: string[];
@@ -1708,7 +1758,7 @@ export async function getBimPropertyIndex(input: {
   const maxValues = Math.max(25, Math.min(input.maxValuesPerProperty ?? 450, 1000));
   const maxLocalIdsPerBucket = 12000;
   const maxLocalIdsPerModel = 100000;
-  const result = await getDatabasePool().query<{
+  const result = await getBimReadDatabase().query<{
     model_key: string;
     local_id: number;
     element_identity: string | null;
@@ -1734,8 +1784,8 @@ export async function getBimPropertyIndex(input: {
       from cde_bim_property_values pv
       join cde_bim_properties properties on properties.id = pv.property_id
       join cde_bim_property_sets sets on sets.id = properties.property_set_id
-      join cde_bim_elements elements on elements.id = pv.bim_element_id
-      join cde_bim_models models on models.id = elements.bim_model_id
+      join cde_bim_visible_elements elements on elements.id = pv.bim_element_id
+      join cde_bim_visible_models models on models.id = elements.bim_model_id
       where models.project_code = $1
         and ($2::uuid[] is null or models.id = any($2::uuid[]))
         and ${BIM_MODEL_KEY_FILTER_SQL}
@@ -1850,7 +1900,7 @@ export async function getBimPropertyIndex(input: {
   };
 }
 
-export async function getBimPropertySummary(
+async function read_getBimPropertySummary(
   input: BimPropertySummaryInput
 ): Promise<BimPropertySummaryResult> {
   ensureBimDatabaseEnabled();
@@ -1871,7 +1921,7 @@ export async function getBimPropertySummary(
   const maxBuckets = Math.max(1, Math.min(input.maxBuckets ?? 120, 300));
   const maxIdsPerBucket = Math.max(1, Math.min(input.maxIdsPerBucket ?? 12000, 50000));
 
-  const result = await getDatabasePool().query<{
+  const result = await getBimReadDatabase().query<{
     value_key: string;
     total_count: string;
     model_key: string | null;
@@ -1884,7 +1934,7 @@ export async function getBimPropertySummary(
     `
       with selected_models as (
         select id, ${BIM_MODEL_KEY_ALIAS_SQL} as model_key
-        from cde_bim_models models
+        from cde_bim_visible_models models
         where project_code = $1
           and models.status = 'ready'
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
@@ -1900,7 +1950,7 @@ export async function getBimPropertySummary(
           elements.level_name,
           elements.element_identity,
           models.model_key
-        from cde_bim_elements elements
+        from cde_bim_visible_elements elements
         join selected_models models on models.id = elements.bim_model_id
         where (
             $6::text = ''
@@ -2051,7 +2101,7 @@ export async function getBimPropertySummary(
     buckets: Array.from(bucketMap.values())
   };
 }
-export async function queryBimPropertyLocalIds(
+async function read_queryBimPropertyLocalIds(
   input: BimPropertyLocalIdsQueryInput
 ): Promise<Record<string, number[]>> {
   ensureBimDatabaseEnabled();
@@ -2061,7 +2111,7 @@ export async function queryBimPropertyLocalIds(
   const ifcClass = normalizeText(input.ifcClass);
   const levelName = normalizeText(input.levelName);
 
-  const result = await getDatabasePool().query<{
+  const result = await getBimReadDatabase().query<{
     model_key: string;
     local_ids: number[];
   }>(
@@ -2077,8 +2127,8 @@ export async function queryBimPropertyLocalIds(
         from cde_bim_property_values pv
         join cde_bim_properties properties on properties.id = pv.property_id
         join cde_bim_property_sets sets on sets.id = properties.property_set_id
-        join cde_bim_elements elements on elements.id = pv.bim_element_id
-        join cde_bim_models models on models.id = elements.bim_model_id
+        join cde_bim_visible_elements elements on elements.id = pv.bim_element_id
+        join cde_bim_visible_models models on models.id = elements.bim_model_id
         where models.project_code = $1
           and models.status = 'ready'
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
@@ -2132,7 +2182,7 @@ export async function queryBimPropertyLocalIds(
  * PostgreSQL index. A row is returned for every element matching the model,
  * class and level filters; `matches` is the audit outcome for that element.
  */
-export async function queryBimPropertyAuditRecords(
+async function read_queryBimPropertyAuditRecords(
   input: BimPropertyAuditQueryInput
 ): Promise<BimPropertyAuditQueryRecord[]> {
   ensureBimDatabaseEnabled();
@@ -2143,7 +2193,7 @@ export async function queryBimPropertyAuditRecords(
   const levelName = normalizeText(input.levelName);
   const expectedValue = input.value?.trim() ?? "";
 
-  const result = await getDatabasePool().query<{
+  const result = await getBimReadDatabase().query<{
     model_key: string;
     local_id: number;
     global_id: string | null;
@@ -2156,7 +2206,7 @@ export async function queryBimPropertyAuditRecords(
     `
       with selected_models as (
         select id, ${BIM_MODEL_KEY_ALIAS_SQL} as model_key
-        from cde_bim_models models
+        from cde_bim_visible_models models
         where models.project_code = $1
           and models.status = 'ready'
           and ($2::uuid[] is null or models.id = any($2::uuid[]))
@@ -2170,7 +2220,7 @@ export async function queryBimPropertyAuditRecords(
           elements.ifc_class,
           elements.name,
           elements.level_name
-        from cde_bim_elements elements
+        from cde_bim_visible_elements elements
         join selected_models on selected_models.id = elements.bim_model_id
         where (
             $6::text is null
@@ -2280,6 +2330,10 @@ export async function getBimPropertyIndexSnapshot(input: {
       select index_payload
       from cde_bim_property_index_snapshots
       where project_code = $1 and signature = $2
+        and not exists (
+          select 1 from cde_bim_index_generations g join cde_bim_index_scopes s on s.id=g.scope_id
+          where s.project_code=$1 collate "C" and g.status='published'
+        )
       limit 1
     `,
     [input.projectCode, input.signature]
@@ -2328,4 +2382,54 @@ export async function upsertBimPropertyIndexSnapshot(input: {
     id: result.rows[0].id,
     updatedAt: result.rows[0].updated_at.toISOString()
   };
+}
+
+export async function listBimModels(...args: Parameters<typeof read_listBimModels>) {
+  ensureBimDatabaseEnabled();
+  return withBimPublishedRead(() => read_listBimModels(...args));
+}
+
+export async function getBimElementProperties(...args: Parameters<typeof read_getBimElementProperties>) {
+  ensureBimDatabaseEnabled();
+  return withBimPublishedRead(() => read_getBimElementProperties(...args));
+}
+
+export async function getBimIndexOverview(...args: Parameters<typeof read_getBimIndexOverview>) {
+  ensureBimDatabaseEnabled();
+  return withBimPublishedRead(() => read_getBimIndexOverview(...args));
+}
+
+export async function getBimPropertyCatalog(...args: Parameters<typeof read_getBimPropertyCatalog>) {
+  ensureBimDatabaseEnabled();
+  return withBimPublishedRead(() => read_getBimPropertyCatalog(...args));
+}
+
+export async function getBimCost5DAggregation(...args: Parameters<typeof read_getBimCost5DAggregation>) {
+  ensureBimDatabaseEnabled();
+  return withBimPublishedRead(() => read_getBimCost5DAggregation(...args));
+}
+
+export async function getBimCost5DMeteringRows(...args: Parameters<typeof read_getBimCost5DMeteringRows>) {
+  ensureBimDatabaseEnabled();
+  return withBimPublishedRead(() => read_getBimCost5DMeteringRows(...args));
+}
+
+export async function getBimPropertyIndex(...args: Parameters<typeof read_getBimPropertyIndex>) {
+  ensureBimDatabaseEnabled();
+  return withBimPublishedRead(() => read_getBimPropertyIndex(...args));
+}
+
+export async function getBimPropertySummary(...args: Parameters<typeof read_getBimPropertySummary>) {
+  ensureBimDatabaseEnabled();
+  return withBimPublishedRead(() => read_getBimPropertySummary(...args));
+}
+
+export async function queryBimPropertyLocalIds(...args: Parameters<typeof read_queryBimPropertyLocalIds>) {
+  ensureBimDatabaseEnabled();
+  return withBimPublishedRead(() => read_queryBimPropertyLocalIds(...args));
+}
+
+export async function queryBimPropertyAuditRecords(...args: Parameters<typeof read_queryBimPropertyAuditRecords>) {
+  ensureBimDatabaseEnabled();
+  return withBimPublishedRead(() => read_queryBimPropertyAuditRecords(...args));
 }

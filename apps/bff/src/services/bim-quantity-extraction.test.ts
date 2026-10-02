@@ -65,6 +65,11 @@ test("real IFC pipeline extracts provenance alongside unchanged legacy output", 
   const resolve = t.mock.fn(resolver.resolveAuthoringElements);
   let disabled = true;
   t.mock.method(modules, "_load", function (request: string, ...args: unknown[]) {
+    if (request === "../db/bim-index-generations") return {
+      createBimIndexGeneration: async () => "test-generation",
+      failBimIndexGeneration: async () => undefined,
+      publishBimIndexGeneration: async () => undefined
+    };
     if (request === "../db/bim-index-store") return { ...store,
       upsertBimIndexJob: async () => undefined, getBimIndexJob: async () => ({ status: "processing" }),
       upsertBimModel: async () => ({ id: "test-model" }),

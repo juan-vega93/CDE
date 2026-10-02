@@ -64,6 +64,7 @@ test("IFC pipeline feeds the strict authoring index", { skip: !enabled }, async 
     assert.deepEqual(storey?.memberLocalIds, [15]);
     assert.deepEqual(storey?.graphicalLocalIds, []);
     assert.equal((await getBimModelByDocument(input))?.status, "ready");
+    assert.equal((await getBimModelByDocument(input))?.metadata.bimRevisionId,expected.revisionId);
     assert.equal((await getBimIndexJob(input))?.status, "ready");
   });
 
@@ -97,6 +98,9 @@ test("IFC pipeline feeds the strict authoring index", { skip: !enabled }, async 
   });
 
   await t.test("authoring store failure rolls back replacement, propagates and prevents ready", async () => {
+    const publishedRows = async () => (await pool.query(`select e.* from cde_bim_visible_elements e
+      join cde_bim_models m on m.id=e.bim_model_id where m.project_code=$1 order by e.local_id`, [projectCode])).rows;
+    const before = await publishedRows();
     // Test-only trigger in disposable PostgreSQL; no production injection hooks.
     await pool.query(`create function test_authoring_pipeline_failure() returns trigger language plpgsql as $$
       begin
@@ -110,7 +114,9 @@ test("IFC pipeline feeds the strict authoring index", { skip: !enabled }, async 
     try {
       await assert.rejects(indexBimPropertiesFromBuffer(input), /controlled authoring pipeline persistence failure/);
       assert.deepEqual(await counts(), expectedCounts);
-      assert.equal((await getBimModelByDocument(input))?.status, "failed");
+      assert.deepEqual(await publishedRows(), before);
+      // The failed attempt cannot invalidate the previously published Property Index.
+      assert.equal((await getBimModelByDocument(input))?.status, "ready");
       assert.equal((await getBimIndexJob(input))?.status, "failed");
     } finally {
       await pool.query("drop trigger test_authoring_pipeline_failure on cde_bim_authoring_elements; drop function test_authoring_pipeline_failure()");

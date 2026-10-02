@@ -14,6 +14,7 @@ async function main() {
   await runMigration("issue-schema.sql");
   await runMigration("metadata-schema.sql");
   await runMigration("bim-schema.sql");
+  await runMigration("bim-index-generations.sql");
   await getDatabasePool().end();
 }
 

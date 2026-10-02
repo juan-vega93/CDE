@@ -96,6 +96,9 @@ function sendRouteError(res: Response, error: unknown) {
   }
 
   const message = error instanceof Error ? error.message : String(error);
+  if (message === "GENERATION_CONTEXT_REQUIRED") {
+    return res.status(409).json({ success: false, message });
+  }
   console.error("[bim-index.routes] error:", error);
   return res.status(500).json({
     success: false,

@@ -5,7 +5,7 @@ import type {
 } from "../types/document.types";
 import { mapWorkflowStatusToUiStatus } from "./status-mapping.service";
 import { NextcloudAdapter } from "../adapters/nextcloud.adapter";
-import { generateFragFromBuffer, generateFragFromDocument } from "./fragments.service";
+import { generateFragFromBuffer } from "./fragments.service";
 import { indexBimPropertiesFromBuffer, indexPreparedBimProperties } from "./bim-property-indexer.service";
 import { prepareBimIfcInput, type BimProcessingContext } from "./bim-revision-identity";
 import path from "path";
@@ -82,6 +82,7 @@ async function registerBimIndexCandidate(
     const modelKey = getBimIndexModelKey(identity);
     const modelStatus = mapDerivativeStatusToBimStatus(input.derivativeStatus);
     const model = await upsertBimModel({
+      preserveExisting: true,
       projectCode: identity.projectCode,
       documentId: identity.fileId ?? undefined,
       documentPath: identity.sourcePath,

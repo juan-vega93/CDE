@@ -1,89 +1,77 @@
 # BIM CORE
 
-## Estado vigente — Fase 3D.1 (2026-10-02)
-
-**COMPLETE**. IFCLOGICAL corregido; MBM real validado mediante indexación limpia en PostgreSQL temporal. 11.362 entidades, 212.375 propiedades y 191.481 observaciones; cero diagnósticos de extracción. Dos custom properties en dos muros verificadas hasta SmartView, QA y lookup/discovery 5D. Causa del incidente: **STALE_INDEX**, con localIds de otra exportación en el índice real marcado ready. Necesita despliegue del código actualizado y reindexación controlada posterior del MBM; NO ejecutados. No hay evidencia de STALE_CACHE.
-
-158 pruebas automatizadas finales correctas, cero fallidas/skipped; auditoría MBM completada, typecheck y lint dirigido conformes. Código productivo modificado sólo en extracción lógica; sin schema, frontend, políticas ni agregación 5D.
-
-Último checkpoint vigente: [2026-10-02-fase-3d1.md](../checkpoints/bim-core/2026-10-02-fase-3d1.md). HEAD del checkpoint: commit que introduce ese archivo (`git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-02-fase-3d1.md`). Base: 5f02e7ae1dfa3ec34f23e6bcded54934b51a068a.
-
-Dependencias: operación controlada de despliegue/reindexación y refresco de sesión para actualizar la instancia; no cambios de responsabilidades de otros frentes. Siguiente hito: revisión del resultado por CONTROL TOWER. No retomar 3E ni iniciar otra fase.
-
-Se conserva íntegramente debajo el estado previo solicitado de 3E y su checkpoint inmutable. Su error del extractor está corregido por 3D.1; **la auditoría 3E permanece sin completar ni repetir**. La preservación explícita de este bloque responde a la instrucción de no sobrescribir la trazabilidad previa.
-
 Updated: 2026-10-02 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: 5f02e7ae1dfa3ec34f23e6bcded54934b51a068a (entrada Fase 3E)
-HEAD: 5f02e7ae1dfa3ec34f23e6bcded54934b51a068a
+Base: de474d7e91588b76040477b32085fd77116aa2fa
+HEAD: commit que incorpora el checkpoint 2026-10-02-fase-3d2a-publicacion-atomica.md; resolver con git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-02-fase-3d2a-publicacion-atomica.md
 
 ## Current phase
 
-Fase 3E — Auditoría Quantity Provenance del IFC OCI real. Detenida por condición de parada explícita.
+Fase 3D.2A — Property Index generacional con publicación atómica. Implementada y validada en PostgreSQL temporal; sin despliegue ni reindexación real.
 
 ## Status
 
-BLOCKED
+COMPLETE
 
 ## Completed
 
-- Fase 3D cerrada en HEAD: cobertura del Property Index y 151 pruebas documentadas en su checkpoint. Evidencia histórica, no extrapolable a OCI.
-- IFC original E4 verificado: 50.201.895 bytes, SHA-256 120e9127c5be1cb11541f458968448d7031fcd63b72709af3cf276d6c3b9733c.
-- Pipeline actual ejecutado en contenedor sin red y persistencia interceptada en memoria. Recorrido 9114/9114; extracción Quantity Provenance abortada.
-- Causa localizada: #558365, Pset_BuildingStoreyCommon.AboveGround = IFCLOGICAL(.U.). No corregida ni omitida.
-- Cero cambios funcionales, DB real, reindexación, FRAG, commit o push. PostgreSQL efímero eliminado sin ejecutar baseline.
+- Staging aislado por generación y revisión; publicación transaccional con lock PostgreSQL por modelo exacto y secuencia DB contra stale writers.
+- Bridge legacy opaco hasta primera publicación canónica; después todos los readers comparten la generación publicada, con snapshot transaccional por respuesta.
+- Pipeline IFC y ruta posterior a FRAG integrados; bulk legacy rechazado con 409 cuando existe contexto generacional. Authoring validado por revisión y memberships antes de publicar.
+- 213 pruebas correctas, cero fallos/skipped; typecheck, build, lint dirigido y migración idempotente correctos.
+- Bloqueos anteriores 3D.2/3D.2A resueltos por la autorización explícita del bridge. Sus checkpoints pendientes se preservan sin modificación y se incorporan al mismo checkpoint Git.
 
 ## In progress
 
-None. Sin procesos de auditoría pendientes.
+None. Fase cerrada; no iniciar 3D.2B automáticamente.
 
 ## Blocked
 
-extractIfcQuantityObservations lanza Unsupported scalar at IFC observation 558365 (bim-quantity-extraction.ts:110). Impide completar el pipeline global y obtener resultados verificables del universo, baseline y policies. Necesita autorización de fase correctiva BIM CORE y repetición posterior de 3E; no depende de otro frente.
+None para esta fase. Operación real y siguientes auditorías requieren autorización posterior.
 
 ## Decisions
 
-- No cambiar 5D ni decidir política contractual en fase diagnóstica.
-- No reemplazar IFC por fixtures ni usar DB legacy como fuente de verdad.
-- No omitir propiedades ni limitar extractor para eludir la condición de parada.
-- BASELINE_NOT_REPRODUCED provisional significa resultado incompleto, no cardinalidad distinta demostrada.
-- Stored parameter, IFC quantity y viewer geometry siguen separados.
+- legacy = opaque fallback; canonical generation = authoritative once published.
+- UUID identifica intento DB; BimRevisionId existente identifica bytes IFC. No reinterpretar source_hash ni inferir revisión desde timestamps.
+- Definitions por generación porque value_type es mutable; valores heredan scope mediante elemento, con trigger contra referencias cruzadas.
+- B más antigua no sustituye C ya publicada. C más nueva todavía building no invalida por sí sola una publicación completa anterior.
+- Cantidades almacenadas, Qto y geometría siguen separadas. ROOT_ONLY no adoptado.
 
 ## Dependencies
 
-- BIM CORE: autorización de corrección del extractor antes de repetir 3E.
-- 5D/semántica contractual: pendiente evidencia real; consumidores sin cambios.
-- Documents, Platform, viewer y FRAG: sin acciones requeridas.
-- CONTROL TOWER: checkpoint de bloqueo disponible, no listo para integración.
+- Operación/despliegue: aplicar schema y BFF coordinadamente, retirar procesos de la versión anterior antes de activar escritores nuevos; no ejecutado aquí.
+- CONTROL TOWER: checkpoint disponible para revisión, sin push.
+- Frontend: reconciliación 3D.2B diferida. 5D y selección Authoring requieren validación posterior con índice limpio. Sin acciones nuevas en Platform.
 
 ## Contracts / API changes
 
-None en 3E.
+Endpoints y payloads principales conservados. Bulk legacy devuelve 409 GENERATION_CONTEXT_REQUIRED en scopes generacionales, incluso building/failed. Snapshots legacy de proyecto no se sirven después de publicación canónica. Metadata del modelo publicado incorpora bimRevisionId y propertyIndexGenerationId. Sin endpoints nuevos.
 
 ## Database changes
 
-None. Stores del runner interceptados en memoria; DB productiva no utilizada.
+bim-index-generations.sql: scopes/generations, generation_id en elements/sets/jobs, unicidad parcial legacy y por generación, published único por scope, vistas compartidas de lectura y validación de scope de valores. Sin backfill ni borrado de datos legacy. Authoring y QuantityObservation sin schema nuevo.
 
 ## Tests / Evidence
 
-- tsx audit-runner.ts: 1 ejecución real, 0 completadas, 1 fallida, exit 1; progreso 9114/9114 antes del error.
-- IFC #558365 -> Pset #558366 -> relación #558367 -> IfcBuildingStorey #46. Registro original y stack conservados en checkpoint.
-- Web-ifc emitió Invalid IFC Line y No basis found for brep; impacto en partida no verificado.
-- Baseline SQL, policies, matriz y comparación 64/120 no completados. No se ejecutaron suites nuevas.
-- Branch, HEAD, working tree y diff checks verificados antes del checkpoint.
+- tsx --test --test-concurrency=1 src/db/bim-*.test.ts src/services/bim-*.test.ts src/routes/bim-authoring.routes.integration.test.ts: 213/213, fallidos 0, skipped 0, PostgreSQL 16 temporal real.
+- npm run typecheck y npm run build (BFF): exit 0.
+- ESLint dirigido sobre nueve TypeScript modificados: exit 0.
+- tsx src/db/migrate.ts dos veces: exit 0; además test de schema legacy preexistente.
+- git diff --check y git diff --cached --check verificados antes del checkpoint; verificación del staging antes del commit.
 
 ## Risks
 
-- Un valor no soportado en un nivel del modelo aborta la extracción global aunque sea ajeno a la partida.
-- No verificados en 3E: 187 elementos, 9 AuthoringElements, 34249.502, 2010.568 ni efecto real 64/120.
+Legacy conserva anomalías hasta publicación canónica. Staging/superseded aumentan almacenamiento; sin scheduler de limpieza. Rendimiento MBM no medido en esta fase. Despliegue requiere coordinación con schema: binarios antiguos no son consumidores generation-aware. Fallo después del publish y antes de job-ready no revierte una publicación válida; reconciliación operativa pendiente de 3D.2B.
+
+Referencia externa suministrada, no recalculada: partida 0.2.1.3; Revit 1874.96 m3; CDE observado aproximadamente 25303.05 m3, 1115 elementos / 115 geométricos. Revisiones pueden diferir; no es prueba de una policy correcta.
 
 ## Next milestone
 
-Revisar bloqueo y autorizar corrección separada; repetir auditoría después. No iniciar otra fase automáticamente.
+Revisión del checkpoint; autorizar después despliegue/reindexación controlada MBM. Posteriormente auditar 5D y selección de membresías gráficas. No ejecutado ni iniciado.
 
 ## Last checkpoint
 
-Commit: 5f02e7ae1dfa3ec34f23e6bcded54934b51a068a (código auditado; docs 3E sin commit).
-Checkpoint document: [2026-10-02-fase-3e.md](../checkpoints/bim-core/2026-10-02-fase-3e.md)
+Commit: commit que añade el documento siguiente (resolución git indicada en HEAD; evita autorreferencia imposible del hash dentro del propio commit).
+Checkpoint document: [2026-10-02-fase-3d2a-publicacion-atomica.md](../checkpoints/bim-core/2026-10-02-fase-3d2a-publicacion-atomica.md)
 
-Documento GeoBIM ajeno permanece untracked, sin abrir, modificar ni stagear.
+Historial preservado: [3D.2](../checkpoints/bim-core/2026-10-02-fase-3d2.md), [bloqueo inicial 3D.2A](../checkpoints/bim-core/2026-10-02-fase-3d2a.md), [3D.1](../checkpoints/bim-core/2026-10-02-fase-3d1.md). 3E no retomada. Documento GeoBIM ajeno no abierto/tocado/stageado.

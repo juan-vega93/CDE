@@ -1,3 +1,4 @@
+import { createBimIndexGeneration, failBimIndexGeneration, publishBimIndexGeneration } from "../db/bim-index-generations";
 import * as WEBIFC from "web-ifc";
 import path from "path";
 import { toCanonicalBimModelKey } from "./bim-model-identity";
@@ -608,26 +609,8 @@ export async function indexPreparedBimProperties(
   }
   const timeoutMs = getConfiguredBimIndexTimeoutMs();
   const startedAt = Date.now();
-  await upsertBimIndexJob({
-    projectCode: input.projectCode,
-    documentPath: input.documentPath,
-    sourceHash: input.sourceHash,
-    status: "processing",
-    stats: {
-      stage: "server-web-ifc",
-      modelKey: input.modelKey,
-      indexVersion: BIM_INDEX_SCHEMA_VERSION,
-      processedElements: 0,
-      totalElements: 0,
-      propertyCount: 0,
-      progressPercent: 0,
-      currentBatch: 0,
-      totalBatches: 0,
-      progressUpdatedAt: new Date().toISOString()
-    }
-  });
-
   const model = await upsertBimModel({
+    preserveExisting: true,
     projectCode: input.projectCode,
     documentId: input.documentId,
     documentPath: input.documentPath,
@@ -643,12 +626,38 @@ export async function indexPreparedBimProperties(
     }
   });
 
+  const generationId = await createBimIndexGeneration(model.id, context, {
+    sourceKind: "nextcloud-ifc", indexSource: "server-web-ifc", indexVersion: BIM_INDEX_SCHEMA_VERSION
+  }, {
+    documentId: input.documentId, documentName: input.documentName,
+    sourceVersion: input.sourceVersion, modelKey: input.modelKey
+  });
   const ifcApi = new WEBIFC.IfcAPI();
   let openedModelId = -1;
   let elementCount = 0;
   let propertyCount = 0;
 
   try {
+    await upsertBimIndexJob({
+      generationId,
+      projectCode: input.projectCode,
+      documentPath: input.documentPath,
+      sourceHash: input.sourceHash,
+      status: "processing",
+      stats: {
+        stage: "server-web-ifc",
+        modelKey: input.modelKey,
+        indexVersion: BIM_INDEX_SCHEMA_VERSION,
+        processedElements: 0,
+        totalElements: 0,
+        propertyCount: 0,
+        progressPercent: 0,
+        currentBatch: 0,
+        totalBatches: 0,
+        progressUpdatedAt: new Date().toISOString()
+      }
+    });
+
     ifcApi.SetWasmPath(resolveWebIfcWasmPath(), true);
     await ifcApi.Init(undefined, true);
     openedModelId = ifcApi.OpenModel(ifcBytes);
@@ -660,6 +669,7 @@ export async function indexPreparedBimProperties(
     const totalBatches = Math.ceil(localIds.length / SERVER_INDEX_BATCH_SIZE);
 
     await upsertBimIndexJob({
+      generationId,
       projectCode: input.projectCode,
       documentPath: input.documentPath,
       sourceHash: input.sourceHash,
@@ -708,11 +718,12 @@ export async function indexPreparedBimProperties(
         await bulkUpsertBimElements(model.id, elements, {
           // Final status is committed explicitly below together with the
           // terminal job status, never as an incidental effect of a batch.
-          finalize: false
+          finalize: false, generationId
         });
       }
 
       await upsertBimIndexJob({
+        generationId,
         projectCode: input.projectCode,
         documentPath: input.documentPath,
         sourceHash: input.sourceHash,
@@ -729,7 +740,7 @@ export async function indexPreparedBimProperties(
     }
 
     if (localIds.length === 0) {
-      await bulkUpsertBimElements(model.id, [], { finalize: false });
+      await bulkUpsertBimElements(model.id, [], { finalize: false, generationId });
     }
 
     // Batches have committed, but neither model nor job is ready until authoring commits.
@@ -741,25 +752,10 @@ export async function indexPreparedBimProperties(
     const quantities = extractIfcQuantityObservations(ifcApi, openedModelId, context, authoringIndex);
     await replaceAuthoringElementIndex(authoringIndex);
 
-    await upsertBimModel({
-      projectCode: input.projectCode,
-      documentId: input.documentId,
-      documentPath: input.documentPath,
-      documentName: input.documentName,
-      sourceVersion: input.sourceVersion,
-      sourceHash: input.sourceHash,
-      modelKey: input.modelKey,
-      status: "ready",
-      elementCount,
-      propertyCount,
-      metadata: {
-        sourceKind: "nextcloud-ifc",
-        indexSource: "server-web-ifc",
-        indexVersion: BIM_INDEX_SCHEMA_VERSION
-      }
-    });
+    await publishBimIndexGeneration({ generationId, context, elementCount, propertyCount });
 
     await upsertBimIndexJob({
+      generationId,
       projectCode: input.projectCode,
       documentPath: input.documentPath,
       sourceHash: input.sourceHash,
@@ -781,25 +777,9 @@ export async function indexPreparedBimProperties(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const cancelled = error instanceof BimIndexingCancelledError;
-    await upsertBimModel({
-      projectCode: input.projectCode,
-      documentId: input.documentId,
-      documentPath: input.documentPath,
-      documentName: input.documentName,
-      sourceVersion: input.sourceVersion,
-      sourceHash: input.sourceHash,
-      modelKey: input.modelKey,
-      status: "failed",
-      errorMessage,
-      elementCount,
-      propertyCount,
-      metadata: {
-        sourceKind: "nextcloud-ifc",
-        indexSource: "server-web-ifc",
-        indexVersion: BIM_INDEX_SCHEMA_VERSION
-      }
-    });
+    await failBimIndexGeneration(generationId, errorMessage);
     await upsertBimIndexJob({
+      generationId,
       projectCode: input.projectCode,
       documentPath: input.documentPath,
       sourceHash: input.sourceHash,
