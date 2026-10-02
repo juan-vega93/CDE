@@ -2,76 +2,77 @@
 
 Updated: 2026-10-02 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: de474d7e91588b76040477b32085fd77116aa2fa
-HEAD: commit que incorpora el checkpoint 2026-10-02-fase-3d2a-publicacion-atomica.md; resolver con git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-02-fase-3d2a-publicacion-atomica.md
+Base: bb680b175e0aa9432b47c9b281a0f3ea70500a22
+HEAD: commit que añade checkpoints/bim-core/2026-10-02-fase-3d2b-3e.md; resolver con git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-02-fase-3d2b-3e.md
 
 ## Current phase
 
-Fase 3D.2A — Property Index generacional con publicación atómica. Implementada y validada en PostgreSQL temporal; sin despliegue ni reindexación real.
+3D.2B / 3E — Reindex controlado y corrección de Parámetros/reconciliación. Cierre parcial; cantidades y selección 5D canónica bloqueadas.
 
 ## Status
 
-COMPLETE
+BLOCKED
 
 ## Completed
 
-- Staging aislado por generación y revisión; publicación transaccional con lock PostgreSQL por modelo exacto y secuencia DB contra stale writers.
-- Bridge legacy opaco hasta primera publicación canónica; después todos los readers comparten la generación publicada, con snapshot transaccional por respuesta.
-- Pipeline IFC y ruta posterior a FRAG integrados; bulk legacy rechazado con 409 cuando existe contexto generacional. Authoring validado por revisión y memberships antes de publicar.
-- 213 pruebas correctas, cero fallos/skipped; typecheck, build, lint dirigido y migración idempotente correctos.
-- Bloqueos anteriores 3D.2/3D.2A resueltos por la autorización explícita del bridge. Sus checkpoints pendientes se preservan sin modificación y se incorporan al mismo checkpoint Git.
+- Única reindexación MBM autorizada en desarrollo local. Generación b400b692-8a10-4896-a871-2d6ef28001cf publicada: 11362 entidades / 212375 properties; readers sin mezcla legacy. SHA esperado verificado.
+- Auditoría real de partida 0.2.1.3: 115 entidades / 7 AuthoringElements / 112 graphical-present. Snapshot por entidad y test diagnóstico persistentes.
+- Sin valor incluido en color; color/visibilidad/selección de bucket usan la misma intersección gráfica exacta. Contadores semánticos y gráficos separados.
+- Polling cada 3 s, 200 intentos / 10 minutos máximo; terminal actualiza overview, invalida índice local y recarga catálogo una vez. Cancelación y stale responses cubiertos.
+- Backend 216 tests, frontend 46, visibilidad 25: todos correctos, sin skips. Typecheck BFF/frontend y build frontend correctos.
 
 ## In progress
 
-None. Fase cerrada; no iniciar 3D.2B automáticamente.
+Validación visual manual pendiente sobre frontend reconstruido localmente. No iniciar automáticamente otra fase ni reindexar de nuevo.
 
 ## Blocked
 
-None para esta fase. Operación real y siguientes auditorías requieren autorización posterior.
+- Cantidades 5D: ENTITY_SUM 25305.046; ROOT_ONLY diagnóstico 1842.105; referencia Revit 1874.96. A5 almacenado 156.616 frente a referencia 188.31. Falta contrato de cantidades para esta revisión; no está demostrada una policy de producción inequívoca.
+- Selección 5D canónica: viewer-source local mock devuelve IFC sin bimContext; no existe evidencia runtime de revisión para mapear. Requiere transporte verificable autorizado, no aliases inventados.
 
 ## Decisions
 
-- legacy = opaque fallback; canonical generation = authoritative once published.
-- UUID identifica intento DB; BimRevisionId existente identifica bytes IFC. No reinterpretar source_hash ni inferir revisión desde timestamps.
-- Definitions por generación porque value_type es mutable; valores heredan scope mediante elemento, con trigger contra referencias cruzadas.
-- B más antigua no sustituye C ya publicada. C más nueva todavía building no invalida por sí sola una publicación completa anterior.
-- Cantidades almacenadas, Qto y geometría siguen separadas. ROOT_ONLY no adoptado.
+- Semántica 5D de producción intacta. Replicación demostrada no basta para declarar ROOT_ONLY contractual.
+- Modelo/revisión exactos; cantidades stored_parameter, ifc_quantity y viewer_geometry independientes.
+- Buckets se proyectan por intersección con geometrías disponibles; no heredan descendientes espaciales.
+- Sin cambios a picking lógico existente; fallback sin contexto sigue siendo explícito.
 
 ## Dependencies
 
-- Operación/despliegue: aplicar schema y BFF coordinadamente, retirar procesos de la versión anterior antes de activar escritores nuevos; no ejecutado aquí.
-- CONTROL TOWER: checkpoint disponible para revisión, sin push.
-- Frontend: reconciliación 3D.2B diferida. 5D y selección Authoring requieren validación posterior con índice limpio. Sin acciones nuevas en Platform.
+- Contrato de cantidades y referencia de la misma revisión IFC para decidir policy con responsable BIM.
+- Provenance runtime verificada para selección 5D; no modificar Documents/Platform en esta fase.
+- Usuario: validación visual en navegador. CONTROL TOWER: checkpoint parcial, no listo para integración global.
 
 ## Contracts / API changes
 
-Endpoints y payloads principales conservados. Bulk legacy devuelve 409 GENERATION_CONTEXT_REQUIRED en scopes generacionales, incluso building/failed. Snapshots legacy de proyecto no se sirven después de publicación canónica. Metadata del modelo publicado incorpora bimRevisionId y propertyIndexGenerationId. Sin endpoints nuevos.
+Ningún endpoint/payload nuevo. UI Parámetros distingue elementos y geometrías. Sin cambios a IFC/Authoring identity ni a cantidades 5D.
 
 ## Database changes
 
-bim-index-generations.sql: scopes/generations, generation_id en elements/sets/jobs, unicidad parcial legacy y por generación, published único por scope, vistas compartidas de lectura y validación de scope de valores. Sin backfill ni borrado de datos legacy. Authoring y QuantityObservation sin schema nuevo.
+Sin schema nuevo. Aplicadas migraciones ya versionadas en bb680b1 al desarrollo local y publicada una generación del MBM. Legacy conservado, sin reindexar otros modelos. PostgreSQL temporal usado exclusivamente para tests y descartado después.
 
 ## Tests / Evidence
 
-- tsx --test --test-concurrency=1 src/db/bim-*.test.ts src/services/bim-*.test.ts src/routes/bim-authoring.routes.integration.test.ts: 213/213, fallidos 0, skipped 0, PostgreSQL 16 temporal real.
-- npm run typecheck y npm run build (BFF): exit 0.
-- ESLint dirigido sobre nueve TypeScript modificados: exit 0.
-- tsx src/db/migrate.ts dos veces: exit 0; además test de schema legacy preexistente.
-- git diff --check y git diff --cached --check verificados antes del checkpoint; verificación del staging antes del commit.
+- Suites BIM PostgreSQL temporal: 216 pass / 0 fail / 0 skipped.
+- Frontend gráficos/polling/selección lógica: 46 pass / 0 fail / 0 skipped.
+- Visibilidad Node 24.19: 25 pass / 0 fail / 0 skipped.
+- Typecheck BFF/frontend y build frontend: exit 0.
+- Lint módulos/tests nuevos: exit 0. Canvas dirigido: 8 errores / 13 warnings preexistentes (baseline 10 / 13); sin ampliar refactor.
+- git diff --check y cached --check comprobados antes del commit.
+- Evidencia por entidad: apps/bff/src/services/fixtures/bim-oci-3d2b-evidence.json.
+- Catálogo real contiene Datos_Partida.Metrado; 4 jobs ready. Sin valor para esa property: 7878 semánticos con geometría indexada; cantidad gráfica runtime/visual no certificada.
 
 ## Risks
 
-Legacy conserva anomalías hasta publicación canónica. Staging/superseded aumentan almacenamiento; sin scheduler de limpieza. Rendimiento MBM no medido en esta fase. Despliegue requiere coordinación con schema: binarios antiguos no son consumidores generation-aware. Fallo después del publish y antes de job-ready no revierte una publicación válida; reconciliación operativa pendiente de 3D.2B.
-
-Referencia externa suministrada, no recalculada: partida 0.2.1.3; Revit 1874.96 m3; CDE observado aproximadamente 25303.05 m3, 1115 elementos / 115 geométricos. Revisiones pueden diferir; no es prueba de una policy correcta.
+5D continúa sumando por entidad. Diferencias entre revisión IFC y Revit impiden declarar total contractual correcto. Runtime IFC mock carece de bimContext. Validación visual pendiente; tests no prueban píxeles. Resúmenes pueden truncar otros buckets; el contador gráfico describe IDs disponibles, no geometrías omitidas por límites del catálogo. Legacy/staging siguen ocupando almacenamiento.
 
 ## Next milestone
 
-Revisión del checkpoint; autorizar después despliegue/reindexación controlada MBM. Posteriormente auditar 5D y selección de membresías gráficas. No ejecutado ni iniciado.
+Revisar checkpoint parcial y validar Sin valor/visibilidad manualmente. Resolver dependencia contractual y provenance runtime antes de autorizar cambios 5D. Sin push ni nueva fase automática.
 
 ## Last checkpoint
 
-Commit: commit que añade el documento siguiente (resolución git indicada en HEAD; evita autorreferencia imposible del hash dentro del propio commit).
-Checkpoint document: [2026-10-02-fase-3d2a-publicacion-atomica.md](../checkpoints/bim-core/2026-10-02-fase-3d2a-publicacion-atomica.md)
+Commit: commit que añade el documento siguiente (resolver como se indica en HEAD).
+Checkpoint document: [2026-10-02-fase-3d2b-3e.md](../checkpoints/bim-core/2026-10-02-fase-3d2b-3e.md)
 
-Historial preservado: [3D.2](../checkpoints/bim-core/2026-10-02-fase-3d2.md), [bloqueo inicial 3D.2A](../checkpoints/bim-core/2026-10-02-fase-3d2a.md), [3D.1](../checkpoints/bim-core/2026-10-02-fase-3d1.md). 3E no retomada. Documento GeoBIM ajeno no abierto/tocado/stageado.
+Checkpoints anteriores preservados. Documento GeoBIM ajeno untracked, nunca abierto/modificado/stageado.

@@ -1,4 +1,6 @@
 "use client";
+import { createParameterGraphicsResolver } from "../lib/parameter-graphics";
+import { pollBimIndex } from "../lib/bim-index-polling";
 import { useSession } from "next-auth/react";
 import type { BcfTopic } from "@/features/viewer-ifc/types/bcf-topic";
 import { captureViewerSnapshot } from "@/features/viewer-ifc/lib/viewpoint-snapshot";
@@ -1052,14 +1054,15 @@ async function loadIndexedBimModels(
   }
 }
 async function loadBimIndexOverview(
-  projectCode?: string
+  projectCode?: string,
+  signal?: AbortSignal
 ): Promise<BimIndexOverview | null> {
   const normalizedProjectCode = projectCode?.trim().toUpperCase();
   if (!normalizedProjectCode) return null;
 
   try {
     const response = await bffFetch(
-      `/api/bim-index/overview?projectCode=${encodeURIComponent(normalizedProjectCode)}`
+      `/api/bim-index/overview?projectCode=${encodeURIComponent(normalizedProjectCode)}`, { signal }
     );
 
     if (!response.ok) return null;
@@ -5471,7 +5474,18 @@ function ParameterAnalysisPanel({
     [models, projectCode, propertyIndex, propertySet, propertyName, shouldBuildLocalBuckets]
   );
   const buckets = databaseAnalysis?.buckets ?? localBuckets;
-  const hasRealValueBuckets = buckets.some((bucket) => bucket.value !== "Sin valor");
+  const resolveGraphics = useMemo(() => createParameterGraphicsResolver(models), [models]);
+  const [graphicalState, setGraphicalState] = useState<{ buckets: ParameterValueBucket[]; counts: Record<string, number> } | null>(null);
+  const graphicalCounts = graphicalState?.buckets === buckets ? graphicalState.counts : {};
+  useEffect(() => {
+    let active = true;
+    void Promise.all(buckets.map(async (bucket) => [bucket.value,
+      countModelIdMapElements(await resolveGraphics(bucket.modelIdMap))] as const))
+      .then((entries) => { if (active) setGraphicalState({ buckets, counts: Object.fromEntries(entries) }); })
+      .catch((error) => console.warn("[viewer-ifc] Graphical membership unavailable", error));
+    return () => { active = false; };
+  }, [buckets, resolveGraphics]);
+
   const displayBuckets = useMemo(
     () =>
       buckets.map((bucket) => ({
@@ -5480,7 +5494,7 @@ function ParameterAnalysisPanel({
       })),
     [buckets, colorOverrides, propertySet, propertyName]
   );
-  const colorableBuckets = displayBuckets.filter((bucket) => bucket.value !== "Sin valor");
+  const colorableBuckets = displayBuckets;
   const total = databaseAnalysis?.totalElements ?? displayBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
   const realValueCount = databaseAnalysis?.valueBucketCount ?? displayBuckets.filter((bucket) => bucket.value !== "Sin valor").length;
   const missingCount =
@@ -5560,7 +5574,7 @@ function ParameterAnalysisPanel({
     return () => {
       active = false;
     };
-  }, [databaseBucketsRequestKey, models, projectCode, propertyName, propertySet, selectedPropertyHasRealValues]);
+  }, [databaseBucketsRequestKey, models, projectCode, propertyName, propertySet, selectedPropertyHasRealValues, propertyCatalog]);
   useEffect(() => {
     const firstSet = selectorSource.sets[0] ?? "";
     const nextSet = propertySet && selectorSource.sets.includes(propertySet)
@@ -5717,7 +5731,7 @@ function ParameterAnalysisPanel({
           <button
             type="button"
             onClick={handleApplyColors}
-            disabled={!propertySet || !propertyName || !selectedPropertyHasRealValues || !hasRealValueBuckets || colorableBuckets.length === 0}
+            disabled={!propertySet || !propertyName || !selectedPropertyHasRealValues || colorableBuckets.length === 0}
             className="min-h-9 flex-1 rounded bg-red-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Colorear
@@ -5751,10 +5765,6 @@ function ParameterAnalysisPanel({
         {displayBuckets.length === 0 ? (
           <div className="rounded border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
             Carga parametros y selecciona un conjunto/parametro para analizar.
-          </div>
-        ) : !hasRealValueBuckets ? (
-          <div className="rounded border border-amber-800/70 bg-amber-950/40 p-4 text-sm text-amber-100">
-            Este parametro no tiene valores enlazados para los modelos cargados. Reindexa el modelo o elige un parametro con valores reales; no se aplicara color a "Sin valor".
           </div>
         ) : chartMode === "donut" ? (
           <div className="rounded border border-zinc-800 bg-zinc-900 p-4">
@@ -5802,7 +5812,7 @@ function ParameterAnalysisPanel({
                       {bucket.value}
                     </button>
                     <span className="text-zinc-400">
-                      {bucket.count} / {percent}%
+                      {bucket.count} elementos / {graphicalCounts[bucket.value] ?? "…"} geometrías / {percent}%
                     </span>
                   </div>
                 );
@@ -5849,7 +5859,7 @@ function ParameterAnalysisPanel({
                       {bucket.value}
                     </button>
                     <span className="text-zinc-400">
-                      {bucket.count} ({percent}%)
+                      {bucket.count} elementos / {graphicalCounts[bucket.value] ?? "…"} geometrías ({percent}%)
                     </span>
                   </div>
                   <div className="h-2 overflow-hidden rounded bg-zinc-800">
@@ -7858,6 +7868,9 @@ export function IfcViewerCanvas({
   const [bimIndexOverview, setBimIndexOverview] =
     useState<BimIndexOverview | null>(null);
   const [bimIndexOverviewLoading, setBimIndexOverviewLoading] = useState(false);
+  const catalogRequestRef = useRef(0);
+  const overviewRequestRef = useRef(0);
+  const resolveParameterGraphics = useMemo(() => createParameterGraphicsResolver(models), [models]);
   const [smartViewPropertyIndexSignature, setSmartViewPropertyIndexSignature] =
     useState("");
   const [openProjectProjectId, setOpenProjectProjectId] = useState<string>("");
@@ -7909,14 +7922,17 @@ export function IfcViewerCanvas({
     [primaryDocumentName, projectCode]
   );
   const refreshSmartViewPropertyCatalog = useCallback(async () => {
+    const request = ++catalogRequestRef.current;
     if (!projectCode || loadedModelKeys.length === 0) {
       setSmartViewPropertyCatalog(null);
+      setSmartViewPropertyCatalogLoading(false);
       return;
     }
 
     setSmartViewPropertyCatalogLoading(true);
     try {
       const indexedModelRecords = await loadIndexedBimModels(projectCode);
+      if (request !== catalogRequestRef.current) return;
       const readyModelKeys = getReadyIndexedModelKeysForLoadedModels(
         indexedModelRecords,
         models
@@ -7933,33 +7949,66 @@ export function IfcViewerCanvas({
         projectCode,
         modelKeys: loadedModelKeys
       });
+      if (request !== catalogRequestRef.current) return;
       setSmartViewPropertyCatalog(catalog);
     } finally {
-      setSmartViewPropertyCatalogLoading(false);
+      if (request === catalogRequestRef.current) setSmartViewPropertyCatalogLoading(false);
     }
   }, [loadedModelKeys, models, projectCode]);
 
   useEffect(() => {
     void refreshSmartViewPropertyCatalog();
+    // This numeric ref is an async request epoch, not a DOM ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { catalogRequestRef.current++; };
   }, [refreshSmartViewPropertyCatalog]);
 
   const refreshBimIndexOverview = useCallback(async () => {
+    const request = ++overviewRequestRef.current;
     if (!projectCode) {
       setBimIndexOverview(null);
+      setBimIndexOverviewLoading(false);
       return;
     }
 
     setBimIndexOverviewLoading(true);
     try {
-      setBimIndexOverview(await loadBimIndexOverview(projectCode));
+      const overview = await loadBimIndexOverview(projectCode);
+      if (request === overviewRequestRef.current) setBimIndexOverview(overview);
     } finally {
-      setBimIndexOverviewLoading(false);
+      if (request === overviewRequestRef.current) setBimIndexOverviewLoading(false);
     }
   }, [projectCode]);
 
   useEffect(() => {
     void refreshBimIndexOverview();
+    // This numeric ref is an async request epoch, not a DOM ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { overviewRequestRef.current++; };
   }, [refreshBimIndexOverview]);
+
+  const indexBusy = Boolean(bimIndexOverview &&
+    bimIndexOverview.jobs.processing + bimIndexOverview.jobs.pending > 0);
+  useEffect(() => {
+    if (!projectCode || !indexBusy || !bimIndexOverview) return;
+    return pollBimIndex({
+      initial: bimIndexOverview,
+      load: async (signal) => {
+        const request = ++overviewRequestRef.current;
+        const next = await loadBimIndexOverview(projectCode, signal);
+        return request === overviewRequestRef.current ? next : null;
+      },
+      update: setBimIndexOverview,
+      completed: () => {
+        setSmartViewPropertyIndexSignature("");
+        setSmartViewPropertyIndex({ sets: [], propertiesBySet: {}, valuesBySetAndProperty: {}, localIdsBySetPropertyValue: {} });
+        void refreshSmartViewPropertyCatalog();
+      },
+      exhausted: () => setStatus("Se alcanzó el límite de consultas del índice. Actualiza el estado manualmente.")
+    });
+    // A progress response must not restart the polling budget.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectCode, indexBusy, refreshSmartViewPropertyCatalog]);
 
   useEffect(() => {
     if (!projectCode?.trim() || loadedModelKeys.length === 0) return;
@@ -10464,9 +10513,7 @@ export function IfcViewerCanvas({
       });
 
       for (const bucket of orderedBuckets) {
-        const renderModelIdMap = await expandModelIdMapForRendering(
-          bucket.modelIdMap
-        );
+        const renderModelIdMap = await resolveParameterGraphics(bucket.modelIdMap);
         const exclusiveModelIdMap = takeExclusiveModelIdMap(
           renderModelIdMap,
           seenKeys
@@ -10534,7 +10581,7 @@ export function IfcViewerCanvas({
     const token = beginRenderOperation();
 
     try {
-      const modelIdMap = await expandModelIdMapForRendering(bucket.modelIdMap);
+      const modelIdMap = await resolveParameterGraphics(bucket.modelIdMap);
       if (!isRenderOperationCurrent(token)) return;
 
       const elementCount = countModelIdMapElements(modelIdMap);
@@ -10784,7 +10831,7 @@ export function IfcViewerCanvas({
     try {
       await visibility.toggleBucket(
         parameterVisibilityKey(propertySet, propertyName, bucket.value),
-        () => expandModelIdMapForRendering(bucket.modelIdMap)
+        () => resolveParameterGraphics(bucket.modelIdMap)
       );
       requestViewerRefresh();
     } catch (error) {

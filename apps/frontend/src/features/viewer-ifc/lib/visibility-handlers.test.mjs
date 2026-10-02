@@ -47,6 +47,7 @@ function harness(afterWrite = async () => {}) {
     waitForNextFrame: async () => {}, requestViewerRefresh: () => {},
     setStatus: () => {}, setHasSelection: () => {}, setModels: (fn) => fn(models),
     expandModelIdMapForRendering: async (map) => map,
+    resolveParameterGraphics: async (map) => map,
     takeExclusiveModelIdMap: (map) => map,
     mergeModelIdMap: (to, from) => Object.assign(to, from),
     cloneModelIdMap: (map) => map,
@@ -119,6 +120,18 @@ test("E: actual parameter-color handler preserves hidden elements", async () => 
   assert.equal(f.colors.length, 1);
   assert.deepEqual([...f.hidden], [1]);
   assert.equal(f.policy.getSnapshot().has(f.key), true);
+});
+
+test("Sin valor: actual color handler sends yellow and toggle targets the same IDs", async () => {
+  const f = harness();
+  const bucket = { ...f.bucket, value: "Sin valor", color: "#ffff00" };
+  await f.ctx.handleApplyParameterColors("Pset", "Type", [bucket]);
+  assert.equal(f.colors[0][0].color, "#ffff00");
+  assert.deepEqual([...f.colors[0][0].modelIdMap.model], [1]);
+  await f.ctx.handleToggleParameterBucketVisibility("Pset", "Type", bucket);
+  assert.deepEqual([...f.hidden], [1]);
+  await f.ctx.handleToggleParameterBucketVisibility("Pset", "Type", bucket);
+  assert.equal(f.hidden.size, 0);
 });
 test("F: actual selection/highlight handler preserves hiding", async () => {
   const f = harness(); await f.hide();
