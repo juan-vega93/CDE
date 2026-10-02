@@ -17,8 +17,6 @@ import {
 
 const BIM_INDEX_SCHEMA_VERSION = 5;
 const SERVER_INDEX_BATCH_SIZE = 250;
-const MAX_PROPERTY_SETS_PER_ELEMENT = 64;
-const MAX_PROPERTIES_PER_SET = 120;
 const PLACEHOLDER_VALUES = new Set(["", "-", "sin valor", "null", "undefined"]);
 
 export type BimIndexProgress = {
@@ -173,6 +171,7 @@ function getPropertySetFallbackIdentity(pset: IfcRecord, occurrence: number): st
         "CountValue",
         "WeightValue",
         "TimeValue",
+        "NumberValue",
         "EnumerationValues",
         "ListValues"
       ]
@@ -205,6 +204,7 @@ function getPropertySetCompleteness(pset: IfcRecord): number {
         "CountValue",
         "WeightValue",
         "TimeValue",
+        "NumberValue",
         "EnumerationValues",
         "ListValues"
       ].some((key) => normalizeText(property[key]))
@@ -313,7 +313,7 @@ function extractPropertySetsFromExpandedLine(line: IfcRecord): IfcRecord[] {
     }
   }
 
-  return mergeIfcPropertySets(candidates).slice(0, MAX_PROPERTY_SETS_PER_ELEMENT);
+  return mergeIfcPropertySets(candidates);
 }
 
 export async function readAdaptiveIfcPropertySets(input: {
@@ -390,6 +390,7 @@ function getPropertyValue(property: IfcRecord): string | undefined {
     "CountValue",
     "WeightValue",
     "TimeValue",
+    "NumberValue",
     "EnumerationValues",
     "ListValues",
     "LowerBoundValue",
@@ -417,7 +418,8 @@ function addProperty(
   setName: string,
   name: string,
   value: unknown,
-  valueType: BimElementPropertyInput["valueType"] = "text"
+  valueType: BimElementPropertyInput["valueType"] = "text",
+  seen?: Set<string>
 ) {
   const normalizedSet = setName.trim();
   const normalizedName = name.trim();
@@ -425,7 +427,8 @@ function addProperty(
 
   if (!normalizedSet || !normalizedName || !isRealValue(normalizedValue)) return;
 
-  const duplicate = target.some(
+  const key = JSON.stringify([normalizedSet.toLowerCase(), normalizedName.toLowerCase(), normalizedValue.toLowerCase()]);
+  const duplicate = seen ? seen.has(key) : target.some(
     (item) =>
       item.setName.trim().toLowerCase() === normalizedSet.toLowerCase() &&
       item.name.trim().toLowerCase() === normalizedName.toLowerCase() &&
@@ -433,6 +436,7 @@ function addProperty(
   );
 
   if (!duplicate) {
+    seen?.add(key);
     target.push({
       setName: normalizedSet,
       name: normalizedName,
@@ -442,20 +446,30 @@ function addProperty(
   }
 }
 
-function extractPropertiesFromSets(psets: unknown[]): BimElementPropertyInput[] {
+export function extractPropertiesFromSets(psets: unknown[]): BimElementPropertyInput[] {
   const properties: BimElementPropertyInput[] = [];
+  // Query-index uniqueness is unchanged; avoid a quadratic scan now that
+  // presentation limits no longer truncate persistent data.
+  const seen = new Set<string>();
+  const ancestors = new WeakSet<IfcRecord>();
+  function visit(rawProperty: unknown, setName: string) {
+    if (!isObject(rawProperty)) return;
+    if (ancestors.has(rawProperty)) throw new Error("Cyclic IFC property collection");
+    const name = normalizeText(rawProperty.Name);
+    if (name) addProperty(properties, setName, name, getPropertyValue(rawProperty), "text", seen);
+    // Complex properties/quantities retain the owning set; only leaf values
+    // become searchable rows. Never pass this deduplication to provenance.
+    ancestors.add(rawProperty);
+    for (const nested of getPropertyCandidates(rawProperty)) visit(nested, setName);
+    ancestors.delete(rawProperty);
+  }
 
-  for (const rawSet of psets.slice(0, MAX_PROPERTY_SETS_PER_ELEMENT)) {
+  for (const rawSet of psets) {
     if (!isObject(rawSet)) continue;
     const pset = unwrapPropertySet(rawSet);
     const setName = readIfcName(pset, "Property Set");
 
-    for (const rawProperty of getPropertyCandidates(pset).slice(0, MAX_PROPERTIES_PER_SET)) {
-      if (!isObject(rawProperty)) continue;
-      const name = normalizeText(rawProperty.Name);
-      if (!name) continue;
-      addProperty(properties, setName, name, getPropertyValue(rawProperty));
-    }
+    for (const rawProperty of getPropertyCandidates(pset)) visit(rawProperty, setName);
   }
 
   return properties;

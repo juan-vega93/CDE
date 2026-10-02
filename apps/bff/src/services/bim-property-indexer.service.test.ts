@@ -2,10 +2,47 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   createBimIndexProgress,
+  extractPropertiesFromSets,
   mergeIfcPropertySets,
   readAdaptiveIfcPropertySets
 } from "./bim-property-indexer.service";
 import { getBimModelTerminalStatus } from "../db/bim-index-store";
+
+test("persistent flattening retains every set and scalar beyond former display caps", () => {
+  const sets = Array.from({ length: 70 }, (_, s) => ({ Name: { value: `Custom${s}` },
+    HasProperties: Array.from({ length: 125 }, (_, p) => ({ Name: { value: `Field${p}` }, NominalValue: { value: p } })) }));
+  const result = extractPropertiesFromSets(sets);
+  assert.equal(result.length, 8750);
+  assert.deepEqual(result[result.length - 1], { setName: "Custom69", name: "Field124", value: "124", valueType: "text" });
+});
+
+test("query-index normalization and uniqueness preserve existing values, not provenance occurrences", () => {
+  const result = extractPropertiesFromSets([{ Name: { value: " Custom " }, HasProperties: [
+    { Name: { value: "Name" }, NominalValue: { value: " Value " } },
+    { Name: { value: "NAME" }, NominalValue: { value: "value" } },
+    { Name: { value: "Zero" }, NominalValue: { value: 0 } },
+    { Name: { value: "Flag" }, NominalValue: { value: false } },
+    { Name: { value: "Blank" }, NominalValue: { value: null } },
+    { Name: { value: "Placeholder" }, NominalValue: { value: "-" } },
+    { Name: { value: "List" }, ListValues: [{ value: "a" }, { value: "b" }] },
+    { Name: { value: "Range" }, LowerBoundValue: { value: 1 }, UpperBoundValue: { value: 3 } }
+  ] }]);
+  assert.deepEqual(result.map((p) => [p.name, p.value]), [["Name", "Value"], ["Zero", "0"], ["Flag", "false"], ["List", "a, b"], ["Range", "1 - 3"]]);
+});
+
+test("nested scalar properties and simple Number quantities keep their owning set", () => {
+  const result = extractPropertiesFromSets([
+    { Name: { value: "CustomNested" }, HasProperties: [{ Name: { value: "Complex" }, HasProperties: [{ Name: { value: "Leaf" }, NominalValue: { value: "present" } }] }] },
+    { Name: { value: "Quantities" }, Quantities: [{ Name: { value: "ComplexQuantity" }, HasQuantities: [{ Name: { value: "Number" }, NumberValue: { _representationValue: 7 } }] }] }
+  ]);
+  assert.deepEqual(result.map((p) => [p.setName, p.name, p.value]), [["CustomNested", "Leaf", "present"], ["Quantities", "Number", "7"]]);
+});
+
+test("expanded-line fallback also retains more than 64 property sets", async () => {
+  const sets = Array.from({ length: 70 }, (_, i) => ({ expressID: i + 1, Name: { value: `Custom${i}` }, HasProperties: [{ Name: { value: "Key" }, NominalValue: { value: "value" } }] }));
+  const result = await readAdaptiveIfcPropertySets({ readPropertySets: async () => { throw new Error("helper failed"); }, readExpandedLine: () => ({ IsDefinedBy: sets }) });
+  assert.equal(result.length, 70);
+});
 
 test("merges partial web-ifc property-set variants by stable IFC identity", () => {
   const partialTypeSet = {
