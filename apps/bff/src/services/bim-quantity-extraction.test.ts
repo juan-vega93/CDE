@@ -12,6 +12,50 @@ import { prepareBimIfcInput } from "./bim-revision-identity";
 import { evaluateQuantityPolicy, type QuantityPolicy } from "./bim-quantity-policy";
 import { createQuantityIfcFixture } from "./fixtures/bim-quantity-ifc.fixture";
 
+test("IFC logical and boolean values preserve their meanings with real web-ifc", async (t) => {
+  const cases = [
+    ["IFCLOGICAL(.T.)", true], ["IFCLOGICAL(.F.)", false], ["IFCLOGICAL(.U.)", ".U."],
+    ["IFCBOOLEAN(.T.)", true], ["IFCBOOLEAN(.F.)", false]
+  ] as const;
+  const lines = cases.map(([value], i) => `#${4000000 + i}=IFCPROPERTYSINGLEVALUE('Flag${i}',$,${value},$);`);
+  lines.push(
+    "#4000010=IFCPROPERTYSET('0000000000000000400010',$,'LogicalEvidence',$,(#4000000,#4000001,#4000002,#4000003,#4000004));",
+    "#4000011=IFCRELDEFINESBYPROPERTIES('0000000000000000400011',$,$,$,(#303839,#308027),#4000010);"
+  );
+  const bytes = Buffer.from(createQuantityIfcFixture().toString().replace("\nENDSEC;\nEND-ISO", `\n${lines.join("\n")}\nENDSEC;\nEND-ISO`));
+  const prepared = prepareBimIfcInput({ projectCode: "TEST", documentPath: "/TEST/logical.ifc", ifcBuffer: bytes });
+  const api = new WEBIFC.IfcAPI(); let id = -1;
+  try {
+    api.SetWasmPath(path.dirname(require.resolve("web-ifc/web-ifc-node.wasm")) + path.sep, true);
+    await api.Init(undefined, true); id = api.OpenModel(prepared.ifcBytes);
+    assert.ok(id >= 0);
+    const authoring = resolver.resolveAuthoringElements({ context: prepared.context, entities: [], relations: [] });
+    const result = extraction.extractIfcQuantityObservations(api, id, prepared.context, authoring);
+    assert.deepEqual(result.quantityExtractionDiagnostics, []);
+    const flags = result.quantityObservations.filter((o) => o.origin.source === "stored_parameter" && o.origin.propertySet === "LogicalEvidence");
+    assert.equal(flags.length, 10, "both assignments retain every occurrence");
+    assert.equal(new Set(flags.map((o) => o.observationKey)).size, 10);
+    for (const [i, [token, expected]] of cases.entries()) await t.test(token, () => {
+      const value = api.GetLine(id, 4000000 + i).NominalValue;
+      assert.equal(value.name, token.startsWith("IFCLOGICAL") ? "IFCLOGICAL" : "IFCBOOLEAN");
+      assert.equal(value.value, expected === ".U." ? undefined : expected);
+      const occurrences = flags.filter((o) => o.origin.source === "stored_parameter" && o.origin.propertyLocalId === 4000000 + i);
+      assert.equal(occurrences.length, 2);
+      assert.ok(occurrences.every((o) => o.rawValue === expected && o.numericValue === undefined));
+    });
+    await t.test("unsupported scalar is diagnosed, not coerced into logical unknown", () => {
+      const getLine = api.GetLine.bind(api);
+      t.mock.method(api, "GetLine", (...args: Parameters<typeof api.GetLine>) => {
+        const line = getLine(...args);
+        return args[1] === 4000002 ? { ...line, NominalValue: { name: "UNSUPPORTED", value: undefined } } : line;
+      });
+      const unsupported = extraction.extractIfcQuantityObservations(api, id, prepared.context, authoring);
+      assert.deepEqual(unsupported.quantityExtractionDiagnostics, [303839, 308027].map((localId) => ({ localId, nativeId: 4000002, reason: "unsupported_scalar" })));
+      assert.equal(unsupported.quantityObservations.length, result.quantityObservations.length - 2);
+    });
+  } finally { if (id >= 0) api.CloseModel(id); api.Dispose(); }
+});
+
 test("real IFC pipeline extracts provenance alongside unchanged legacy output", async (t) => {
   const payloads: unknown[] = [];
   // CJS module boundary only: real web-ifc/indexer; no production injection seam.

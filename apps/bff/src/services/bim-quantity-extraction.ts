@@ -5,11 +5,14 @@ import { createQuantityObservation, type QuantityObservation, type QuantityOrigi
 
 type RecordValue = Record<string, unknown>;
 type QuantityType = Extract<QuantityOrigin, { source: "ifc_quantity" }>["quantityType"];
-export type QuantityExtractionDiagnostic = Readonly<{ localId: number; nativeId: number; reason: "unsupported_property" | "unsupported_quantity" | "unsupported_unit" }>;
+export type QuantityExtractionDiagnostic = Readonly<{ localId: number; nativeId: number; reason: "unsupported_property" | "unsupported_quantity" | "unsupported_unit" | "unsupported_scalar" }>;
 const object = (v: unknown): v is RecordValue => v !== null && typeof v === "object";
 const scalar = (v: unknown): QuantityRawValue | undefined => {
   if (v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
   if (!object(v)) return undefined;
+  // web-ifc represents the third IFC logical value (.U.) as undefined.
+  // Preserve that explicit logical token; it is neither false nor numeric zero.
+  if (v.name === "IFCLOGICAL" && "value" in v && v.value === undefined) return ".U.";
   if ("value" in v) return scalar(v.value);
   return "_representationValue" in v ? scalar(v._representationValue) : undefined;
 };
@@ -107,7 +110,10 @@ export function extractIfcQuantityObservations(api: WEBIFC.IfcAPI, modelId: numb
       quantityExtractionDiagnostics.push({ localId, nativeId: id, reason: source === "stored_parameter" ? "unsupported_property" : "unsupported_quantity" });
       return;
     }
-    if (raw === undefined) throw new Error(`Unsupported scalar at IFC observation ${id}`);
+    if (raw === undefined) {
+      quantityExtractionDiagnostics.push({ localId, nativeId: id, reason: "unsupported_scalar" });
+      return;
+    }
     const occurrenceIndex = occurrences.get(localId) ?? 0;
     occurrences.set(localId, occurrenceIndex + 1);
     quantityObservations.push(createQuantityObservation({ context, localId, origin, rawValue: raw, occurrenceIndex,

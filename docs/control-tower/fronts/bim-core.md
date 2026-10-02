@@ -1,88 +1,89 @@
 # BIM CORE
 
+## Estado vigente — Fase 3D.1 (2026-10-02)
+
+**COMPLETE**. IFCLOGICAL corregido; MBM real validado mediante indexación limpia en PostgreSQL temporal. 11.362 entidades, 212.375 propiedades y 191.481 observaciones; cero diagnósticos de extracción. Dos custom properties en dos muros verificadas hasta SmartView, QA y lookup/discovery 5D. Causa del incidente: **STALE_INDEX**, con localIds de otra exportación en el índice real marcado ready. Necesita despliegue del código actualizado y reindexación controlada posterior del MBM; NO ejecutados. No hay evidencia de STALE_CACHE.
+
+158 pruebas automatizadas finales correctas, cero fallidas/skipped; auditoría MBM completada, typecheck y lint dirigido conformes. Código productivo modificado sólo en extracción lógica; sin schema, frontend, políticas ni agregación 5D.
+
+Último checkpoint vigente: [2026-10-02-fase-3d1.md](../checkpoints/bim-core/2026-10-02-fase-3d1.md). HEAD del checkpoint: commit que introduce ese archivo (`git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-02-fase-3d1.md`). Base: 5f02e7ae1dfa3ec34f23e6bcded54934b51a068a.
+
+Dependencias: operación controlada de despliegue/reindexación y refresco de sesión para actualizar la instancia; no cambios de responsabilidades de otros frentes. Siguiente hito: revisión del resultado por CONTROL TOWER. No retomar 3E ni iniciar otra fase.
+
+Se conserva íntegramente debajo el estado previo solicitado de 3E y su checkpoint inmutable. Su error del extractor está corregido por 3D.1; **la auditoría 3E permanece sin completar ni repetir**. La preservación explícita de este bloque responde a la instrucción de no sobrescribir la trazabilidad previa.
+
 Updated: 2026-10-02 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: b9a324fd427e07a6f8c36ca1f80505183ff64297 (entrada de Fase 3D; no merge-base)
-HEAD: commit que introduce el checkpoint 3D; resolver con `git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-02-fase-3d.md`.
-
-Código y checkpoint comparten commit; la referencia evita autorreferencia del hash.
+Base: 5f02e7ae1dfa3ec34f23e6bcded54934b51a068a (entrada Fase 3E)
+HEAD: 5f02e7ae1dfa3ec34f23e6bcded54934b51a068a
 
 ## Current phase
 
-Fase 3D — Property coverage del índice persistente. NO quantity semantics.
+Fase 3E — Auditoría Quantity Provenance del IFC OCI real. Detenida por condición de parada explícita.
 
 ## Status
 
-COMPLETE para corrección y pruebas backend de Fase 3D. No representa validación visual del incidente manual ni auditoría OCI.
+BLOCKED
 
 ## Completed
 
-- Causa reproducida antes de corregir: cortes de 64 sets/120 properties en flattening; 11 propiedades perdidas en fixture IFC válida.
-- Eliminados cortes del índice y del fallback expandido. Recorrido de hojas escalares anidadas y soporte NumberValue; sin hardcode de Psets.
-- Misma unicidad legacy con Set para evitar comparaciones cuadráticas al ampliar cobertura.
-- Fixture: 195 properties/quantities observables; antes 184 indexadas + 2 atributos sintéticos; después 195 + 2, cero faltantes.
-- Consultas reales de catálogo, filtros SmartView, QA y lookup 5D verificadas con PostgreSQL temporal.
-- QuantityObservation, extracción 3C y políticas 3B intactas y con regresión conforme.
+- Fase 3D cerrada en HEAD: cobertura del Property Index y 151 pruebas documentadas en su checkpoint. Evidencia histórica, no extrapolable a OCI.
+- IFC original E4 verificado: 50.201.895 bytes, SHA-256 120e9127c5be1cb11541f458968448d7031fcd63b72709af3cf276d6c3b9733c.
+- Pipeline actual ejecutado en contenedor sin red y persistencia interceptada en memoria. Recorrido 9114/9114; extracción Quantity Provenance abortada.
+- Causa localizada: #558365, Pset_BuildingStoreyCommon.AboveGround = IFCLOGICAL(.U.). No corregida ni omitida.
+- Cero cambios funcionales, DB real, reindexación, FRAG, commit o push. PostgreSQL efímero eliminado sin ejecutar baseline.
 
 ## In progress
 
-None. Siguiente fase no autorizada.
+None. Sin procesos de auditoría pendientes.
 
 ## Blocked
 
-None para el alcance backend probado. La causa exacta de la sesión manual requiere modelo/localId, revisión y origen DB/runtime usado por el inspector; no se afirma reproducida esa sesión.
+extractIfcQuantityObservations lanza Unsupported scalar at IFC observation 558365 (bim-quantity-extraction.ts:110). Impide completar el pipeline global y obtener resultados verificables del universo, baseline y policies. Necesita autorización de fase correctiva BIM CORE y repetición posterior de 3E; no depende de otro frente.
 
 ## Decisions
 
-- El índice persistente no debe aplicar límites de presentación a sets/properties consultables.
-- Propiedades de instancia y tipo se siguen leyendo en el mismo modelo abierto mediante readAdaptiveIfcPropertySets; sin nueva extracción global ni reemplazo por provenance.
-- Hojas de complejos conservan el set propietario; no se convierten atributos generales en Psets.
-- Se conserva normalización/unicidad y exclusión de placeholders legacy; provenance mantiene ocurrencias por separado.
-- Sin schema ni cambios de consultas/agregación. BIM_INDEX_SCHEMA_VERSION permanece 5; no activar reindexaciones por cambio de versión.
+- No cambiar 5D ni decidir política contractual en fase diagnóstica.
+- No reemplazar IFC por fixtures ni usar DB legacy como fuente de verdad.
+- No omitir propiedades ni limitar extractor para eludir la condición de parada.
+- BASELINE_NOT_REPRODUCED provisional significa resultado incompleto, no cardinalidad distinta demostrada.
+- Stored parameter, IFC quantity y viewer geometry siguen separados.
 
 ## Dependencies
 
-- SmartViews/QA/5D consumen tablas existentes y queries genéricas; sin cambios frontend ni reglas funcionales.
-- Modelos ya indexados requieren reindexación controlada para incorporar cobertura nueva; NO ejecutada. Snapshots/caches previos pueden seguir mostrando datos antiguos.
-- Documents/Platform/viewer/FRAG: sin modificaciones ni acciones externas en esta fase.
-- CONTROL TOWER debe revisar evidencia y compatibilidad de integración; sin merge ni push.
+- BIM CORE: autorización de corrección del extractor antes de repetir 3E.
+- 5D/semántica contractual: pendiente evidencia real; consumidores sin cambios.
+- Documents, Platform, viewer y FRAG: sin acciones requeridas.
+- CONTROL TOWER: checkpoint de bloqueo disponible, no listo para integración.
 
 ## Contracts / API changes
 
-Sin API pública nueva/modificada. Export interno de extractPropertiesFromSets para tests; mayor cobertura aditiva de properties. No cambia QuantityObservation ni policies.
+None en 3E.
 
 ## Database changes
 
-None. Se usan cde_bim_property_sets, cde_bim_properties y cde_bim_property_values. SQL existente aplicado sólo en PostgreSQL efímero para tests; sin backfill o DB real.
+None. Stores del runner interceptados en memoria; DB productiva no utilizada.
 
 ## Tests / Evidence
 
-- Reproducción antes del fix: 11 faltantes; fallaban catálogo/filtro/QA/lookup 5D; provenance ya conservaba las observaciones.
-- Suite unitaria/regresión: 132 correctas, 0 fallidas, 0 skipped (indexer 9, extraction 13, provenance 24, policy 32, resolver 32, revision 10, model 12).
-- PostgreSQL real temporal: 19 correctas, 0 fallidas, 0 skipped (coverage 7, authoring pipeline 10, DB BIM 2).
-- Coverage compara category/set/name/value: 195 observables, 197 filas indexadas; extras explicados IFC Class y Express ID. No medición de UI/browser.
-- 1 OpenModel por procesamiento verificado; invariantes 3C siguen pasando.
-- npm run typecheck BFF: exit 0. ESLint dirigido a cuatro archivos TypeScript: 0 errores, 0 warnings.
-- Docker local, src readonly, DB tmpfs sin puertos/volúmenes productivos; contenedor eliminado.
-- Branch/HEAD/working tree y diff revisados antes de checkpoint/commit; staging explícito.
+- tsx audit-runner.ts: 1 ejecución real, 0 completadas, 1 fallida, exit 1; progreso 9114/9114 antes del error.
+- IFC #558365 -> Pset #558366 -> relación #558367 -> IfcBuildingStorey #46. Registro original y stack conservados en checkpoint.
+- Web-ifc emitió Invalid IFC Line y No basis found for brep; impacto en partida no verificado.
+- Baseline SQL, policies, matriz y comparación 64/120 no completados. No se ejecutaron suites nuevas.
+- Branch, HEAD, working tree y diff checks verificados antes del checkpoint.
 
 ## Risks
 
-- No se confirma que los límites causaron el incidente manual específico; también existen fallback runtime, modelos no-ready y snapshots/caches antiguos.
-- Se conserva el contrato legacy: vacíos, '-', 'sin valor', 'null' y 'undefined' no son valores consultables; dedup insensible a mayúsculas para set/name/value. No es provenance.
-- Inspector runtime muestra Tag/ObjectType y otros atributos que no forman parte de un catálogo completo de atributos SQL. Se conservan columnas existentes y sólo IFC Class/Express ID como atributos sintéticos indexados.
-- Lists/enumerations/rangos conservan representación textual legacy; referencias u objetos sin campo de valor reconocido no se vuelven parámetros escalares.
-- Catálogo limita ejemplos de valores por propiedad; consultas mantienen sus límites de resultados. No confundir muestreo con pérdida del Pset persistido.
-- Más filas implica mayor coste de memoria/DB. Se evita O(P²) en dedup; no se midió rendimiento OCI real.
-- No se valida ni corrige 34249.502; política contractual sigue pendiente.
+- Un valor no soportado en un nivel del modelo aborta la extracción global aunque sea ajeno a la partida.
+- No verificados en 3E: 187 elementos, 9 AuthoringElements, 34249.502, 2010.568 ni efecto real 64/120.
 
 ## Next milestone
 
-Revisar cobertura y definir siguiente fase. Reindexación de modelos reales y auditoría OCI sólo con autorización explícita.
+Revisar bloqueo y autorizar corrección separada; repetir auditoría después. No iniciar otra fase automáticamente.
 
 ## Last checkpoint
 
-Commit: el que introduce el checkpoint, resoluble por el comando HEAD anterior.
-Checkpoint document: [2026-10-02-fase-3d.md](../checkpoints/bim-core/2026-10-02-fase-3d.md)
+Commit: 5f02e7ae1dfa3ec34f23e6bcded54934b51a068a (código auditado; docs 3E sin commit).
+Checkpoint document: [2026-10-02-fase-3e.md](../checkpoints/bim-core/2026-10-02-fase-3e.md)
 
-Sin push. Documento GeoBIM ajeno continúa untracked, intacto, sin abrir ni stagear.
+Documento GeoBIM ajeno permanece untracked, sin abrir, modificar ni stagear.
