@@ -1,4 +1,6 @@
 "use client";
+import { LogicalCostTable } from "./logical-cost-table";
+import { logicalCostCsv, type LogicalCostDetail, type LogicalCostGroup } from "../lib/logical-cost-rows";
 import { resolveCostAuthoringSelection, getCostSelectionModelMap, type CostAuthoringSelection } from "../lib/cost-authoring-selection";
 import { createParameterGraphicsResolver } from "../lib/parameter-graphics";
 import { pollBimIndex } from "../lib/bim-index-polling";
@@ -379,17 +381,22 @@ async function loadSmartViewPropertyCatalogFromDatabase(input: {
 type Cost5DServerAggregation = {
   rows: Array<{
     selection?: CostAuthoringSelection;
+    logicalRows?: LogicalCostDetail[];
+    quantityProvenance?: LogicalCostGroup["quantityProvenance"];
+    consolidationError?: string;
+    rawQuantity?: number;
+    rawEntityCount?: number;
     itemId: string;
     itemName: string;
     itemUnit: string;
-    quantity: number;
+    quantity: number | null;
     elementCount: number;
     modelCount: number;
     modelKeys: string[];
     localIdsByModelKey: Record<string, number[]>;
   }>;
   totals: {
-    quantity: number;
+    quantity: number | null;
     elementCount: number;
     rowCount: number;
   };
@@ -421,6 +428,8 @@ async function loadCost5DAggregationFromDatabase(input: {
         itemName: toBimPropertyRefPayload(input.mapping.itemName),
         itemUnit: toBimPropertyRefPayload(input.mapping.itemUnit),
         quantity: toBimPropertyRefPayload(input.mapping.quantity),
+        quantityPolicy: input.mapping.quantityPolicy,
+        quantitySource: input.mapping.quantityPolicy ? "stored_parameter" : undefined,
         limit: 1000
       })
     });
@@ -467,7 +476,8 @@ function serverCostRowsToCost5DRows(
       itemId: row.itemId,
       itemName: row.itemName,
       itemUnit: row.itemUnit,
-      quantity: row.quantity,
+      quantity: row.quantity ?? 0,
+      quantityPending: row.quantity === null,
       selection: row.selection,
       elementCount: row.elementCount,
       geometryCount: countModelIdMapElements(modelIdMap),
@@ -1812,12 +1822,14 @@ type Cost5DPropertyRef = {
   property: string;
 };
 type Cost5DMapping = {
+  quantityPolicy?: "stored-authoring-replicas@1";
   itemId: Cost5DPropertyRef;
   itemName: Cost5DPropertyRef;
   itemUnit: Cost5DPropertyRef;
   quantity: Cost5DPropertyRef;
 };
 type Cost5DRow = {
+  quantityPending?: boolean;
   selection?: CostAuthoringSelection;
   key: string;
   itemId: string;
@@ -6137,6 +6149,7 @@ function Cost5DPanel({
 }) {
   const [mode, setMode] = useState<"partidas" | "metrados">("partidas");
   const [mapping, setMapping] = useState<Cost5DMapping>({
+    quantityPolicy: "stored-authoring-replicas@1",
     itemId: EMPTY_COST_5D_REF,
     itemName: EMPTY_COST_5D_REF,
     itemUnit: EMPTY_COST_5D_REF,
@@ -6147,6 +6160,7 @@ function Cost5DPanel({
     { id: "level", label: "Nivel", set: "", property: "" },
     { id: "quantity", label: "Cantidad / metrado", set: "", property: "" }
   ]);
+  const [rawMetering, setRawMetering] = useState(false);
   const [search, setSearch] = useState("");
   const [chartMode, setChartMode] = useState<"bars" | "donut">("bars");
   const [chartLimit, setChartLimit] = useState<"10" | "15" | "25" | "all">(
@@ -6227,6 +6241,7 @@ function Cost5DPanel({
       }
 
       setServerAggregationLoading(true);
+      setServerAggregation(null);
       const data = await loadCost5DAggregationFromDatabase({
         projectCode,
         modelKeys: loadedModelKeys,
@@ -6246,7 +6261,7 @@ function Cost5DPanel({
 
   const localRows = useMemo(
     () =>
-      shouldUseServerCost5D
+      shouldUseServerCost5D || mapping.quantityPolicy
         ? []
         : buildCost5DRows({ models, projectCode, propertyIndex, mapping }),
     [models, projectCode, propertyIndex, mapping, shouldUseServerCost5D]
@@ -6268,12 +6283,13 @@ function Cost5DPanel({
         .includes(normalized)
     );
   }, [rows, deferredSearch]);
+  const pendingQuantities = filteredRows.some(row => row.quantityPending);
   const totalQuantity = filteredRows.reduce((sum, row) => sum + row.quantity, 0);
   const totalElements = filteredRows.reduce((sum, row) => sum + row.elementCount, 0);
   const maxQuantity = Math.max(...filteredRows.map((row) => row.quantity), 1);
   const chartLimitCount =
     chartLimit === "all" ? filteredRows.length : Number(chartLimit);
-  const chartRows = filteredRows.slice(0, chartLimitCount);
+  const chartRows = filteredRows.filter(row => !row.quantityPending).slice(0, chartLimitCount);
   const costChartBuckets = chartRows.map((row, index) => ({
     value: `${row.itemId} - ${row.itemName}`,
     count: Math.max(row.quantity, 0),
@@ -6286,6 +6302,7 @@ function Cost5DPanel({
   );
   const shouldUseServerMetering =
     mode === "metrados" &&
+    (!mapping.quantityPolicy || rawMetering) &&
     Boolean(projectCode) &&
     loadedModelKeys.length > 0 &&
     activeMeteringColumns.length > 0;
@@ -6306,14 +6323,14 @@ function Cost5DPanel({
   const meteringRows = useMemo(
     () =>
       mode === "metrados" && !shouldUseServerMetering
-        ? buildMeteringRows({
+        && (!mapping.quantityPolicy || rawMetering) ? buildMeteringRows({
             models,
             projectCode,
             propertyIndex,
             columns: activeMeteringColumns
           })
         : [],
-    [activeMeteringColumns, mode, models, projectCode, propertyIndex, shouldUseServerMetering]
+    [activeMeteringColumns, mode, models, projectCode, propertyIndex, shouldUseServerMetering, mapping.quantityPolicy, rawMetering]
   );
   const filteredMeteringRows = useMemo(() => {
     if (shouldUseServerMetering) return serverVisibleMeteringRows;
@@ -6496,10 +6513,16 @@ function Cost5DPanel({
         />
         {serverRows ? (
           <div className="rounded border border-emerald-800/60 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">
-            Partidas cargadas desde base de datos. Carga parametros solo si necesitas seleccionar elementos exactos en el visor.
+            Partidas desde la generación publicada. Selección por elemento de autoría y revisión exacta.
           </div>
         ) : null}
-        {mode === "metrados" ? (
+        {mode === "metrados" && mapping.quantityPolicy ? <label className="text-xs text-zinc-400"><input type="checkbox" checked={rawMetering} onChange={event => setRawMetering(event.target.checked)} /> Diagnóstico por entidad IFC (cantidades sin consolidar)</label> : null}
+        {mode === "metrados" && mapping.quantityPolicy && !rawMetering ? (
+          <LogicalCostTable groups={serverAggregation?.rows ?? []}
+            onExport={() => downloadTextFile(`metrados-logicos-${Date.now()}.csv`, logicalCostCsv(serverAggregation?.rows ?? []), "text/csv;charset=utf-8")}
+            onSelect={(detail, group) => onSelectRow({ key: detail.key, ...group, quantity: detail.quantity ?? 0, elementCount: 1, geometryCount: detail.graphicalLocalIds.length, modelCount: 1, modelIdMap: {},
+              selection: { version: 1, unresolvedEntityCount: 0, groups: [{ context: detail.context, authoringElements: [{ identityKey: detail.identityKey, memberCount: detail.memberLocalIds.length, graphicalLocalIds: detail.graphicalLocalIds }] }] } })} />
+        ) : mode === "metrados" ? (
           <>
             <div className="rounded border border-zinc-800 bg-zinc-900 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -6716,12 +6739,16 @@ function Cost5DPanel({
               value={mapping.quantity}
               selectorSource={selectorSource}
               onChange={(quantity) =>
-                setMapping((current) => ({ ...current, quantity }))
+                setMapping((current) => ({ ...current, quantity, quantityPolicy: undefined }))
               }
             />
           </div>
           <p className="mt-2 text-[11px] text-zinc-500">
-            Si cantidad no tiene valor numerico, se usa conteo de elementos.
+            La política de parámetro almacenado exige réplicas idénticas, unidad y composición corroborada. Conflictos: cantidad pendiente.
+            <select aria-label="Política de cantidad" value={mapping.quantityPolicy ?? "entity"} onChange={event => setMapping(current => ({ ...current, quantityPolicy: event.target.value === "stored-authoring-replicas@1" ? event.target.value : undefined }))} className="mt-2 w-full rounded bg-zinc-800 p-2">
+              <option value="stored-authoring-replicas@1">Parámetro almacenado · por elemento de autoría</option>
+              <option value="entity">Diagnóstico por entidad IFC · sin consolidar</option>
+            </select>
           </p>
         </div>
 
@@ -6737,8 +6764,8 @@ function Cost5DPanel({
           <div className="rounded border border-zinc-800 bg-zinc-900 p-3">
             <div className="text-[10px] uppercase text-zinc-500">Cantidad</div>
             <div className="text-lg font-semibold text-emerald-300">
-              {totalQuantity.toLocaleString("es-PE", {
-                maximumFractionDigits: 2
+              {pendingQuantities || new Set(filteredRows.map(row => row.itemUnit)).size > 1 ? "Pendiente / unidades distintas" : totalQuantity.toLocaleString("es-PE", {
+                maximumFractionDigits: 3
               })}
             </div>
           </div>
@@ -6861,8 +6888,8 @@ function Cost5DPanel({
                         </span>
                       </span>
                       <span className="shrink-0 text-zinc-400">
-                        {row.quantity.toLocaleString("es-PE", {
-                          maximumFractionDigits: 2
+                        {row.quantityPending ? "Pendiente" : row.quantity.toLocaleString("es-PE", {
+                          maximumFractionDigits: 3
                         })}{" "}
                         {row.itemUnit}
                       </span>
@@ -6926,8 +6953,8 @@ function Cost5DPanel({
                     </div>
                   </td>
                   <td className="px-2 py-2 text-right text-zinc-100">
-                    {row.quantity.toLocaleString("es-PE", {
-                      maximumFractionDigits: 2
+                    {row.quantityPending ? "Pendiente" : row.quantity.toLocaleString("es-PE", {
+                      maximumFractionDigits: 3
                     })}
                   </td>
                   <td className="px-2 py-2 text-zinc-400">{row.itemUnit}</td>
@@ -7839,10 +7866,11 @@ export function IfcViewerCanvas({
   const [containmentLoading, setContainmentLoading] = useState(false);
   const [associationsLoading, setAssociationsLoading] = useState(false);
   const [modelEntries, setModels] = useState<FederatedModelEntry[]>([]);
+  const loadedRevisionSignature = JSON.stringify(modelEntries.map(model => [model.modelId, model.bimContext]));
   useEffect(() => {
     const operation = renderOperationTokenRef;
     return () => { operation.current++; };
-  }, [modelEntries]);
+  }, [loadedRevisionSignature]);
   const modelVisibilitySignature = JSON.stringify(
     [...hiddenBucketKeys].filter((key) => key.startsWith("model:")).sort()
   );
@@ -8572,9 +8600,10 @@ export function IfcViewerCanvas({
             return total + ids.size;
           }, 0);
 
-          if (selectedCount > 25) {
-            setStatus(`Seleccion multiple: ${selectedCount} elementos`);
-          }
+          const logicalCount = modules.selection.getLogicalIdentities().length;
+          setStatus(logicalCount
+            ? `${logicalCount} elemento(s) seleccionado(s), ${selectedCount} geometrías.`
+            : `${selectedCount} geometría(s) seleccionada(s); identidad lógica no resuelta.`);
         });
 
         modules.selection.highlighter.events.select.onClear.add(() => {
@@ -10831,7 +10860,7 @@ export function IfcViewerCanvas({
         const map = await resolveCostAuthoringSelection(row.selection, models);
         if (!isRenderOperationCurrent(token)) return;
         if (!countModelIdMapElements(map)) throw new Error("La partida no tiene miembros gráficos presentes.");
-        await modules.selection.highlighter.highlightByID("select", map, true, false);
+        await modules.selection.selectLogical(map, row.selection.groups.flatMap(group => group.authoringElements.map(element => ({ context: group.context, identityKey: element.identityKey }))));
         if (!isRenderOperationCurrent(token)) return;
         await fitSelectionInView(viewer, viewer.components, map);
         setHasSelection(true);
@@ -11693,7 +11722,7 @@ async function handleIsolateModel(key: string) {
     const selectedCount = countModelIdMapElements(map);
     if (selectedCount > MAX_SELECTED_PROPERTIES_IDS) {
       setStatus(
-        `Seleccion grande: ${selectedCount} elementos. Reduce la seleccion para ver propiedades puntuales.`
+        `Seleccion grande: ${selectedCount} entidades IFC. Reduce la seleccion para ver propiedades puntuales.`
       );
       setPropertiesRequested(false);
       setPropertiesLoading(false);

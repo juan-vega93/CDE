@@ -589,6 +589,12 @@ router.put("/properties/snapshot", async (req, res) => {
 router.post("/cost5d/aggregate", async (req, res) => {
   try {
     const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    if (body.quantityPolicy !== undefined && body.quantityPolicy !== "stored-authoring-replicas@1") {
+      return res.status(400).json({ success: false, message: "Unsupported quantityPolicy" });
+    }
+    if (body.quantityPolicy && body.quantitySource !== "stored_parameter") {
+      return res.status(400).json({ success: false, message: "Stored policy requires quantitySource=stored_parameter" });
+    }
     const projectCode = toProjectCode(body.projectCode);
     const itemId = parsePropertyRef(body.itemId);
 
@@ -608,6 +614,8 @@ router.post("/cost5d/aggregate", async (req, res) => {
       itemName: parsePropertyRef(body.itemName),
       itemUnit: parsePropertyRef(body.itemUnit),
       quantity: parsePropertyRef(body.quantity),
+      quantitySource: body.quantitySource === "stored_parameter" ? body.quantitySource : undefined,
+      quantityPolicy: body.quantityPolicy === "stored-authoring-replicas@1" ? body.quantityPolicy : undefined,
       limit: Number.isFinite(limit) ? limit : undefined
     });
 

@@ -3,6 +3,8 @@ import type { ModelIdMap } from "@thatopen/components";
 import type { ViewerBimContext } from "./viewer-bim-context";
 import type { AuthoringSelection } from "./resolve-authoring-selection";
 
+export type LogicalSelectionIdentity = { context: ViewerBimContext; identityKey: string };
+
 type Options = {
   highlighter: Highlighter;
   resolve: (context: ViewerBimContext, localId: number, signal: AbortSignal) => Promise<AuthoringSelection | null>;
@@ -20,6 +22,7 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
   let pending: AbortController | undefined;
   let primary: { runtimeModelId: string; localId: number } | undefined;
   let logical: AuthoringSelection | undefined;
+  let identities: LogicalSelectionIdentity[] = [];
   let modifiedPick = false;
   let disposed = false;
   let queue: Promise<unknown> = Promise.resolve();
@@ -33,6 +36,7 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
     if (clearIdentity) {
       primary = undefined;
       logical = undefined;
+      identities = [];
     }
     return generation;
   }
@@ -66,6 +70,7 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
         if (!currentContext || currentContext.projectCode !== context.projectCode ||
             currentContext.modelKey !== context.modelKey || currentContext.revisionId !== context.revisionId) return;
         logical = result;
+        identities = [{ context: result.context, identityKey: result.authoringElement.identityKey }];
         const ids = result.members.filter((member) => member.geometryStatus === "present").map((member) => member.localId);
         // Direct original call is the explicit recursion guard: this programmatic
         // expansion cannot enter the user-pick resolver again. Never zoom here.
@@ -151,6 +156,19 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
       return primary ? { [primary.runtimeModelId]: new Set([primary.localId]) } : undefined;
     },
     getLogicalSelection: () => logical,
+    getLogicalIdentities: () => identities.slice(),
+    async selectLogical(map: ModelIdMap, requested: LogicalSelectionIdentity[]) {
+      const token = invalidate();
+      const snapshot = Object.fromEntries(Object.entries(map).map(([id, ids]) => [id, new Set(ids)]));
+      const unique = [...new Map(requested.map(identity => [JSON.stringify([
+        identity.context.projectCode, identity.context.modelKey, identity.context.revisionId, identity.identityKey
+      ]), identity])).values()];
+      await enqueue(async () => {
+        if (disposed || token !== generation) return;
+        identities = unique;
+        await invokeHighlight(["select", snapshot, true, false]);
+      });
+    },
     dispose() {
       disposed = true;
       invalidate();

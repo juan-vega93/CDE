@@ -185,6 +185,8 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
     getSelectionModelIdMap,
     getPropertiesModelIdMap,
     getLogicalSelection: logicalSelection.getLogicalSelection,
+    getLogicalIdentities: logicalSelection.getLogicalIdentities,
+    selectLogical: logicalSelection.selectLogical,
     setBimContextResolver(resolver: typeof getBimContext) {
       getBimContext = resolver;
     },

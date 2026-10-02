@@ -240,3 +240,48 @@ for(const retryUnauthorized of [false,true]){
     assert.equal(requests,retryUnauthorized?2:1);
   });
 }
+
+
+test("real OCI 1177591: every present child selects ONE logical element / 72 graphical members", async () => {
+  const evidence = JSON.parse(fs.readFileSync(new URL("../../../../../bff/src/services/fixtures/bim-oci-3f-evidence.json", import.meta.url), "utf8"));
+  const members = evidence.members.filter(m => m.authoringKey === "aggregate:209862");
+  const graphical = members.filter(m => m.geometryStatus === "present").map(m => m.localId).sort((a,b)=>a-b);
+  assert.equal(members.length,73); assert.equal(graphical.length,72);
+  const h = harness(async context => ({context, authoringElement: {identityKey:"aggregate:209862"}, members}));
+  for (const picked of graphical) {
+    await h.click("A",picked); await settle();
+    assert.deepEqual(h.map(),{A:graphical});
+    assert.equal(h.selection.getLogicalIdentities().length,1);
+    assert.equal(h.selection.getLogicalIdentities()[0].identityKey,"aggregate:209862");
+    // Hide, isolate and focus consume this complete map; primary remains properties-only.
+    assert.deepEqual(h.primary(),{A:[picked]}); assert.equal(h.visibilityWrites(),0);
+  }
+  h.selection.dispose();
+});
+test("programmatic logical selection preserves identities during highlight and clears on legacy selection", async () => {
+  const h=harness(); let during;
+  h.setAfterHighlight(async()=>{during=h.selection.getLogicalIdentities().length;});
+  await h.selection.selectLogical({A:new Set([2,3])},[{context:contextA,identityKey:"ae1"},{context:contextA,identityKey:"ae1"}]);
+  assert.equal(during,1);assert.equal(h.selection.getLogicalIdentities().length,1);
+  await h.highlighter.highlightByID("select",{A:new Set([2])},true,false);
+  assert.equal(h.selection.getLogicalIdentities().length,0);
+  await h.selection.clearSelection();assert.equal(h.selection.getLogicalIdentities().length,0);
+});
+
+
+test("actual hide/isolate/focus handlers consume the complete logical selection, never the primary child", async () => {
+  const h=harness();await h.click("A",2);await settle();
+  const calls=[];
+  const canvas=fs.readFileSync(new URL("../components/ifc-viewer-canvas.tsx",import.meta.url),"utf8");
+  for(const name of ["handleToggleSelection","handleIsolateSelection","handleFocusSelection"]) {
+    const body=canvas.split("  async function "+name+"(")[1].split("\n  async function ")[0];
+    const ctx={exports:{},console,modulesRef:{current:{selection:h.selection,visibility:{
+      toggle:async map=>calls.push(["hide",plainMap(map)]),isolate:async map=>calls.push(["isolate",plainMap(map)]),showAll:()=>assert.fail("showAll")
+    }}},viewerRef:{current:{components:{}}},setStatus:()=>{},requestViewerRefresh:()=>{},
+      fitSelectionInView:async(_v,_c,map)=>calls.push(["fit",plainMap(map)])};
+    vm.runInNewContext(ts.transpileModule("export async function run("+body,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,ctx);
+    await ctx.exports.run();
+  }
+  assert.deepEqual(calls.map(c=>c[0]),["hide","isolate","fit","fit"]);
+  assert.ok(calls.every(c=>JSON.stringify(c[1])===JSON.stringify({A:[2,3]})));
+});

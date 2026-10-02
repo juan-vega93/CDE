@@ -1,4 +1,5 @@
-import { createCostSelectionResolver, type CostSelectionSource } from "./bim-cost-selection";
+import { createStoredReplicaConsolidator, STORED_REPLICA_POLICY, type ReplicaSource, type CostObservation, type LogicalCostRow } from "./bim-cost-replicas";
+import { createCostSelectionResolver } from "./bim-cost-selection";
 import type { PoolClient } from "pg";
 import { getDatabasePool, isDatabaseEnabled } from "./client";
 import { getBimReadDatabase, lockBimIndexScope, withBimPublishedRead } from "./bim-index-generations";
@@ -180,6 +181,8 @@ export type BimPropertyRef = {
 };
 
 export type BimCost5DAggregationInput = {
+  quantitySource?: "stored_parameter" | "ifc_quantity" | "viewer_geometry";
+  quantityPolicy?: typeof STORED_REPLICA_POLICY;
   projectCode: string;
   modelIds?: string[];
   modelKeys?: string[];
@@ -233,11 +236,17 @@ export type BimPropertyAuditQueryRecord = {
 };
 
 export type BimCost5DAggregationRow = {
+  rawEntityCount?: number;
+  rawQuantity?: number;
+  logicalRows?: LogicalCostRow[];
+  quantityPolicy?: typeof STORED_REPLICA_POLICY;
+  quantityProvenance?: { source: "stored_parameter"; declaration: "mapping"; sourceProperty: BimPropertyRef; unitProperty: BimPropertyRef };
+  consolidationError?: string;
   selection?: import("./bim-cost-selection").CostSelection;
   itemId: string;
   itemName: string;
   itemUnit: string;
-  quantity: number;
+  quantity: number | null;
   elementCount: number;
   modelCount: number;
   modelKeys: string[];
@@ -248,7 +257,7 @@ export type BimCost5DAggregation = {
   projectCode: string;
   rows: BimCost5DAggregationRow[];
   totals: {
-    quantity: number;
+    quantity: number | null;
     elementCount: number;
     rowCount: number;
   };
@@ -1381,6 +1390,7 @@ async function read_getBimCost5DAggregation(
     item_id: string | null;
     item_name: string | null;
     item_unit: string | null;
+    observations: Record<string, CostObservation[]>;
     quantity: string;
     element_count: string;
     model_count: string;
@@ -1407,6 +1417,7 @@ async function read_getBimCost5DAggregation(
           item_id_value.value_key as item_id,
           item_name_value.value_key as item_name,
           item_unit_value.value_key as item_unit,
+          (coalesce(quantity_value.candidates,0) * coalesce(item_unit_value.candidates,0) * item_id_value.candidates * coalesce(item_name_value.candidates,1)) as candidates,
           case
             when quantity_value.value_number is not null then quantity_value.value_number::double precision
             when quantity_value.value_key ~ '^-?[0-9]+([\.,][0-9]+)?$' then replace(quantity_value.value_key, ',', '.')::double precision
@@ -1415,7 +1426,7 @@ async function read_getBimCost5DAggregation(
         from base
         join lateral (
           select
-            coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text) as value_key
+            coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text) as value_key, count(*) over ()::int as candidates
           from cde_bim_property_values pv
           join cde_bim_properties properties on properties.id = pv.property_id
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
@@ -1434,7 +1445,7 @@ async function read_getBimCost5DAggregation(
         ) item_id_value on true
         left join lateral (
           select
-            coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text) as value_key
+            coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text) as value_key, count(*) over ()::int as candidates
           from cde_bim_property_values pv
           join cde_bim_properties properties on properties.id = pv.property_id
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
@@ -1454,7 +1465,7 @@ async function read_getBimCost5DAggregation(
         ) item_name_value on true
         left join lateral (
           select
-            coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text) as value_key
+            coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text) as value_key, count(*) over ()::int as candidates
           from cde_bim_property_values pv
           join cde_bim_properties properties on properties.id = pv.property_id
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
@@ -1475,7 +1486,7 @@ async function read_getBimCost5DAggregation(
         left join lateral (
           select
             coalesce(pv.value_text, pv.value_number::text, pv.value_bool::text, pv.value_json::text) as value_key,
-            pv.value_number
+            pv.value_number, count(*) over ()::int as candidates
           from cde_bim_property_values pv
           join cde_bim_properties properties on properties.id = pv.property_id
           join cde_bim_property_sets sets on sets.id = properties.property_set_id
@@ -1501,6 +1512,7 @@ async function read_getBimCost5DAggregation(
           coalesce(nullif(item_unit, ''), '-') as item_unit,
           model_key,
           array_agg(local_id order by local_id) as local_ids,
+          jsonb_agg(jsonb_build_object('localId',local_id,'value',quantity_value,'candidates',candidates)) as observations,
           count(*)::int as element_count,
           coalesce(sum(quantity_value), 0) as quantity
         from enriched
@@ -1522,6 +1534,7 @@ async function read_getBimCost5DAggregation(
           sum(element_count)::text as element_count,
           count(*)::text as model_count,
           array_agg(model_key order by model_key) as model_keys,
+          jsonb_object_agg(model_key, observations) as observations,
           jsonb_object_agg(model_key, to_jsonb(local_ids) order by model_key) as local_ids_by_model_key
         from grouped_models
         group by item_id, item_name, item_unit
@@ -1553,9 +1566,9 @@ async function read_getBimCost5DAggregation(
   }));
 
   // Same repeatable-read snapshot as the quantity query. No inferred revision for legacy rows.
-  const sources = await getBimReadDatabase().query<CostSelectionSource>(`
+  const sources = await getBimReadDatabase().query<ReplicaSource>(`
     select ${BIM_MODEL_KEY_ALIAS_SQL} as model_key, scope.project_code, scope.canonical_model_key,
-      g.revision_id, a.element_key, array_agg(am.local_id order by am.local_id) as member_ids,
+      g.revision_id, a.element_key, a.resolution_method, a.root_local_id, array_agg(am.local_id order by am.local_id) as member_ids,
       coalesce(array_agg(am.local_id order by am.local_id) filter (where am.geometry_status='present'), '{}') as graphical_ids
     from cde_bim_visible_models models
     join cde_bim_index_generations g on g.id=cde_bim_published_generation(models.project_code,models.document_path)
@@ -1567,12 +1580,28 @@ async function read_getBimCost5DAggregation(
     group by models.id, models.model_key, models.document_path, scope.project_code,scope.canonical_model_key,g.revision_id,a.id
     order by a.element_key`, params.slice(0,3));
   const resolveSelection = createCostSelectionResolver(sources.rows);
-  for (const row of rows) row.selection = resolveSelection(row.localIdsByModelKey);
+  const consolidate = createStoredReplicaConsolidator(sources.rows);
+  for (const [index, row] of rows.entries()) {
+    row.selection = resolveSelection(row.localIdsByModelKey);
+    if (input.quantityPolicy === STORED_REPLICA_POLICY) {
+      row.quantityPolicy = input.quantityPolicy;
+      row.rawEntityCount = row.elementCount; row.rawQuantity = row.quantity ?? 0;
+      row.elementCount = row.selection.groups.reduce((sum, group) => sum + group.authoringElements.length, 0);
+      try {
+        if (!quantity || !itemUnit || input.quantitySource !== "stored_parameter") throw new Error("Stored source declaration, quantity and unit mapping are required");
+        row.quantityProvenance = { source: "stored_parameter", declaration: "mapping", sourceProperty: quantity, unitProperty: itemUnit };
+        row.logicalRows = consolidate(result.rows[index].observations, row.itemUnit, input.quantitySource);
+        row.quantity = row.logicalRows.some(r => r.quantity === null) ? null : row.logicalRows.reduce((sum, r) => sum + r.quantity!, 0);
+      } catch (error) {
+        row.quantity = null; row.consolidationError = error instanceof Error ? error.message : "Unresolved quantity";
+      }
+    }
+  }
   return {
     projectCode: input.projectCode,
     rows,
     totals: {
-      quantity: rows.reduce((sum, row) => sum + row.quantity, 0),
+      quantity: rows.some(row => row.quantity === null) || (input.quantityPolicy === STORED_REPLICA_POLICY && new Set(rows.map(row => row.itemUnit)).size > 1) ? null : rows.reduce((sum, row) => sum + row.quantity!, 0),
       elementCount: rows.reduce((sum, row) => sum + row.elementCount, 0),
       rowCount: rows.length
     }
