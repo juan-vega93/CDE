@@ -1,4 +1,5 @@
 "use client";
+import { resolveCostAuthoringSelection, getCostSelectionModelMap, type CostAuthoringSelection } from "../lib/cost-authoring-selection";
 import { createParameterGraphicsResolver } from "../lib/parameter-graphics";
 import { pollBimIndex } from "../lib/bim-index-polling";
 import { useSession } from "next-auth/react";
@@ -377,6 +378,7 @@ async function loadSmartViewPropertyCatalogFromDatabase(input: {
 
 type Cost5DServerAggregation = {
   rows: Array<{
+    selection?: CostAuthoringSelection;
     itemId: string;
     itemName: string;
     itemUnit: string;
@@ -449,12 +451,13 @@ function resolvePersistentLocalIdsToModelIdMap(
 
 function serverCostRowsToCost5DRows(
   data: Cost5DServerAggregation | null,
-  resolver: ReturnType<typeof createLiveBimModelResolver>
+  resolver: ReturnType<typeof createLiveBimModelResolver>,
+  models: FederatedModelEntry[] = []
 ): Cost5DRow[] | null {
   if (!data) return null;
 
   return data.rows.map((row) => {
-    const modelIdMap = resolvePersistentLocalIdsToModelIdMap(
+    const modelIdMap = row.selection ? getCostSelectionModelMap(row.selection, models) : resolvePersistentLocalIdsToModelIdMap(
       row.localIdsByModelKey ?? {},
       resolver
     );
@@ -465,6 +468,7 @@ function serverCostRowsToCost5DRows(
       itemName: row.itemName,
       itemUnit: row.itemUnit,
       quantity: row.quantity,
+      selection: row.selection,
       elementCount: row.elementCount,
       geometryCount: countModelIdMapElements(modelIdMap),
       modelCount: row.modelCount,
@@ -1814,6 +1818,7 @@ type Cost5DMapping = {
   quantity: Cost5DPropertyRef;
 };
 type Cost5DRow = {
+  selection?: CostAuthoringSelection;
   key: string;
   itemId: string;
   itemName: string;
@@ -6248,8 +6253,8 @@ function Cost5DPanel({
   );
 
   const serverRows = useMemo(
-    () => serverCostRowsToCost5DRows(serverAggregation, liveModelResolver),
-    [liveModelResolver, serverAggregation]
+    () => serverCostRowsToCost5DRows(serverAggregation, liveModelResolver, models),
+    [liveModelResolver, serverAggregation, models]
   );
   const rows = serverRows ?? localRows;
   const filteredRows = useMemo(() => {
@@ -7834,6 +7839,10 @@ export function IfcViewerCanvas({
   const [containmentLoading, setContainmentLoading] = useState(false);
   const [associationsLoading, setAssociationsLoading] = useState(false);
   const [modelEntries, setModels] = useState<FederatedModelEntry[]>([]);
+  useEffect(() => {
+    const operation = renderOperationTokenRef;
+    return () => { operation.current++; };
+  }, [modelEntries]);
   const modelVisibilitySignature = JSON.stringify(
     [...hiddenBucketKeys].filter((key) => key.startsWith("model:")).sort()
   );
@@ -10813,6 +10822,26 @@ export function IfcViewerCanvas({
   }
 
   async function handleSelectCost5DRow(row: Cost5DRow) {
+    if (row.selection) {
+      const modules = modulesRef.current;
+      const viewer = viewerRef.current;
+      if (!modules || !viewer) return;
+      const token = beginRenderOperation();
+      try {
+        const map = await resolveCostAuthoringSelection(row.selection, models);
+        if (!isRenderOperationCurrent(token)) return;
+        if (!countModelIdMapElements(map)) throw new Error("La partida no tiene miembros gráficos presentes.");
+        await modules.selection.highlighter.highlightByID("select", map, true, false);
+        if (!isRenderOperationCurrent(token)) return;
+        await fitSelectionInView(viewer, viewer.components, map);
+        setHasSelection(true);
+        setStatus(`Partida seleccionada: ${row.itemId}; ${row.selection.groups.reduce((n, g) => n + g.authoringElements.length, 0)} elementos de autoría, ${countModelIdMapElements(map)} geometrías.`);
+        requestViewerRefresh();
+      } catch (error) {
+        if (isRenderOperationCurrent(token)) setStatus(error instanceof Error ? error.message : "No se pudo resolver la selección lógica 5D.");
+      }
+      return;
+    }
     const unresolvedSuffix = row.unresolvedElementCount
       ? ` ${row.unresolvedElementCount} elemento(s) no se pueden seleccionar porque su modelo no esta cargado.`
       : "";

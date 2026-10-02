@@ -2,8 +2,8 @@ import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import type { ViewerSource } from "@/features/viewer-ifc/lib/resolve-viewer-source";
 import { initializeFragments } from "@/features/viewer-ifc/lib/fragments";
-import { bffAssetFetch } from "@/services/bff-client";
-import { getLoadedBimContext } from "./viewer-bim-context";
+import { bffAssetFetch, getBffPathFromUrl } from "@/services/bff-client";
+import { getLoadedBimContext, getIfcResponseContext } from "./viewer-bim-context";
 
 type LoadViewerModelParams = {
   components: OBC.Components;
@@ -162,6 +162,8 @@ export async function loadViewerModel({
     throw new Error(`No se pudo descargar el IFC: ${response.status}`);
   }
 
+  const bimContext = getBffPathFromUrl(source.modelUrl)?.startsWith("/api/documents/content?")
+    ? getIfcResponseContext(response, source.documentPath) : undefined;
   const buffer = new Uint8Array(await response.arrayBuffer());
   const model = await ifcLoader.load(buffer, false, resolvedModelName);
 
@@ -177,7 +179,7 @@ export async function loadViewerModel({
 
   return {
     model,
-    bimContext: undefined,
+    bimContext,
     fragments,
     workerUrl
   };

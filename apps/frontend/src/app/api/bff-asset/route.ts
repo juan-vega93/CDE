@@ -56,6 +56,11 @@ export async function GET(req: NextRequest) {
   const contentType = upstream.headers.get("content-type");
   const contentLength = upstream.headers.get("content-length");
   const contentDisposition = upstream.headers.get("content-disposition");
+  const bimContext = upstream.headers.get("x-bim-context");
+  if (bimContext) {
+    headers.set("x-bim-context", bimContext);
+    headers.set("cache-control", "no-store");
+  }
 
   if (contentType) headers.set("content-type", contentType);
   if (contentLength) headers.set("content-length", contentLength);

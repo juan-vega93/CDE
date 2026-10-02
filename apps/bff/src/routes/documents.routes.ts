@@ -1,3 +1,4 @@
+import { getIfcContentContext } from "../services/bim-content-context";
 import { Router } from "express";
 import { getFragContentSha256, isFragContentSha256 } from "../services/bim-derivatives.service";
 import {
@@ -371,6 +372,12 @@ router.get(
 
     const { buffer, contentType, fileName, size } =
       await getDocumentContent(documentPath, documentVersionId);
+
+    const ifcContext = getIfcContentContext(documentPath, buffer);
+    if (ifcContext) {
+      res.setHeader("X-Bim-Context", encodeURIComponent(JSON.stringify(ifcContext)));
+      res.setHeader("Cache-Control", "no-store");
+    }
 
     // Bind a resolved FRAG source to these exact response bytes, even if its path was overwritten.
     const expectedFragSha256 = req.query.expectedFragSha256;

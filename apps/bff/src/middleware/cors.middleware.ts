@@ -3,7 +3,7 @@ import { loadBffEnv } from "../config/env";
 
 const ALLOWED_METHODS = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
 const ALLOWED_HEADERS = "Authorization,Content-Type,Accept";
-const EXPOSED_HEADERS = "Server-Timing,X-Request-Id,X-Response-Time-Ms";
+const EXPOSED_HEADERS = "Server-Timing,X-Request-Id,X-Response-Time-Ms,X-Bim-Context";
 
 export function corsAllowlist(): RequestHandler {
   const { corsAllowedOrigins } = loadBffEnv();

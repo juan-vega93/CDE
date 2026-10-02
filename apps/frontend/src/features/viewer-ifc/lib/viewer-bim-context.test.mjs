@@ -18,20 +18,22 @@ function loadModule(file, dependencies) {
 const context = { projectCode: "AR3173", modelKey: "/AR3173/Modelo.ifc", revisionId: `sha256:${"a".repeat(64)}` };
 const frag = { kind: "frag", modelUrl: "http://bff/api/documents/content?path=test.frag&expectedFragSha256=digest", bimContext: context };
 const plain = (value) => JSON.parse(JSON.stringify(value));
-function loaderHarness(status = 200) {
+function loaderHarness(status = 200, header) {
   let next = 0;
   const loaded = [], urls = [];
   const makeModel = () => ({ modelId: `runtime-${++next}`, useCamera() {}, object: { traverse() {} } });
   const fragments = { core: { load: async () => { const model = makeModel(); loaded.push(model); return model; }, update: async () => {} } };
-  const ifcLoader = { setup: async () => {}, load: async () => makeModel() };
+  const ifcBuffers = [];
+  const ifcLoader = { setup: async () => {}, load: async (bytes) => { ifcBuffers.push([...bytes]); return makeModel(); } };
   const contextModule = loadModule("./viewer-bim-context.ts", {});
   const loadedModule = loadModule("./load-ifc-model.ts", {
     three: {}, "@thatopen/components": { IfcLoader: "IfcLoader" },
     "@/features/viewer-ifc/lib/fragments": { initializeFragments: () => ({ fragments, workerUrl: "worker" }) },
-    "@/services/bff-client": { bffAssetFetch: async (url) => { urls.push(url); return new Response(new Uint8Array([1,2,3]), { status }); } },
+    "@/services/bff-client": { getBffPathFromUrl: (url) => new URL(url).origin === "http://bff" ? new URL(url).pathname + new URL(url).search : null,
+      bffAssetFetch: async (url) => { urls.push(url); return new Response(new Uint8Array([1,2,3]), { status, headers: header ? { "x-bim-context": header } : {} }); } },
     "./viewer-bim-context": contextModule
   });
-  return { loaded, urls, load: (source) => loadedModule.loadViewerModel({ source,
+  return { loaded, urls, ifcBuffers, load: (source) => loadedModule.loadViewerModel({ source,
     components: { get: () => ifcLoader }, world: { camera: { three: {} }, scene: { three: { add() {} } } } }) };
 }
 
@@ -82,4 +84,23 @@ test("both initial and incremental canvas registration retain loader context per
   const canvas = fs.readFileSync(new URL("../components/ifc-viewer-canvas.tsx", import.meta.url), "utf8");
   assert.match(canvas, /loadedEntries\.push\(\{[\s\S]*?source: currentSource,\s*bimContext: result\.bimContext,/);
   assert.match(canvas, /const entry: FederatedModelEntry = \{[\s\S]*?source,\s*bimContext: result\.bimContext,/);
+});
+
+test("IFC direct registers the context of the exact response bytes passed to IfcLoader", async () => {
+  const h=loaderHarness(200,encodeURIComponent(JSON.stringify(context)));
+  const result=await h.load({kind:"ifc",modelUrl:"http://bff/api/documents/content?path=model.ifc",documentPath:context.modelKey});
+  assert.deepEqual(plain(result.bimContext),context);assert.deepEqual(h.ifcBuffers,[[1,2,3]]);
+  assert.ok(Object.isFrozen(result.bimContext));
+});
+test("mismatched exact response context fails before IFC load",async()=>{
+  const h=loaderHarness(200,encodeURIComponent(JSON.stringify(context)));
+  await assert.rejects(h.load({kind:"ifc",modelUrl:"http://bff/api/documents/content?path=other.ifc",documentPath:"/AR3173/Other.ifc"}));
+  assert.equal(h.ifcBuffers.length,0);
+  const malformed=loaderHarness(200,encodeURIComponent(JSON.stringify({...context,revisionId:context.revisionId+"\n"})));
+  await assert.rejects(malformed.load({kind:"ifc",modelUrl:"http://bff/api/documents/content?path=model.ifc",documentPath:context.modelKey}));
+  assert.equal(malformed.ifcBuffers.length,0);
+});
+test("external URL cannot claim BIM context through a supplied header",async()=>{
+  const h=loaderHarness(200,encodeURIComponent(JSON.stringify(context)));
+  const result=await h.load({kind:"ifc",modelUrl:"http://external/model.ifc"});assert.equal(result.bimContext,undefined);
 });

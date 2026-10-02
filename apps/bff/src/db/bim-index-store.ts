@@ -1,3 +1,4 @@
+import { createCostSelectionResolver, type CostSelectionSource } from "./bim-cost-selection";
 import type { PoolClient } from "pg";
 import { getDatabasePool, isDatabaseEnabled } from "./client";
 import { getBimReadDatabase, lockBimIndexScope, withBimPublishedRead } from "./bim-index-generations";
@@ -232,6 +233,7 @@ export type BimPropertyAuditQueryRecord = {
 };
 
 export type BimCost5DAggregationRow = {
+  selection?: import("./bim-cost-selection").CostSelection;
   itemId: string;
   itemName: string;
   itemUnit: string;
@@ -1534,7 +1536,7 @@ async function read_getBimCost5DAggregation(
     params
   );
 
-  const rows = result.rows.map((row) => ({
+  const rows: BimCost5DAggregationRow[] = result.rows.map((row) => ({
     itemId: row.item_id ?? "Sin partida",
     itemName: row.item_name ?? "-",
     itemUnit: row.item_unit ?? "-",
@@ -1550,6 +1552,22 @@ async function read_getBimCost5DAggregation(
     )
   }));
 
+  // Same repeatable-read snapshot as the quantity query. No inferred revision for legacy rows.
+  const sources = await getBimReadDatabase().query<CostSelectionSource>(`
+    select ${BIM_MODEL_KEY_ALIAS_SQL} as model_key, scope.project_code, scope.canonical_model_key,
+      g.revision_id, a.element_key, array_agg(am.local_id order by am.local_id) as member_ids,
+      coalesce(array_agg(am.local_id order by am.local_id) filter (where am.geometry_status='present'), '{}') as graphical_ids
+    from cde_bim_visible_models models
+    join cde_bim_index_generations g on g.id=cde_bim_published_generation(models.project_code,models.document_path)
+    join cde_bim_index_scopes scope on scope.id=g.scope_id
+    join cde_bim_authoring_contexts c on c.project_code=scope.project_code and c.model_key=scope.canonical_model_key and c.revision_id=g.revision_id
+    join cde_bim_authoring_elements a on a.context_id=c.id
+    join cde_bim_authoring_members am on am.authoring_element_id=a.id
+    where models.project_code=$1 and ($2::uuid[] is null or models.id=any($2::uuid[])) and ${BIM_MODEL_KEY_FILTER_SQL}
+    group by models.id, models.model_key, models.document_path, scope.project_code,scope.canonical_model_key,g.revision_id,a.id
+    order by a.element_key`, params.slice(0,3));
+  const resolveSelection = createCostSelectionResolver(sources.rows);
+  for (const row of rows) row.selection = resolveSelection(row.localIdsByModelKey);
   return {
     projectCode: input.projectCode,
     rows,

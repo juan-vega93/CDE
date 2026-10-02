@@ -1,0 +1,555 @@
+{
+  "context": {
+    "projectCode": "AR3173",
+    "modelKey": "/AR3173/100021-JYS01-000-ZZZ-MBM-OCI-E3-000100.ifc",
+    "revisionId": "sha256:6f991deefc1b895555992219490f877930db38fe968efac6e64a350787c01cdd"
+  },
+  "authoringElements": [
+    {
+      "element_key": "aggregate:209862",
+      "resolution_method": "corroborated_aggregate",
+      "root_local_id": 209862,
+      "authoring_element_id": "1177591",
+      "composition_evidence": {
+        "issues": [],
+        "relations": [
+          {
+            "relationType": "IfcRelAggregates",
+            "childLocalIds": [
+              208374,
+              208396,
+              208417,
+              208438,
+              208459,
+              208480,
+              208501,
+              208522,
+              208543,
+              208564,
+              208585,
+              208606,
+              208627,
+              208648,
+              208669,
+              208690,
+              208711,
+              208732,
+              208753,
+              208774,
+              208795,
+              208816,
+              208837,
+              208858,
+              208879,
+              208900,
+              208921,
+              208942,
+              208963,
+              208984,
+              209005,
+              209026,
+              209047,
+              209068,
+              209089,
+              209110,
+              209131,
+              209152,
+              209173,
+              209194,
+              209215,
+              209236,
+              209257,
+              209278,
+              209299,
+              209320,
+              209341,
+              209362,
+              209383,
+              209404,
+              209425,
+              209446,
+              209467,
+              209485,
+              209506,
+              209527,
+              209548,
+              209569,
+              209590,
+              209611,
+              209632,
+              209653,
+              209674,
+              209695,
+              209716,
+              209737,
+              209758,
+              209776,
+              209797,
+              209818,
+              209839,
+              209857
+            ],
+            "parentLocalId": 209862,
+            "relationLocalId": 209863
+          }
+        ],
+        "corroboration": {
+          "tag": "1177591",
+          "commonName": "Floor:AS01_Asfalto_General_e=30cm:1177591",
+          "sourceContainer": "100021-JYS01-000-ZZZ-MBM-OCI-E3-000100",
+          "authoringElementId": "1177591"
+        },
+        "missingLocalIds": [],
+        "affectedLocalIds": [
+          208374,
+          208396,
+          208417,
+          208438,
+          208459,
+          208480,
+          208501,
+          208522,
+          208543,
+          208564,
+          208585,
+          208606,
+          208627,
+          208648,
+          208669,
+          208690,
+          208711,
+          208732,
+          208753,
+          208774,
+          208795,
+          208816,
+          208837,
+          208858,
+          208879,
+          208900,
+          208921,
+          208942,
+          208963,
+          208984,
+          209005,
+          209026,
+          209047,
+          209068,
+          209089,
+          209110,
+          209131,
+          209152,
+          209173,
+          209194,
+          209215,
+          209236,
+          209257,
+          209278,
+          209299,
+          209320,
+          209341,
+          209362,
+          209383,
+          209404,
+          209425,
+          209446,
+          209467,
+          209485,
+          209506,
+          209527,
+          209548,
+          209569,
+          209590,
+          209611,
+          209632,
+          209653,
+          209674,
+          209695,
+          209716,
+          209737,
+          209758,
+          209776,
+          209797,
+          209818,
+          209839,
+          209857,
+          209862
+        ]
+      }
+    },
+    {
+      "element_key": "aggregate:287548",
+      "resolution_method": "corroborated_aggregate",
+      "root_local_id": 287548,
+      "authoring_element_id": "1641726",
+      "composition_evidence": {
+        "issues": [],
+        "relations": [
+          {
+            "relationType": "IfcRelAggregates",
+            "childLocalIds": [
+              287207,
+              287228,
+              287249,
+              287270,
+              287291,
+              287312,
+              287333,
+              287354,
+              287375,
+              287396,
+              287417,
+              287438,
+              287459,
+              287480,
+              287501,
+              287522,
+              287543
+            ],
+            "parentLocalId": 287548,
+            "relationLocalId": 287549
+          }
+        ],
+        "corroboration": {
+          "tag": "1641726",
+          "commonName": "Floor:AS01_Asfalto_General_e=30cm:1641726",
+          "sourceContainer": "100021-JYS01-000-ZZZ-MBM-OCI-E3-000100",
+          "authoringElementId": "1641726"
+        },
+        "missingLocalIds": [],
+        "affectedLocalIds": [
+          287207,
+          287228,
+          287249,
+          287270,
+          287291,
+          287312,
+          287333,
+          287354,
+          287375,
+          287396,
+          287417,
+          287438,
+          287459,
+          287480,
+          287501,
+          287522,
+          287543,
+          287548
+        ]
+      }
+    },
+    {
+      "element_key": "aggregate:298783",
+      "resolution_method": "corroborated_aggregate",
+      "root_local_id": 298783,
+      "authoring_element_id": "1693619",
+      "composition_evidence": {
+        "issues": [],
+        "relations": [
+          {
+            "relationType": "IfcRelAggregates",
+            "childLocalIds": [
+              298400,
+              298421,
+              298442,
+              298463,
+              298484,
+              298505,
+              298526,
+              298547,
+              298568,
+              298589,
+              298610,
+              298631,
+              298652,
+              298673,
+              298694,
+              298715,
+              298736,
+              298757,
+              298778
+            ],
+            "parentLocalId": 298783,
+            "relationLocalId": 298784
+          }
+        ],
+        "corroboration": {
+          "tag": "1693619",
+          "commonName": "Floor:AS01_Asfalto_General_e=30cm:1693619",
+          "sourceContainer": "100021-JYS01-000-ZZZ-MBM-OCI-E3-000100",
+          "authoringElementId": "1693619"
+        },
+        "missingLocalIds": [],
+        "affectedLocalIds": [
+          298400,
+          298421,
+          298442,
+          298463,
+          298484,
+          298505,
+          298526,
+          298547,
+          298568,
+          298589,
+          298610,
+          298631,
+          298652,
+          298673,
+          298694,
+          298715,
+          298736,
+          298757,
+          298778,
+          298783
+        ]
+      }
+    },
+    {
+      "element_key": "entity:289194",
+      "resolution_method": "standalone",
+      "root_local_id": null,
+      "authoring_element_id": "1685992",
+      "composition_evidence": {
+        "issues": [],
+        "relations": [],
+        "corroboration": {
+          "commonName": "Floor:AS01_Asfalto_General_e=30cm:1685992"
+        },
+        "missingLocalIds": [],
+        "affectedLocalIds": [
+          289194
+        ]
+      }
+    },
+    {
+      "element_key": "entity:294887",
+      "resolution_method": "standalone",
+      "root_local_id": null,
+      "authoring_element_id": "1693104",
+      "composition_evidence": {
+        "issues": [],
+        "relations": [],
+        "corroboration": {
+          "commonName": "Floor:AS01_Asfalto_General_e=30cm:1693104"
+        },
+        "missingLocalIds": [],
+        "affectedLocalIds": [
+          294887
+        ]
+      }
+    },
+    {
+      "element_key": "entity:296664",
+      "resolution_method": "standalone",
+      "root_local_id": null,
+      "authoring_element_id": "1693433",
+      "composition_evidence": {
+        "issues": [],
+        "relations": [],
+        "corroboration": {
+          "commonName": "Floor:AS01_Asfalto_General_e=30cm:1693433"
+        },
+        "missingLocalIds": [],
+        "affectedLocalIds": [
+          296664
+        ]
+      }
+    },
+    {
+      "element_key": "entity:301309",
+      "resolution_method": "standalone",
+      "root_local_id": null,
+      "authoring_element_id": "1698042",
+      "composition_evidence": {
+        "issues": [],
+        "relations": [],
+        "corroboration": {
+          "commonName": "Floor:AS01_Asfalto_General_e=30cm:1698042"
+        },
+        "missingLocalIds": [],
+        "affectedLocalIds": [
+          301309
+        ]
+      }
+    }
+  ],
+  "allSectorA5": [
+    {
+      "identityKey": "aggregate:209862",
+      "sourceElementId": "1177591",
+      "memberCount": 73,
+      "partidas": [
+        "0.2.1.3"
+      ],
+      "metrado": [
+        "156.616"
+      ],
+      "unit": [
+        "m3"
+      ]
+    },
+    {
+      "identityKey": "aggregate:312535",
+      "sourceElementId": "1713924",
+      "memberCount": 33,
+      "partidas": [
+        "0.2.1.4"
+      ],
+      "metrado": [
+        "7.279"
+      ],
+      "unit": [
+        "m3"
+      ]
+    },
+    {
+      "identityKey": "entity:283373",
+      "sourceElementId": "1519859",
+      "memberCount": 1,
+      "partidas": [
+        "0.2.1.22"
+      ],
+      "metrado": [
+        "1"
+      ],
+      "unit": [
+        "und"
+      ]
+    },
+    {
+      "identityKey": "entity:283466",
+      "sourceElementId": "1520196",
+      "memberCount": 1,
+      "partidas": [
+        "0.2.1.22"
+      ],
+      "metrado": [
+        "1"
+      ],
+      "unit": [
+        "und"
+      ]
+    }
+  ],
+  "rawTotal": 25305.046000000013,
+  "rootDiagnostic": 1842.105,
+  "externalRevitTotal": 1874.96,
+  "deltaPercent": -1.7523040491530497
+,"members":[
+{"localId":208374,"globalId":"1Mhb2wFl9FiPUcx9OLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212718,"quantityLocalId":208376},"rawValue":0.2220786402214874,"numericValue":0.2220786402214874,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212718,"quantityLocalId":208378},"rawValue":0.2220786402214874,"numericValue":0.2220786402214874,"unit":{"kind":"unknown"}}]},
+{"localId":208396,"globalId":"1Mhb2wFl9FiPUcx9SLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212726,"quantityLocalId":208398},"rawValue":0.6053472187550213,"numericValue":0.6053472187550213,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212726,"quantityLocalId":208400},"rawValue":0.6053472187550213,"numericValue":0.6053472187550213,"unit":{"kind":"unknown"}}]},
+{"localId":208417,"globalId":"1Mhb2wFl9FiPUcx90LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212734,"quantityLocalId":208419},"rawValue":0.2633124917746175,"numericValue":0.2633124917746175,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212734,"quantityLocalId":208421},"rawValue":0.2633124917746175,"numericValue":0.2633124917746175,"unit":{"kind":"unknown"}}]},
+{"localId":208438,"globalId":"1Mhb2wFl9FiPUcx94LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212742,"quantityLocalId":208440},"rawValue":0.20726781940531502,"numericValue":0.20726781940531502,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212742,"quantityLocalId":208442},"rawValue":0.20726781940531502,"numericValue":0.20726781940531502,"unit":{"kind":"unknown"}}]},
+{"localId":208459,"globalId":"1Mhb2wFl9FiPUcx98LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212750,"quantityLocalId":208461},"rawValue":0.1984541473413733,"numericValue":0.1984541473413733,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212750,"quantityLocalId":208463},"rawValue":0.1984541473413733,"numericValue":0.1984541473413733,"unit":{"kind":"unknown"}}]},
+{"localId":208480,"globalId":"1Mhb2wFl9FiPUcx9CLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212758,"quantityLocalId":208482},"rawValue":0.036940826088534204,"numericValue":0.036940826088534204,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212758,"quantityLocalId":208484},"rawValue":0.036940826088534204,"numericValue":0.036940826088534204,"unit":{"kind":"unknown"}}]},
+{"localId":208501,"globalId":"1Mhb2wFl9FiPUcx9mLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212766,"quantityLocalId":208503},"rawValue":0.19952736509964236,"numericValue":0.19952736509964236,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212766,"quantityLocalId":208505},"rawValue":0.19952736509964236,"numericValue":0.19952736509964236,"unit":{"kind":"unknown"}}]},
+{"localId":208522,"globalId":"1Mhb2wFl9FiPUcx9qLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212774,"quantityLocalId":208524},"rawValue":0.11734073088218702,"numericValue":0.11734073088218702,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212774,"quantityLocalId":208526},"rawValue":0.11734073088218702,"numericValue":0.11734073088218702,"unit":{"kind":"unknown"}}]},
+{"localId":208543,"globalId":"1Mhb2wFl9FiPUcx9uLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212782,"quantityLocalId":208545},"rawValue":1.4928425713360838,"numericValue":1.4928425713360838,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212782,"quantityLocalId":208547},"rawValue":1.4928425713360838,"numericValue":1.4928425713360838,"unit":{"kind":"unknown"}}]},
+{"localId":208564,"globalId":"1Mhb2wFl9FiPUcx9yLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212790,"quantityLocalId":208566},"rawValue":0.3122989797192724,"numericValue":0.3122989797192724,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212790,"quantityLocalId":208568},"rawValue":0.3122989797192724,"numericValue":0.3122989797192724,"unit":{"kind":"unknown"}}]},
+{"localId":208585,"globalId":"1Mhb2wFl9FiPUcx9WLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212798,"quantityLocalId":208587},"rawValue":0.4388187156412912,"numericValue":0.4388187156412912,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212798,"quantityLocalId":208589},"rawValue":0.4388187156412912,"numericValue":0.4388187156412912,"unit":{"kind":"unknown"}}]},
+{"localId":208606,"globalId":"1Mhb2wFl9FiPUcx9aLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212806,"quantityLocalId":208608},"rawValue":0.3666885767907734,"numericValue":0.3666885767907734,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212806,"quantityLocalId":208610},"rawValue":0.3666885767907734,"numericValue":0.3666885767907734,"unit":{"kind":"unknown"}}]},
+{"localId":208627,"globalId":"1Mhb2wFl9FiPUcx9eLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212814,"quantityLocalId":208629},"rawValue":0.13573540080177107,"numericValue":0.13573540080177107,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212814,"quantityLocalId":208631},"rawValue":0.13573540080177107,"numericValue":0.13573540080177107,"unit":{"kind":"unknown"}}]},
+{"localId":208648,"globalId":"1Mhb2wFl9FiPUcx9iLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212822,"quantityLocalId":208650},"rawValue":0.23461754860194134,"numericValue":0.23461754860194134,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212822,"quantityLocalId":208652},"rawValue":0.23461754860194134,"numericValue":0.23461754860194134,"unit":{"kind":"unknown"}}]},
+{"localId":208669,"globalId":"1Mhb2wFl9FiPUcx8GLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212830,"quantityLocalId":208671},"rawValue":0.2817590116941194,"numericValue":0.2817590116941194,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212830,"quantityLocalId":208673},"rawValue":0.2817590116941194,"numericValue":0.2817590116941194,"unit":{"kind":"unknown"}}]},
+{"localId":208690,"globalId":"1Mhb2wFl9FiPUcx8KLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212838,"quantityLocalId":208692},"rawValue":0.02830462820510151,"numericValue":0.02830462820510151,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212838,"quantityLocalId":208694},"rawValue":0.02830462820510151,"numericValue":0.02830462820510151,"unit":{"kind":"unknown"}}]},
+{"localId":208711,"globalId":"1Mhb2wFl9FiPUcx8OLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212846,"quantityLocalId":208713},"rawValue":0.027980002863919565,"numericValue":0.027980002863919565,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212846,"quantityLocalId":208715},"rawValue":0.027980002863919565,"numericValue":0.027980002863919565,"unit":{"kind":"unknown"}}]},
+{"localId":208732,"globalId":"1Mhb2wFl9FiPUcx8SLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212854,"quantityLocalId":208734},"rawValue":0.06577497054921534,"numericValue":0.06577497054921534,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212854,"quantityLocalId":208736},"rawValue":0.06577497054921534,"numericValue":0.06577497054921534,"unit":{"kind":"unknown"}}]},
+{"localId":208753,"globalId":"1Mhb2wFl9FiPUcx80LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212862,"quantityLocalId":208755},"rawValue":0.02838385824165285,"numericValue":0.02838385824165285,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212862,"quantityLocalId":208757},"rawValue":0.02838385824165285,"numericValue":0.02838385824165285,"unit":{"kind":"unknown"}}]},
+{"localId":208774,"globalId":"1Mhb2wFl9FiPUcx84LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212870,"quantityLocalId":208776},"rawValue":0.028720592500109717,"numericValue":0.028720592500109717,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212870,"quantityLocalId":208778},"rawValue":0.028720592500109717,"numericValue":0.028720592500109717,"unit":{"kind":"unknown"}}]},
+{"localId":208795,"globalId":"1Mhb2wFl9FiPUcx88LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212878,"quantityLocalId":208797},"rawValue":0.028989641914362117,"numericValue":0.028989641914362117,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212878,"quantityLocalId":208799},"rawValue":0.028989641914362117,"numericValue":0.028989641914362117,"unit":{"kind":"unknown"}}]},
+{"localId":208816,"globalId":"1Mhb2wFl9FiPUcx8CLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212886,"quantityLocalId":208818},"rawValue":0.028878076802572906,"numericValue":0.028878076802572906,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212886,"quantityLocalId":208820},"rawValue":0.028878076802572906,"numericValue":0.028878076802572906,"unit":{"kind":"unknown"}}]},
+{"localId":208837,"globalId":"1Mhb2wFl9FiPUcx8mLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212894,"quantityLocalId":208839},"rawValue":0.052843316499760935,"numericValue":0.052843316499760935,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212894,"quantityLocalId":208841},"rawValue":0.052843316499760935,"numericValue":0.052843316499760935,"unit":{"kind":"unknown"}}]},
+{"localId":208858,"globalId":"1Mhb2wFl9FiPUcx8qLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212902,"quantityLocalId":208860},"rawValue":0.028585446935632582,"numericValue":0.028585446935632582,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212902,"quantityLocalId":208862},"rawValue":0.028585446935632582,"numericValue":0.028585446935632582,"unit":{"kind":"unknown"}}]},
+{"localId":208879,"globalId":"1Mhb2wFl9FiPUcx8uLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212910,"quantityLocalId":208881},"rawValue":0.08652137883428364,"numericValue":0.08652137883428364,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212910,"quantityLocalId":208883},"rawValue":0.08652137883428364,"numericValue":0.08652137883428364,"unit":{"kind":"unknown"}}]},
+{"localId":208900,"globalId":"1Mhb2wFl9FiPUcx8yLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212918,"quantityLocalId":208902},"rawValue":0.012028879539683651,"numericValue":0.012028879539683651,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212918,"quantityLocalId":208904},"rawValue":0.012028879539683651,"numericValue":0.012028879539683651,"unit":{"kind":"unknown"}}]},
+{"localId":208921,"globalId":"1Mhb2wFl9FiPUcx8WLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212926,"quantityLocalId":208923},"rawValue":0.766189996769712,"numericValue":0.766189996769712,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212926,"quantityLocalId":208925},"rawValue":0.766189996769712,"numericValue":0.766189996769712,"unit":{"kind":"unknown"}}]},
+{"localId":208942,"globalId":"1Mhb2wFl9FiPUcx8aLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212934,"quantityLocalId":208944},"rawValue":0.012576285576342806,"numericValue":0.012576285576342806,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212934,"quantityLocalId":208946},"rawValue":0.012576285576342806,"numericValue":0.012576285576342806,"unit":{"kind":"unknown"}}]},
+{"localId":208963,"globalId":"1Mhb2wFl9FiPUcx8eLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212942,"quantityLocalId":208965},"rawValue":0.01308303772074776,"numericValue":0.01308303772074776,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212942,"quantityLocalId":208967},"rawValue":0.01308303772074776,"numericValue":0.01308303772074776,"unit":{"kind":"unknown"}}]},
+{"localId":208984,"globalId":"1Mhb2wFl9FiPUcx8iLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212950,"quantityLocalId":208986},"rawValue":0.013548287500227418,"numericValue":0.013548287500227418,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212950,"quantityLocalId":208988},"rawValue":0.013548287500227418,"numericValue":0.013548287500227418,"unit":{"kind":"unknown"}}]},
+{"localId":209005,"globalId":"1Mhb2wFl9FiPUcxBGLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212958,"quantityLocalId":209007},"rawValue":0.013971255890166533,"numericValue":0.013971255890166533,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212958,"quantityLocalId":209009},"rawValue":0.013971255890166533,"numericValue":0.013971255890166533,"unit":{"kind":"unknown"}}]},
+{"localId":209026,"globalId":"1Mhb2wFl9FiPUcxBKLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212966,"quantityLocalId":209028},"rawValue":0.014351234775892369,"numericValue":0.014351234775892369,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212966,"quantityLocalId":209030},"rawValue":0.014351234775892369,"numericValue":0.014351234775892369,"unit":{"kind":"unknown"}}]},
+{"localId":209047,"globalId":"1Mhb2wFl9FiPUcxBOLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212974,"quantityLocalId":209049},"rawValue":0.014687587878034598,"numericValue":0.014687587878034598,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212974,"quantityLocalId":209051},"rawValue":0.014687587878034598,"numericValue":0.014687587878034598,"unit":{"kind":"unknown"}}]},
+{"localId":209068,"globalId":"1Mhb2wFl9FiPUcxBSLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212982,"quantityLocalId":209070},"rawValue":0.014979752058555606,"numericValue":0.014979752058555606,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212982,"quantityLocalId":209072},"rawValue":0.014979752058555606,"numericValue":0.014979752058555606,"unit":{"kind":"unknown"}}]},
+{"localId":209089,"globalId":"1Mhb2wFl9FiPUcxB0LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212990,"quantityLocalId":209091},"rawValue":0.015227238149207224,"numericValue":0.015227238149207224,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212990,"quantityLocalId":209093},"rawValue":0.015227238149207224,"numericValue":0.015227238149207224,"unit":{"kind":"unknown"}}]},
+{"localId":209110,"globalId":"1Mhb2wFl9FiPUcxB4LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212998,"quantityLocalId":209112},"rawValue":0.015429631759199527,"numericValue":0.015429631759199527,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":212998,"quantityLocalId":209114},"rawValue":0.015429631759199527,"numericValue":0.015429631759199527,"unit":{"kind":"unknown"}}]},
+{"localId":209131,"globalId":"1Mhb2wFl9FiPUcxB8LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213006,"quantityLocalId":209133},"rawValue":0.015586594015581847,"numericValue":0.015586594015581847,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213006,"quantityLocalId":209135},"rawValue":0.015586594015581847,"numericValue":0.015586594015581847,"unit":{"kind":"unknown"}}]},
+{"localId":209152,"globalId":"1Mhb2wFl9FiPUcxBCLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213014,"quantityLocalId":209154},"rawValue":0.01569786212063299,"numericValue":0.01569786212063299,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213014,"quantityLocalId":209156},"rawValue":0.01569786212063299,"numericValue":0.01569786212063299,"unit":{"kind":"unknown"}}]},
+{"localId":209173,"globalId":"1Mhb2wFl9FiPUcxBmLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213022,"quantityLocalId":209175},"rawValue":0.0157632497691361,"numericValue":0.0157632497691361,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213022,"quantityLocalId":209177},"rawValue":0.0157632497691361,"numericValue":0.0157632497691361,"unit":{"kind":"unknown"}}]},
+{"localId":209194,"globalId":"1Mhb2wFl9FiPUcxBqLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213030,"quantityLocalId":209196},"rawValue":0.015782647476397835,"numericValue":0.015782647476397835,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213030,"quantityLocalId":209198},"rawValue":0.015782647476397835,"numericValue":0.015782647476397835,"unit":{"kind":"unknown"}}]},
+{"localId":209215,"globalId":"1Mhb2wFl9FiPUcxBuLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213038,"quantityLocalId":209217},"rawValue":0.015755420782005668,"numericValue":0.015755420782005668,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213038,"quantityLocalId":209219},"rawValue":0.015755420782005668,"numericValue":0.015755420782005668,"unit":{"kind":"unknown"}}]},
+{"localId":209236,"globalId":"1Mhb2wFl9FiPUcxByLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213046,"quantityLocalId":209238},"rawValue":0.015684380052674005,"numericValue":0.015684380052674005,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213046,"quantityLocalId":209240},"rawValue":0.015684380052674005,"numericValue":0.015684380052674005,"unit":{"kind":"unknown"}}]},
+{"localId":209257,"globalId":"1Mhb2wFl9FiPUcxBWLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213054,"quantityLocalId":209259},"rawValue":0.014894090940579963,"numericValue":0.014894090940579963,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213054,"quantityLocalId":209261},"rawValue":0.014894090940579963,"numericValue":0.014894090940579963,"unit":{"kind":"unknown"}}]},
+{"localId":209278,"globalId":"1Mhb2wFl9FiPUcxBaLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213062,"quantityLocalId":209280},"rawValue":0.24374468413011607,"numericValue":0.24374468413011607,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213062,"quantityLocalId":209282},"rawValue":0.24374468413011607,"numericValue":0.24374468413011607,"unit":{"kind":"unknown"}}]},
+{"localId":209299,"globalId":"1Mhb2wFl9FiPUcxBeLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213070,"quantityLocalId":209301},"rawValue":0.046734523490464204,"numericValue":0.046734523490464204,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213070,"quantityLocalId":209303},"rawValue":0.046734523490464204,"numericValue":0.046734523490464204,"unit":{"kind":"unknown"}}]},
+{"localId":209320,"globalId":"1Mhb2wFl9FiPUcxBiLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213078,"quantityLocalId":209322},"rawValue":1.5715640402480568,"numericValue":1.5715640402480568,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213078,"quantityLocalId":209324},"rawValue":1.5715640402480568,"numericValue":1.5715640402480568,"unit":{"kind":"unknown"}}]},
+{"localId":209341,"globalId":"1Mhb2wFl9FiPUcxAGLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213086,"quantityLocalId":209343},"rawValue":0.13483762644106023,"numericValue":0.13483762644106023,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213086,"quantityLocalId":209345},"rawValue":0.13483762644106023,"numericValue":0.13483762644106023,"unit":{"kind":"unknown"}}]},
+{"localId":209362,"globalId":"1Mhb2wFl9FiPUcxAKLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213094,"quantityLocalId":209364},"rawValue":0.06473094653427891,"numericValue":0.06473094653427891,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213094,"quantityLocalId":209366},"rawValue":0.06473094653427891,"numericValue":0.06473094653427891,"unit":{"kind":"unknown"}}]},
+{"localId":209383,"globalId":"1Mhb2wFl9FiPUcxAOLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213102,"quantityLocalId":209385},"rawValue":0.053127221801282945,"numericValue":0.053127221801282945,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213102,"quantityLocalId":209387},"rawValue":0.053127221801282945,"numericValue":0.053127221801282945,"unit":{"kind":"unknown"}}]},
+{"localId":209404,"globalId":"1Mhb2wFl9FiPUcxASLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213110,"quantityLocalId":209406},"rawValue":0.05576044794649689,"numericValue":0.05576044794649689,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213110,"quantityLocalId":209408},"rawValue":0.05576044794649689,"numericValue":0.05576044794649689,"unit":{"kind":"unknown"}}]},
+{"localId":209425,"globalId":"1Mhb2wFl9FiPUcxA0LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213118,"quantityLocalId":209427},"rawValue":0.06046162303490136,"numericValue":0.06046162303490136,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213118,"quantityLocalId":209429},"rawValue":0.06046162303490136,"numericValue":0.06046162303490136,"unit":{"kind":"unknown"}}]},
+{"localId":209446,"globalId":"1Mhb2wFl9FiPUcxA4LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213126,"quantityLocalId":209448},"rawValue":0.0427843577755356,"numericValue":0.0427843577755356,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213126,"quantityLocalId":209450},"rawValue":0.0427843577755356,"numericValue":0.0427843577755356,"unit":{"kind":"unknown"}}]},
+{"localId":209467,"globalId":"1Mhb2wFl9FiPUcxA8LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213134,"quantityLocalId":209469},"rawValue":0.11117474306381296,"numericValue":0.11117474306381296,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213134,"quantityLocalId":209471},"rawValue":0.11117474306381296,"numericValue":0.11117474306381296,"unit":{"kind":"unknown"}}]},
+{"localId":209485,"globalId":"1Mhb2wFl9FiPUcxACLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213142,"quantityLocalId":209487},"rawValue":0.0915887770822484,"numericValue":0.0915887770822484,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213142,"quantityLocalId":209489},"rawValue":0.0915887770822484,"numericValue":0.0915887770822484,"unit":{"kind":"unknown"}}]},
+{"localId":209506,"globalId":"1Mhb2wFl9FiPUcxAmLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213150,"quantityLocalId":209508},"rawValue":0.8945534801787588,"numericValue":0.8945534801787588,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213150,"quantityLocalId":209510},"rawValue":0.8945534801787588,"numericValue":0.8945534801787588,"unit":{"kind":"unknown"}}]},
+{"localId":209527,"globalId":"1Mhb2wFl9FiPUcxAqLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213158,"quantityLocalId":209529},"rawValue":0.06736522412957614,"numericValue":0.06736522412957614,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213158,"quantityLocalId":209531},"rawValue":0.06736522412957614,"numericValue":0.06736522412957614,"unit":{"kind":"unknown"}}]},
+{"localId":209548,"globalId":"1Mhb2wFl9FiPUcxAuLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213166,"quantityLocalId":209550},"rawValue":0.0437245953969233,"numericValue":0.0437245953969233,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213166,"quantityLocalId":209552},"rawValue":0.0437245953969233,"numericValue":0.0437245953969233,"unit":{"kind":"unknown"}}]},
+{"localId":209569,"globalId":"1Mhb2wFl9FiPUcxAyLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213174,"quantityLocalId":209571},"rawValue":0.09491124607510487,"numericValue":0.09491124607510487,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213174,"quantityLocalId":209573},"rawValue":0.09491124607510487,"numericValue":0.09491124607510487,"unit":{"kind":"unknown"}}]},
+{"localId":209590,"globalId":"1Mhb2wFl9FiPUcxAWLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213182,"quantityLocalId":209592},"rawValue":0.06217176303319787,"numericValue":0.06217176303319787,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213182,"quantityLocalId":209594},"rawValue":0.06217176303319787,"numericValue":0.06217176303319787,"unit":{"kind":"unknown"}}]},
+{"localId":209611,"globalId":"1Mhb2wFl9FiPUcxAaLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213190,"quantityLocalId":209613},"rawValue":0.0631374606419827,"numericValue":0.0631374606419827,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213190,"quantityLocalId":209615},"rawValue":0.0631374606419827,"numericValue":0.0631374606419827,"unit":{"kind":"unknown"}}]},
+{"localId":209632,"globalId":"1Mhb2wFl9FiPUcxAeLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213198,"quantityLocalId":209634},"rawValue":0.05801205460629865,"numericValue":0.05801205460629865,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213198,"quantityLocalId":209636},"rawValue":0.05801205460629865,"numericValue":0.05801205460629865,"unit":{"kind":"unknown"}}]},
+{"localId":209653,"globalId":"1Mhb2wFl9FiPUcxAiLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213206,"quantityLocalId":209655},"rawValue":0.06237118919968951,"numericValue":0.06237118919968951,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213206,"quantityLocalId":209657},"rawValue":0.06237118919968951,"numericValue":0.06237118919968951,"unit":{"kind":"unknown"}}]},
+{"localId":209674,"globalId":"1Mhb2wFl9FiPUcxDGLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213214,"quantityLocalId":209676},"rawValue":0.11253450990696227,"numericValue":0.11253450990696227,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213214,"quantityLocalId":209678},"rawValue":0.11253450990696227,"numericValue":0.11253450990696227,"unit":{"kind":"unknown"}}]},
+{"localId":209695,"globalId":"1Mhb2wFl9FiPUcxDKLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213222,"quantityLocalId":209697},"rawValue":0.06517996097935941,"numericValue":0.06517996097935941,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213222,"quantityLocalId":209699},"rawValue":0.06517996097935941,"numericValue":0.06517996097935941,"unit":{"kind":"unknown"}}]},
+{"localId":209716,"globalId":"1Mhb2wFl9FiPUcxDOLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213230,"quantityLocalId":209718},"rawValue":2.1372841862537695,"numericValue":2.1372841862537695,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213230,"quantityLocalId":209720},"rawValue":2.1372841862537695,"numericValue":2.1372841862537695,"unit":{"kind":"unknown"}}]},
+{"localId":209737,"globalId":"1Mhb2wFl9FiPUcxDSLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213238,"quantityLocalId":209739},"rawValue":1.641804288062256,"numericValue":1.641804288062256,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213238,"quantityLocalId":209741},"rawValue":1.641804288062256,"numericValue":1.641804288062256,"unit":{"kind":"unknown"}}]},
+{"localId":209758,"globalId":"1Mhb2wFl9FiPUcxD0LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213246,"quantityLocalId":209760},"rawValue":0.21418691945286303,"numericValue":0.21418691945286303,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213246,"quantityLocalId":209762},"rawValue":0.21418691945286303,"numericValue":0.21418691945286303,"unit":{"kind":"unknown"}}]},
+{"localId":209776,"globalId":"1Mhb2wFl9FiPUcxD4LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213254,"quantityLocalId":209778},"rawValue":0.20276033968793317,"numericValue":0.20276033968793317,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213254,"quantityLocalId":209780},"rawValue":0.20276033968793317,"numericValue":0.20276033968793317,"unit":{"kind":"unknown"}}]},
+{"localId":209797,"globalId":"1Mhb2wFl9FiPUcxD8LojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213262,"quantityLocalId":209799},"rawValue":0.29223754934418456,"numericValue":0.29223754934418456,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213262,"quantityLocalId":209801},"rawValue":0.29223754934418456,"numericValue":0.29223754934418456,"unit":{"kind":"unknown"}}]},
+{"localId":209818,"globalId":"1Mhb2wFl9FiPUcxDCLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213270,"quantityLocalId":209820},"rawValue":1.2281727512670293,"numericValue":1.2281727512670293,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213270,"quantityLocalId":209822},"rawValue":1.2281727512670293,"numericValue":1.2281727512670293,"unit":{"kind":"unknown"}}]},
+{"localId":209839,"globalId":"1Mhb2wFl9FiPUcxDmLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213278,"quantityLocalId":209841},"rawValue":1.170576248324729,"numericValue":1.170576248324729,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213278,"quantityLocalId":209843},"rawValue":1.170576248324729,"numericValue":1.170576248324729,"unit":{"kind":"unknown"}}]},
+{"localId":209857,"globalId":"1Mhb2wFl9FiPUcxDqLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"child","geometryStatus":"present","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213286,"quantityLocalId":209859},"rawValue":0.050520244322377575,"numericValue":0.050520244322377575,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213286,"quantityLocalId":209861},"rawValue":0.050520244322377575,"numericValue":0.050520244322377575,"unit":{"kind":"unknown"}}]},
+{"localId":209862,"globalId":"1Mhb2wFl9FiPUcx9GLojjL","ifcClass":"IfcSlab","authoringKey":"aggregate:209862","role":"root","geometryStatus":"absent","metradoRaw":"156.616","metradoNumeric":156.616,"unit":"m3","sector":"A5","sourceElementId":"1177591","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":213292,"quantityLocalId":213291},"rawValue":188.05910326170218,"numericValue":188.05910326170218,"unit":{"kind":"unknown"}}]},
+{"localId":287207,"globalId":"14SRpWEj19qhp0InBdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288258,"quantityLocalId":287209},"rawValue":0.06782099288051614,"numericValue":0.06782099288051614,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288258,"quantityLocalId":287211},"rawValue":0.06782099288051614,"numericValue":0.06782099288051614,"unit":{"kind":"unknown"}}]},
+{"localId":287228,"globalId":"14SRpWEj19qhp0InFdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288266,"quantityLocalId":287230},"rawValue":0.021636699359474546,"numericValue":0.021636699359474546,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288266,"quantityLocalId":287232},"rawValue":0.021636699359474546,"numericValue":0.021636699359474546,"unit":{"kind":"unknown"}}]},
+{"localId":287249,"globalId":"14SRpWEj19qhp0InJdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288274,"quantityLocalId":287251},"rawValue":0.04275981421909733,"numericValue":0.04275981421909733,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288274,"quantityLocalId":287253},"rawValue":0.04275981421909733,"numericValue":0.04275981421909733,"unit":{"kind":"unknown"}}]},
+{"localId":287270,"globalId":"14SRpWEj19qhp0InNdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288282,"quantityLocalId":287272},"rawValue":0.06760981056862818,"numericValue":0.06760981056862818,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288282,"quantityLocalId":287274},"rawValue":0.06760981056862818,"numericValue":0.06760981056862818,"unit":{"kind":"unknown"}}]},
+{"localId":287291,"globalId":"14SRpWEj19qhp0InRdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288290,"quantityLocalId":287293},"rawValue":0.06825075205316121,"numericValue":0.06825075205316121,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288290,"quantityLocalId":287295},"rawValue":0.06825075205316121,"numericValue":0.06825075205316121,"unit":{"kind":"unknown"}}]},
+{"localId":287312,"globalId":"14SRpWEj19qhp0InVdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288298,"quantityLocalId":287314},"rawValue":0.06940071686033415,"numericValue":0.06940071686033415,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288298,"quantityLocalId":287316},"rawValue":0.06940071686033415,"numericValue":0.06940071686033415,"unit":{"kind":"unknown"}}]},
+{"localId":287333,"globalId":"14SRpWEj19qhp0InZdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288306,"quantityLocalId":287335},"rawValue":0.03710074272347708,"numericValue":0.03710074272347708,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288306,"quantityLocalId":287337},"rawValue":0.03710074272347708,"numericValue":0.03710074272347708,"unit":{"kind":"unknown"}}]},
+{"localId":287354,"globalId":"14SRpWEj19qhp0Inddda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288314,"quantityLocalId":287356},"rawValue":0.07638861639695727,"numericValue":0.07638861639695727,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288314,"quantityLocalId":287358},"rawValue":0.07638861639695727,"numericValue":0.07638861639695727,"unit":{"kind":"unknown"}}]},
+{"localId":287375,"globalId":"14SRpWEj19qhp0Inhdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288322,"quantityLocalId":287377},"rawValue":0.5792146864940958,"numericValue":0.5792146864940958,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288322,"quantityLocalId":287379},"rawValue":0.5792146864940958,"numericValue":0.5792146864940958,"unit":{"kind":"unknown"}}]},
+{"localId":287396,"globalId":"14SRpWEj19qhp0Inldda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288330,"quantityLocalId":287398},"rawValue":0.8007846859688117,"numericValue":0.8007846859688117,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288330,"quantityLocalId":287400},"rawValue":0.8007846859688117,"numericValue":0.8007846859688117,"unit":{"kind":"unknown"}}]},
+{"localId":287417,"globalId":"14SRpWEj19qhp0Inpdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288338,"quantityLocalId":287419},"rawValue":1.153556492635454,"numericValue":1.153556492635454,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288338,"quantityLocalId":287421},"rawValue":1.153556492635454,"numericValue":1.153556492635454,"unit":{"kind":"unknown"}}]},
+{"localId":287438,"globalId":"14SRpWEj19qhp0Intdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288346,"quantityLocalId":287440},"rawValue":0.6361530951814004,"numericValue":0.6361530951814004,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288346,"quantityLocalId":287442},"rawValue":0.6361530951814004,"numericValue":0.6361530951814004,"unit":{"kind":"unknown"}}]},
+{"localId":287459,"globalId":"14SRpWEj19qhp0Inxdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288354,"quantityLocalId":287461},"rawValue":0.9659526169059239,"numericValue":0.9659526169059239,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288354,"quantityLocalId":287463},"rawValue":0.9659526169059239,"numericValue":0.9659526169059239,"unit":{"kind":"unknown"}}]},
+{"localId":287480,"globalId":"14SRpWEj19qhp0In$dda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288362,"quantityLocalId":287482},"rawValue":0.7147570433519022,"numericValue":0.7147570433519022,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288362,"quantityLocalId":287484},"rawValue":0.7147570433519022,"numericValue":0.7147570433519022,"unit":{"kind":"unknown"}}]},
+{"localId":287501,"globalId":"14SRpWEj19qhp0Im3dda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288370,"quantityLocalId":287503},"rawValue":0.6647649423756339,"numericValue":0.6647649423756339,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288370,"quantityLocalId":287505},"rawValue":0.6647649423756339,"numericValue":0.6647649423756339,"unit":{"kind":"unknown"}}]},
+{"localId":287522,"globalId":"14SRpWEj19qhp0Im7dda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288378,"quantityLocalId":287524},"rawValue":0.01991708966088664,"numericValue":0.01991708966088664,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288378,"quantityLocalId":287526},"rawValue":0.01991708966088664,"numericValue":0.01991708966088664,"unit":{"kind":"unknown"}}]},
+{"localId":287543,"globalId":"14SRpWEj19qhp0ImBdda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"child","geometryStatus":"present","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288386,"quantityLocalId":287545},"rawValue":0.10543319390921446,"numericValue":0.10543319390921446,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288386,"quantityLocalId":287547},"rawValue":0.10543319390921446,"numericValue":0.10543319390921446,"unit":{"kind":"unknown"}}]},
+{"localId":287548,"globalId":"14SRpWEj19qhp0In3dda5q","ifcClass":"IfcSlab","authoringKey":"aggregate:287548","role":"root","geometryStatus":"absent","metradoRaw":"65.641","metradoNumeric":65.641,"unit":"m3","sector":"A4","sourceElementId":"1641726","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":288392,"quantityLocalId":288391},"rawValue":65.56838174019889,"numericValue":65.56838174019889,"unit":{"kind":"unknown"}}]},
+{"localId":298400,"globalId":"3kh$s_CMXC58WGsW4tQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299571,"quantityLocalId":298402},"rawValue":0.5110548572836352,"numericValue":0.5110548572836352,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299571,"quantityLocalId":298404},"rawValue":0.5110548572836352,"numericValue":0.5110548572836352,"unit":{"kind":"unknown"}}]},
+{"localId":298421,"globalId":"3kh$s_CMXC58WGsW0tQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299579,"quantityLocalId":298423},"rawValue":0.24071092310947542,"numericValue":0.24071092310947542,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299579,"quantityLocalId":298425},"rawValue":0.24071092310947542,"numericValue":0.24071092310947542,"unit":{"kind":"unknown"}}]},
+{"localId":298442,"globalId":"3kh$s_CMXC58WGsWStQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299587,"quantityLocalId":298444},"rawValue":1.4118996184896913,"numericValue":1.4118996184896913,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299587,"quantityLocalId":298446},"rawValue":1.4118996184896913,"numericValue":1.4118996184896913,"unit":{"kind":"unknown"}}]},
+{"localId":298463,"globalId":"3kh$s_CMXC58WGsWOtQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299595,"quantityLocalId":298465},"rawValue":1.0296500258087276,"numericValue":1.0296500258087276,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299595,"quantityLocalId":298467},"rawValue":1.0296500258087276,"numericValue":1.0296500258087276,"unit":{"kind":"unknown"}}]},
+{"localId":298484,"globalId":"3kh$s_CMXC58WGsWKtQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299603,"quantityLocalId":298486},"rawValue":0.7726553133832432,"numericValue":0.7726553133832432,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299603,"quantityLocalId":298488},"rawValue":0.7726553133832432,"numericValue":0.7726553133832432,"unit":{"kind":"unknown"}}]},
+{"localId":298505,"globalId":"3kh$s_CMXC58WGsWGtQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299611,"quantityLocalId":298507},"rawValue":1.7642132130854875,"numericValue":1.7642132130854875,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299611,"quantityLocalId":298509},"rawValue":1.7642132130854875,"numericValue":1.7642132130854875,"unit":{"kind":"unknown"}}]},
+{"localId":298526,"globalId":"3kh$s_CMXC58WGsWitQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299619,"quantityLocalId":298528},"rawValue":1.1456852812523357,"numericValue":1.1456852812523357,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299619,"quantityLocalId":298530},"rawValue":1.1456852812523357,"numericValue":1.1456852812523357,"unit":{"kind":"unknown"}}]},
+{"localId":298547,"globalId":"3kh$s_CMXC58WGsWetQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299627,"quantityLocalId":298549},"rawValue":0.7819844096313928,"numericValue":0.7819844096313928,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299627,"quantityLocalId":298551},"rawValue":0.7819844096313928,"numericValue":0.7819844096313928,"unit":{"kind":"unknown"}}]},
+{"localId":298568,"globalId":"3kh$s_CMXC58WGsWatQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299635,"quantityLocalId":298570},"rawValue":2.2653042502883074,"numericValue":2.2653042502883074,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299635,"quantityLocalId":298572},"rawValue":2.2653042502883074,"numericValue":2.2653042502883074,"unit":{"kind":"unknown"}}]},
+{"localId":298589,"globalId":"3kh$s_CMXC58WGsWWtQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299643,"quantityLocalId":298591},"rawValue":0.956430329427036,"numericValue":0.956430329427036,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299643,"quantityLocalId":298593},"rawValue":0.956430329427036,"numericValue":0.956430329427036,"unit":{"kind":"unknown"}}]},
+{"localId":298610,"globalId":"3kh$s_CMXC58WGsWytQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299651,"quantityLocalId":298612},"rawValue":3.662747430241267,"numericValue":3.662747430241267,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299651,"quantityLocalId":298614},"rawValue":3.662747430241267,"numericValue":3.662747430241267,"unit":{"kind":"unknown"}}]},
+{"localId":298631,"globalId":"3kh$s_CMXC58WGsWutQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299659,"quantityLocalId":298633},"rawValue":3.2764313913469993,"numericValue":3.2764313913469993,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299659,"quantityLocalId":298635},"rawValue":3.2764313913469993,"numericValue":3.2764313913469993,"unit":{"kind":"unknown"}}]},
+{"localId":298652,"globalId":"3kh$s_CMXC58WGsWqtQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299667,"quantityLocalId":298654},"rawValue":1.8710478812244293,"numericValue":1.8710478812244293,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299667,"quantityLocalId":298656},"rawValue":1.8710478812244293,"numericValue":1.8710478812244293,"unit":{"kind":"unknown"}}]},
+{"localId":298673,"globalId":"3kh$s_CMXC58WGsWmtQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299675,"quantityLocalId":298675},"rawValue":19.604727529985123,"numericValue":19.604727529985123,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299675,"quantityLocalId":298677},"rawValue":19.604727529985123,"numericValue":19.604727529985123,"unit":{"kind":"unknown"}}]},
+{"localId":298694,"globalId":"3kh$s_CMXC58WGsXCtQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299683,"quantityLocalId":298696},"rawValue":12.631137979596641,"numericValue":12.631137979596641,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299683,"quantityLocalId":298698},"rawValue":12.631137979596641,"numericValue":12.631137979596641,"unit":{"kind":"unknown"}}]},
+{"localId":298715,"globalId":"3kh$s_CMXC58WGsX8tQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299691,"quantityLocalId":298717},"rawValue":0.8549030779295874,"numericValue":0.8549030779295874,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299691,"quantityLocalId":298719},"rawValue":0.8549030779295874,"numericValue":0.8549030779295874,"unit":{"kind":"unknown"}}]},
+{"localId":298736,"globalId":"3kh$s_CMXC58WGsX4tQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299699,"quantityLocalId":298738},"rawValue":0.9867231008422711,"numericValue":0.9867231008422711,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299699,"quantityLocalId":298740},"rawValue":0.9867231008422711,"numericValue":0.9867231008422711,"unit":{"kind":"unknown"}}]},
+{"localId":298757,"globalId":"3kh$s_CMXC58WGsX0tQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299707,"quantityLocalId":298759},"rawValue":0.24156068161793684,"numericValue":0.24156068161793684,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299707,"quantityLocalId":298761},"rawValue":0.24156068161793684,"numericValue":0.24156068161793684,"unit":{"kind":"unknown"}}]},
+{"localId":298778,"globalId":"3kh$s_CMXC58WGsXStQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"child","geometryStatus":"present","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299715,"quantityLocalId":298780},"rawValue":0.11724212055447676,"numericValue":0.11724212055447676,"unit":{"kind":"unknown"}},{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"GrossVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299715,"quantityLocalId":298782},"rawValue":0.11724212055447676,"numericValue":0.11724212055447676,"unit":{"kind":"unknown"}}]},
+{"localId":298783,"globalId":"3kh$s_CMXC58WGsWCtQG_L","ifcClass":"IfcSlab","authoringKey":"aggregate:298783","role":"root","geometryStatus":"absent","metradoRaw":"582.668","metradoNumeric":582.668,"unit":"m3","sector":"A3","sourceElementId":"1693619","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":299721,"quantityLocalId":299720},"rawValue":582.608592949144,"numericValue":582.608592949144,"unit":{"kind":"unknown"}}]},
+{"localId":289194,"globalId":"2vnmMWSA14IxUGYK0xIx9J","ifcClass":"IfcSlab","authoringKey":"entity:289194","role":"standalone","geometryStatus":"present","metradoRaw":"127.579","metradoNumeric":127.579,"unit":"m3","sector":"A2","sourceElementId":"1685992","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":289238,"quantityLocalId":289237},"rawValue":127.46257448813391,"numericValue":127.46257448813391,"unit":{"kind":"unknown"}}]},
+{"localId":294887,"globalId":"3kh$s_CMXC58WGsWCtQGsM","ifcClass":"IfcSlab","authoringKey":"entity:294887","role":"standalone","geometryStatus":"present","metradoRaw":"125.567","metradoNumeric":125.567,"unit":"m3","sector":"A1","sourceElementId":"1693104","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":296602,"quantityLocalId":296601},"rawValue":125.31072508672989,"numericValue":125.31072508672989,"unit":{"kind":"unknown"}}]},
+{"localId":296664,"globalId":"3kh$s_CMXC58WGsWCtQGxV","ifcClass":"IfcSlab","authoringKey":"entity:296664","role":"standalone","geometryStatus":"present","metradoRaw":"162.272","metradoNumeric":162.272,"unit":"m3","sector":"A2","sourceElementId":"1693433","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":298379,"quantityLocalId":298378},"rawValue":164.90654913947589,"numericValue":164.90654913947589,"unit":{"kind":"unknown"}}]},
+{"localId":301309,"globalId":"3kh$s_CMXC58WGsWCtQJ3S","ifcClass":"IfcSlab","authoringKey":"entity:301309","role":"standalone","geometryStatus":"present","metradoRaw":"621.762","metradoNumeric":621.762,"unit":"m3","sector":"B3","sourceElementId":"1698042","partida":"0.2.1.3","volumes":[{"origin":{"source":"ifc_quantity","quantitySet":"Qto_SlabBaseQuantities","quantityName":"NetVolume","quantityType":"IfcQuantityVolume","quantitySetLocalId":303043,"quantityLocalId":303042},"rawValue":620.3839361692392,"numericValue":620.3839361692392,"unit":{"kind":"unknown"}}]}
+]}

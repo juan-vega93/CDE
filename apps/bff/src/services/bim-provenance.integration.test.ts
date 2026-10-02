@@ -139,6 +139,21 @@ test("exact IFC → real FRAG → persistent authoring → guarded viewer delive
         aud: env.KEYCLOAK_AUDIENCE, exp: Math.floor(Date.now()/1000)+300, groups: [`/${project}_VIEWER`], realm_access: { roles: ["viewer"] } })}`;
       const token = `${data}.${crypto.sign("RSA-SHA256", Buffer.from(data), keys.privateKey).toString("base64url")}`;
       const headers = { Authorization: `Bearer ${token}` };
+      // Source changes immediately after download; response context must still describe acquired A.
+      files.set(sourcePath, a);
+      const direct = await fetch(`${base}/api/documents/content?path=${encodeURIComponent(sourcePath)}`, {
+        headers: { ...headers, Origin: "http://localhost:3000" }
+      });
+      assert.equal(direct.status, 200);
+      assert.deepEqual(Buffer.from(await direct.arrayBuffer()), a);
+      assert.deepEqual(JSON.parse(decodeURIComponent(direct.headers.get("x-bim-context")!)), {
+        projectCode: project, modelKey: sourcePath, revisionId: revisionA
+      });
+      assert.match(direct.headers.get("access-control-expose-headers")!, /X-Bim-Context/i);
+      assert.equal(direct.headers.get("cache-control"), "no-store");
+      const directB = await fetch(`${base}/api/documents/content?path=${encodeURIComponent(sourcePath)}`, { headers });
+      assert.deepEqual(Buffer.from(await directB.arrayBuffer()), b);
+      assert.equal(JSON.parse(decodeURIComponent(directB.headers.get("x-bim-context")!)).revisionId, revisionB);
       const sourceResponse = await fetch(`${base}/api/documents/viewer-source?documentPath=${encodeURIComponent(sourcePath)}`, { headers });
       assert.equal(sourceResponse.status, 200);
       const source = (await sourceResponse.json()).data;

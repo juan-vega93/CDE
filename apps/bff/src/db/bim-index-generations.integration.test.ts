@@ -59,6 +59,9 @@ context: ctx, relations: [],
     const cost = await store.getBimCost5DAggregation({ ...query, itemId: { setName: ref.setName, propertyName: "Partida" }, quantity: ref });
     assert.equal(cost.rows[0].quantity, value * ids.length);
     assert.deepEqual(sorted(Object.values(cost.rows[0].localIdsByModelKey).flat()), ids);
+    assert.equal(cost.rows[0].selection?.unresolvedEntityCount, 0);
+    assert.deepEqual(sorted(cost.rows[0].selection!.groups.flatMap(g => g.authoringElements.flatMap(a => a.graphicalLocalIds))), ids);
+    assert.ok(cost.rows[0].selection!.groups.every(g => g.context.projectCode === projectCode && g.context.modelKey === documentPath));
     const metering = await store.getBimCost5DMeteringRows({ ...query, columns: [{ id: "q", label: "q", ref }], limit: 100, offset: 0 });
     assert.deepEqual(sorted(metering.rows.map(r => r.localId)), ids);
     assert.ok(metering.rows.every(r => r.values[0] === String(value)));

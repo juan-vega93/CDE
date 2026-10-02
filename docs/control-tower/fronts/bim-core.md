@@ -2,12 +2,12 @@
 
 Updated: 2026-10-02 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: bb680b175e0aa9432b47c9b281a0f3ea70500a22
-HEAD: commit que añade checkpoints/bim-core/2026-10-02-fase-3d2b-3e.md; resolver con git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-02-fase-3d2b-3e.md
+Base: 6f956117b396f9f362e256f3c5d700a938b25c51
+HEAD: commit que añade checkpoints/bim-core/2026-10-02-fase-3f.md; resolver con git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-02-fase-3f.md
 
 ## Current phase
 
-3D.2B / 3E — Reindex controlado y corrección de Parámetros/reconciliación. Cierre parcial; cantidades y selección 5D canónica bloqueadas.
+3F — Selección lógica 5D y provenance IFC directo implementadas. Consolidación contractual de cantidades bloqueada por STOP CONDITIONS.
 
 ## Status
 
@@ -15,64 +15,63 @@ BLOCKED
 
 ## Completed
 
-- Única reindexación MBM autorizada en desarrollo local. Generación b400b692-8a10-4896-a871-2d6ef28001cf publicada: 11362 entidades / 212375 properties; readers sin mezcla legacy. SHA esperado verificado.
-- Auditoría real de partida 0.2.1.3: 115 entidades / 7 AuthoringElements / 112 graphical-present. Snapshot por entidad y test diagnóstico persistentes.
-- Sin valor incluido en color; color/visibilidad/selección de bucket usan la misma intersección gráfica exacta. Contadores semánticos y gráficos separados.
-- Polling cada 3 s, 200 intentos / 10 minutos máximo; terminal actualiza overview, invalida índice local y recarga catálogo una vez. Cancelación y stale responses cubiertos.
-- Backend 216 tests, frontend 46, visibilidad 25: todos correctos, sin skips. Typecheck BFF/frontend y build frontend correctos.
+- SmartView Sin valor validado visualmente por usuario y cerrado; sin cambios de producción en esta fase.
+- Descarga IFC exact-content → SHA/backend context → mismos bytes al IfcLoader → registro runtime verificado. Sin hashing frontend ni latest revision por path.
+- Aggregate 5D devuelve Authoring memberships de generación publicada; selección por contexto exacto, todos los miembros present, sin expansión espacial ni cambios de visibilidad.
+- Reader real: 115 entidades / 7 AEs / 112 gráficos / 0 memberships sin resolver, SHA esperado. Generación previa intacta; ninguna reindexación.
+- Auditoría A5/A2 persistida por member, método, cantidades y unidades. A5 tiene un AE de la partida; A2 tiene dos standalone.
+- Tests: backend 220, frontend 60, visibilidad 25; todos correctos, cero skipped. Typecheck y builds BFF/frontend correctos. Imágenes desplegadas localmente.
 
 ## In progress
 
-Validación visual manual pendiente sobre frontend reconstruido localmente. No iniciar automáticamente otra fase ni reindexar de nuevo.
+Validación visual de nueva selección 5D pendiente del usuario. No continuar otra fase ni reindexar automáticamente.
 
 ## Blocked
 
-- Cantidades 5D: ENTITY_SUM 25305.046; ROOT_ONLY diagnóstico 1842.105; referencia Revit 1874.96. A5 almacenado 156.616 frente a referencia 188.31. Falta contrato de cantidades para esta revisión; no está demostrada una policy de producción inequívoca.
-- Selección 5D canónica: viewer-source local mock devuelve IFC sin bimContext; no existe evidencia runtime de revisión para mapear. Requiere transporte verificable autorizado, no aliases inventados.
+Cantidad contractual: A5 Metrado 156.616 vs Revit 188.31; no hay otro AE de la partida A5 que aporte la diferencia. A2 tiene dos instancias, 289.851 almacenado vs 292.56 referencia. Falta schedule itemizado de la misma revisión y contrato de Metrado; no adoptar ROOT_ONLY ni sustituir por NetVolume.
 
 ## Decisions
 
-- Semántica 5D de producción intacta. Replicación demostrada no basta para declarar ROOT_ONLY contractual.
-- Modelo/revisión exactos; cantidades stored_parameter, ifc_quantity y viewer_geometry independientes.
-- Buckets se proyectan por intersección con geometrías disponibles; no heredan descendientes espaciales.
-- Sin cambios a picking lógico existente; fallback sin contexto sigue siendo explícito.
+- Cantidades/dashboard/metering/CSV conservan semántica raw; ningún total lógico de producción inventado.
+- IFC entity → AuthoringElement → partida; agrupación de schedule separada, Sector no es identidad.
+- La selección canónica exige un runtime único con proyecto/modelKey/revisión exactos y todos los IDs gráficos disponibles. Contexto o geometría incompletos fallan explícitamente.
+- Descarga IFC calcula digest sobre su buffer adquirido; datos/headers sin caché. FRAG guardado y selección simple previa preservados.
 
 ## Dependencies
 
-- Contrato de cantidades y referencia de la misma revisión IFC para decidir policy con responsable BIM.
-- Provenance runtime verificada para selección 5D; no modificar Documents/Platform en esta fase.
-- Usuario: validación visual en navegador. CONTROL TOWER: checkpoint parcial, no listo para integración global.
+- Responsable BIM: schedule Revit de misma revisión con IDs/grupos y significado contractual de Datos_Partida.Metrado, especialmente A5.
+- Usuario: reload del modelo y aceptación visual 7 AEs / 112 geometrías, conservando ocultaciones.
+- CONTROL TOWER: cierre parcial; integración global no certificada. Transporte Documents/content y proxy solo extendidos para provenance BIM autorizado, sin cambios de workflow/Platform.
 
 ## Contracts / API changes
 
-Ningún endpoint/payload nuevo. UI Parámetros distingue elementos y geometrías. Sin cambios a IFC/Authoring identity ni a cantidades 5D.
+X-Bim-Context URI-encoded JSON en respuesta IFC de /api/documents/content, no-store; CORS/proxy lo transportan. Payload aggregate 5D añade selection v1 con context, authoringElements, memberCount, graphicalLocalIds y unresolvedEntityCount. Sin nuevos endpoints ni cambios de Quantity Policies v1, Authoring identity, cantidades o CSV.
 
 ## Database changes
 
-Sin schema nuevo. Aplicadas migraciones ya versionadas en bb680b1 al desarrollo local y publicada una generación del MBM. Legacy conservado, sin reindexar otros modelos. PostgreSQL temporal usado exclusivamente para tests y descartado después.
+None. Solo lecturas del modelo real. Misma generación b400b692-8a10-4896-a871-2d6ef28001cf, 11362 entidades / 212375 properties. Tests PostgreSQL temporal aislado, eliminado después.
 
 ## Tests / Evidence
 
-- Suites BIM PostgreSQL temporal: 216 pass / 0 fail / 0 skipped.
-- Frontend gráficos/polling/selección lógica: 46 pass / 0 fail / 0 skipped.
-- Visibilidad Node 24.19: 25 pass / 0 fail / 0 skipped.
-- Typecheck BFF/frontend y build frontend: exit 0.
-- Lint módulos/tests nuevos: exit 0. Canvas dirigido: 8 errores / 13 warnings preexistentes (baseline 10 / 13); sin ampliar refactor.
-- git diff --check y cached --check comprobados antes del commit.
-- Evidencia por entidad: apps/bff/src/services/fixtures/bim-oci-3d2b-evidence.json.
-- Catálogo real contiene Datos_Partida.Metrado; 4 jobs ready. Sin valor para esa property: 7878 semánticos con geometría indexada; cantidad gráfica runtime/visual no certificada.
+- Backend BIM suites + API: 220 pass / 0 fail / 0 skipped, PostgreSQL 16 temporal.
+- Frontend selección/provenance/SmartView/polling: 60 pass / 0 fail / 0 skipped.
+- Visibilidad Node 24: 25 pass / 0 fail / 0 skipped.
+- Typecheck/build ambos: exit 0. Lint archivos nuevos limpio; deuda preexistente canvas 8 errores/13 warnings y ruta Documents 3 errores, baselines comparados.
+- git diff --check y cached --check antes del commit.
+- apps/bff/src/services/fixtures/bim-oci-3f-evidence.json: siete AEs, 115 members, propiedades/volúmenes y otros elementos A5 excluidos por partida/unidad.
+- Raw 25305.046; ROOT_ONLY solo diagnóstico 1842.105; referencia externa 1874.96; delta -32.855 (-1.752304%). Filas Revit redondeadas suman 1874.97.
 
 ## Risks
 
-5D continúa sumando por entidad. Diferencias entre revisión IFC y Revit impiden declarar total contractual correcto. Runtime IFC mock carece de bimContext. Validación visual pendiente; tests no prueban píxeles. Resúmenes pueden truncar otros buckets; el contador gráfico describe IDs disponibles, no geometrías omitidas por límites del catálogo. Legacy/staging siguen ocupando almacenamiento.
+Cantidad 5D aún inflada por replicación. Referencia Revit de otra revisión/no verificada. Selección rechaza contextos duplicados, revisiones distintas o geometrías ausentes en lugar de éxito parcial. SHA añade O(bytes) por descarga IFC; metadata/consulta de members aumenta payload proporcionalmente. Validación visual pendiente; pruebas no certifican píxeles.
 
 ## Next milestone
 
-Revisar checkpoint parcial y validar Sin valor/visibilidad manualmente. Resolver dependencia contractual y provenance runtime antes de autorizar cambios 5D. Sin push ni nueva fase automática.
+Validar selección en MBM recargado sin reindexar. Resolver evidencia contractual y revisión antes de definir consolidación, metering lógico y CSV. Sin push ni siguiente fase automática.
 
 ## Last checkpoint
 
-Commit: commit que añade el documento siguiente (resolver como se indica en HEAD).
-Checkpoint document: [2026-10-02-fase-3d2b-3e.md](../checkpoints/bim-core/2026-10-02-fase-3d2b-3e.md)
+Commit: commit que añade el documento siguiente (resolución indicada en HEAD).
+Checkpoint document: [2026-10-02-fase-3f.md](../checkpoints/bim-core/2026-10-02-fase-3f.md)
 
-Checkpoints anteriores preservados. Documento GeoBIM ajeno untracked, nunca abierto/modificado/stageado.
+Checkpoints anteriores preservados. GeoBIM ajeno untracked, nunca abierto/modificado/stageado.
