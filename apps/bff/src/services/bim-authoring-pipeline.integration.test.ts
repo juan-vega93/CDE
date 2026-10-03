@@ -154,5 +154,27 @@ test("IFC pipeline feeds the strict authoring index", { skip: !enabled }, async 
     assert.ok(result.quantityObservations.every((o) => o.context.revisionId === result.context.revisionId));
     assert.deepEqual(result.quantityExtractionDiagnostics, []);
     assert.equal((await getBimIndexJob(input))?.status, "ready");
+    const persisted = (await pool.query(`select q.* from cde_bim_quantity_observations q
+      where q.generation_id=cde_bim_published_generation($1,$2) order by local_id,occurrence_index`,
+      [projectCode,result.context.modelKey])).rows;
+    assert.equal(persisted.length,result.quantityObservations.length);
+    for (const observation of result.quantityObservations) {
+      const row=persisted.find(r=>r.local_id===observation.localId && r.occurrence_index===observation.occurrenceIndex)!;
+      assert.equal(row.source,observation.source); assert.deepEqual(row.raw_value,observation.rawValue);
+      assert.equal(row.numeric_value,observation.numericValue ?? null); assert.deepEqual(row.unit,observation.unit);
+      assert.equal(row.entity_role,observation.authoring?.role ?? null);
+    }
+  });
+  await t.test("quantity persistence failure leaves prior published generation and fails job",async()=>{
+    const published=async()=> (await pool.query('select cde_bim_published_generation($1,$2) id',[projectCode,expected.modelKey])).rows[0].id;
+    const before=await published();
+    await pool.query(`create function test_quantity_pipeline_failure() returns trigger language plpgsql as $$
+      begin raise exception 'controlled quantity persistence failure'; end $$;
+      create trigger test_quantity_pipeline_failure before insert on cde_bim_quantity_observations
+      for each statement execute function test_quantity_pipeline_failure()`);
+    try {
+      await assert.rejects(indexBimPropertiesFromBuffer({...input,ifcBuffer:createQuantityIfcFixture()}),/controlled quantity persistence failure/);
+      assert.equal(await published(),before); assert.equal((await getBimIndexJob(input))?.status,'failed');
+    } finally { await pool.query('drop trigger test_quantity_pipeline_failure on cde_bim_quantity_observations; drop function test_quantity_pipeline_failure()'); }
   });
 });

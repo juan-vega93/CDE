@@ -63,8 +63,10 @@ test("real IFC pipeline extracts provenance alongside unchanged legacy output", 
   const load = modules._load;
   const extract = t.mock.fn(extraction.extractIfcQuantityObservations);
   const resolve = t.mock.fn(resolver.resolveAuthoringElements);
+  const persist = t.mock.fn(async (...args: unknown[]) => { void args; });
   let disabled = true;
   t.mock.method(modules, "_load", function (request: string, ...args: unknown[]) {
+    if (request === "../db/bim-quantity-store") return { replaceGenerationQuantityObservations: persist };
     if (request === "../db/bim-index-generations") return {
       createBimIndexGeneration: async () => "test-generation",
       failBimIndexGeneration: async () => undefined,
@@ -86,6 +88,7 @@ test("real IFC pipeline extracts provenance alongside unchanged legacy output", 
   const baseline = structuredClone(payloads); payloads.length = 0;
   disabled = false;
   resolve.mock.resetCalls();
+  persist.mock.resetCalls();
   const open = t.mock.method(WEBIFC.IfcAPI.prototype, "OpenModel");
   const hash = t.mock.method(crypto, "createHash");
   const prepared = prepareBimIfcInput(input);
@@ -99,10 +102,13 @@ test("real IFC pipeline extracts provenance alongside unchanged legacy output", 
     assert.equal(result.context, prepared.context);
     assert.ok(observations.every((o) => JSON.stringify(o.context) === JSON.stringify(prepared.context)));
   });
-  await t.test("legacy batches unchanged and provenance is not persisted", () => {
+  await t.test("legacy batches unchanged; exact extracted provenance passed once to generation persistence", () => {
     assert.deepEqual(payloads, baseline);
     assert.ok(!JSON.stringify(payloads).includes("observationKey"));
     assert.deepEqual(result.quantityExtractionDiagnostics, []);
+    assert.equal(persist.mock.callCount(), 1);
+    assert.equal(persist.mock.calls[0].arguments[1], prepared.context);
+    assert.equal(persist.mock.calls[0].arguments[2], observations);
   });
   const stored = observations.filter((o) => o.origin.source === "stored_parameter" && o.origin.propertySet === "Datos_Partida");
   await t.test("real stored parameter replicated across root, seven children and standalone", () => {

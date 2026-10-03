@@ -1,4 +1,5 @@
 import { createBimIndexGeneration, failBimIndexGeneration, publishBimIndexGeneration } from "../db/bim-index-generations";
+import { replaceGenerationQuantityObservations } from "../db/bim-quantity-store";
 import * as WEBIFC from "web-ifc";
 import path from "path";
 import { toCanonicalBimModelKey } from "./bim-model-identity";
@@ -627,7 +628,8 @@ export async function indexPreparedBimProperties(
   });
 
   const generationId = await createBimIndexGeneration(model.id, context, {
-    sourceKind: "nextcloud-ifc", indexSource: "server-web-ifc", indexVersion: BIM_INDEX_SCHEMA_VERSION
+    sourceKind: "nextcloud-ifc", indexSource: "server-web-ifc", indexVersion: BIM_INDEX_SCHEMA_VERSION,
+    quantityProvenanceRequired: true
   }, {
     documentId: input.documentId, documentName: input.documentName,
     sourceVersion: input.sourceVersion, modelKey: input.modelKey
@@ -751,6 +753,7 @@ export async function indexPreparedBimProperties(
     const authoringIndex = resolveAuthoringElements({ context, entities: authoringEntities, relations: authoringRelations });
     const quantities = extractIfcQuantityObservations(ifcApi, openedModelId, context, authoringIndex);
     await replaceAuthoringElementIndex(authoringIndex);
+    await replaceGenerationQuantityObservations(generationId, context, quantities.quantityObservations);
 
     await publishBimIndexGeneration({ generationId, context, elementCount, propertyCount });
 

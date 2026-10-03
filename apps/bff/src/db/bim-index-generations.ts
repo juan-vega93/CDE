@@ -88,6 +88,11 @@ export async function publishBimIndexGeneration(input: {
     if (!generation) throw new Error("GENERATION_CONTEXT_MISMATCH");
     if (generation.status === "published") { await client.query("commit"); return; }
     if (generation.status !== "building") throw new Error("GENERATION_NOT_BUILDING");
+    if (generation.metadata.quantityProvenanceRequired === true) {
+      const count = (await client.query<{ n: number }>(`select count(*)::int n
+        from cde_bim_quantity_observations where generation_id=$1`, [generation.id])).rows[0].n;
+      if (generation.metadata.quantityObservationCount !== count) throw new Error("GENERATION_QUANTITIES_NOT_READY");
+    }
     const newer = await client.query(`select id from cde_bim_index_generations where scope_id=$1 and status='published' and sequence>$2`, [scopeId, generation.sequence]);
     if (newer.rowCount) throw new Error("STALE_GENERATION");
     const jobs = await client.query<{ status: string }>("select status from cde_bim_index_jobs where generation_id=$1 for update", [generation.id]);

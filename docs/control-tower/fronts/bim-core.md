@@ -2,12 +2,12 @@
 
 Updated: 2026-10-02 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: 8c46104caca5c4224709bacc06ed281e393337eb
-HEAD: checkpoint que añade 2026-10-02-fase-3f-bimcollab.md; resolver con git log -1 --diff-filter=A --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-02-fase-3f-bimcollab.md
+Base: 1a8ef2459b8df3ddf3aaec437a726c11ab1c24c0
+HEAD: checkpoint commit containing this document; pre-commit HEAD verified as Base. Resolve with `git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md`.
 
 ## Current phase
 
-3F — Consolidación de Metrado replicado y selección lógica, ampliada con evidencia BIMcollab. Implementación y validación automatizada completadas; aceptación visual pendiente.
+3H.1 — Quantity Provenance persistente y comparación geométrica interna, backend only.
 
 ## Status
 
@@ -15,74 +15,69 @@ COMPLETE
 
 ## Completed
 
-- Política opt-in stored-authoring-replicas@1: parámetros almacenados idénticos dentro de composición corroborada, membresía completa y unidad declarada. Conserva observaciones IFC originales; no sustituye Metrado por NetVolume.
-- Read real OCI: 115 entidades → 7 AuthoringElements → 112 gráficos; raw 25305.046 → lógico 1842.105 m3; 108 réplicas. A5: 73 miembros semánticos / 72 gráficos / 156.616 una vez.
-- Selección separa identities canónicas y mapa gráfico. UI cuenta autoría; click y 5D resaltan conjuntos completos. Hide/isolate/focus consumen ese mapa. Propiedades puntuales conservan child primario.
-- Tabla lógica paginada y CSV comparten logicalRows del backend y su trazabilidad. Modo raw disponible explícitamente para diagnóstico.
-- Modelos/revisiones invalidan operaciones; cambios React de isSelected/expanded no las cancelan.
-- Backend 232, frontend 65, visibilidad 25 tests correctos; typecheck/build BFF/frontend correctos. Imágenes finales desplegadas localmente; BFF health 200, frontend 307 acceso.
-- SmartView Sin valor conserva regresiones; cierre visual anterior del usuario preservado.
+- Persistencia normalizada por generation/localId/occurrence del extractor, con source, native IDs, tipo IFC, raw/numeric, unidad y enrichment de autoría. No deduplicación por AE.
+- Pipeline reutiliza las observaciones ya extraídas y las persiste antes de publicar. Nuevas generaciones del pipeline requieren completitud de provenance. Una apertura IFC, hash, resolver y extracción; sin segunda descarga.
+- Consulta interna batch de AEs en una sentencia y snapshot publicado; distingue root, clicked primary, children y standalone. Estadísticas completas y evidencia acotada por rol, con auditTruncated explícito.
+- Evaluador puro: selector set/name/type/role explícito; ambas fuentes conservadas; tolerancias solo suministradas por caller. Unidad desconocida impide conformidad, pero conserva delta numérico diagnóstico.
+- Roof #389468 / Slab #389463 y native quantities reales conservados. A5: stored 156.616 vs root NetVolume 188.05910326170218; sin cambiar stored 5D.
+- 5D permanece en 1842.105 con stored-authoring-replicas@1. La explicación Dynamo desactualizado proviene del usuario, no de una inferencia automática del software.
 
 ## In progress
 
-Aceptación visual del usuario sobre las imágenes locales actualizadas. No se inició otra fase.
+None. Fase finalizada; no comenzar siguiente fase automáticamente.
 
 ## Blocked
 
-None. Diferencias frente a Revit de otra revisión NO bloquean eliminar replicación IFC.
+None para el alcance backend. La comparación contractual de quantities Unit=$ necesita evidencia/configuración de unidades futura; ahora se informa unit_incompatible sin inferencia.
 
 ## Decisions
 
-- Cantidad lógica almacenada NO significa cantidad contractual verificada frente a Revit.
-- Sin DISTINCT(value), factores, agrupación por sector/Tag aislado ni mesh merge. Igual valor entre AEs distintos se suma por separado.
-- Conflictos, unidades ausentes, observaciones múltiples, composición sin corroborar o membresía dividida entre partidas/unidades: quantity=null, motivo explícito; no cero ni root escogido silenciosamente.
-- Política requiere quantitySource=stored_parameter. Rechaza ifc_quantity/viewer_geometry. sourceProperty y unitProperty quedan en respuesta/CSV; declaration=mapping indica evidencia declarativa, no origen extraído del índice legacy.
-- Cambiar propiedad de cantidad vuelve al modo diagnóstico hasta declarar otra vez la política. El mapeo inicial de Metrado usa la declaración autorizada por el usuario.
-- Futuro árbol: AuthoringElement → IFC/graphical members; selección individual de pieza como interacción secundaria. Árbol no implementado.
+- Propiedad normal y quantity IFC se distinguen por extracción tipada, nunca por prefijo Qto.
+- Se reutiliza publicación 3D.2A, no otro puntero. Generaciones históricas sin provenance continúan legibles, sin backfill.
+- La observación pertenece a generación y entidad; autoría es enrichment, no FK a UUID reemplazable del AE.
+- Primary/clicked es entrada de consulta validada contra miembros, no identidad persistente del AE.
+- Los detalles de auditoría son muestras acotadas, no candidatos completos si auditTruncated=true. El evaluador admite esa señal y rechaza decisión por evidencia incompleta.
+- Sin política universal de unidades, tolerancias, source, role o quantity contractual.
 
 ## Dependencies
 
-- Usuario BIM: aceptar visualmente click A5, selección 5D 7/112, visibilidad y metrado lógico. No hay bloqueo de implementación.
-- Datos/modelado: significado contractual y comparación entre revisiones requieren evidencia de la misma revisión; no hacer matching automático.
-- Consumidores API BIM: optar explícitamente por policy/source y manejar cantidades null. Contrato raw existente permanece disponible.
-- CONTROL TOWER: integración global pendiente de aceptación visual; no merge/push. Ninguna responsabilidad de otros frentes modificada.
+- CONTROL TOWER: integrar checkpoint 3H.1 y preservar evidencia histórica 3H.
+- Operación BIM: aplicar migración aditiva al desplegar BFF antes de procesar nuevos IFC. Migración validada solo en PostgreSQL temporal; no desplegada a DB real en esta fase.
+- Producto/QA: definir configuración de comparación y evidencias de unidades; no bloquea almacenamiento ni diagnóstico numérico.
+- Futuro frontend 5D/Inspector consumirá contrato interno; requiere fase autorizada. No cambios Documents, Platform ni GeoBIM.
 
 ## Contracts / API changes
 
-POST /api/bim-index/cost5d/aggregate acepta quantityPolicy=stored-authoring-replicas@1 y quantitySource=stored_parameter. Bajo esta política devuelve quantity nullable, elementCount lógico, rawEntityCount/rawQuantity, logicalRows (context, identityKey, representante, miembros, gráficos, réplicas, status/reason), quantityProvenance y errores. Total mixto por unidades queda null. Policy desconocida/fuente incompatible: HTTP 400. Sin policy conserva semántica raw. Los endpoints metering-rows/CSV previos permanecen diagnósticos; la tabla/CSV lógicos consumen el mismo aggregate. Sin endpoints nuevos.
+Sin endpoints públicos nuevos. Internos: replaceGenerationQuantityObservations, queryAuthoringQuantitySummaries y compareStoredToIfcQuantity. Query por contexto canónico/revisión y generación publicada opcionalmente fijada; selector source/set/name/type/role. Root y primary conservan localId/class/GlobalId independientes. Audit limitado a 256 por rol por defecto (máximo configurable 2000), conteos/min/max sobre todos los registros.
 
 ## Database changes
 
-None. No migraciones, reindex, backfill ni modificación de IFC. Generación b400b692-8a10-4896-a871-2d6ef28001cf intacta: 11362 entidades / 212375 propiedades, 4 jobs ready / 0 activos. Tests PostgreSQL 16 aislado temporal.
+Nueva cde_bim_quantity_observations con FK generation y borrado en cascada, PK generation/localId/occurrence e índice de lookup por AE/source/set/name/type. Escritura en transacción y lotes de 2000. Metadata generation registra quantityProvenanceRequired/quantityObservationCount. Sin cambios de tablas Authoring ni Property Index; sin reindex/backfill ni cambios a DB real.
 
 ## Tests / Evidence
 
-- tsx --test --test-concurrency=1 src/db/bim-*.test.ts src/services/bim-*.test.ts src/routes/bim-authoring.routes.integration.test.ts: 232 pass, 0 fail, 0 skipped, PostgreSQL real temporal.
-- node --test logical*.test.mjs cost-authoring-selection.test.mjs viewer-bim-context.test.mjs parameter-graphics.test.mjs bim-index-polling.test.mjs (directorio lib viewer): 65 pass, 0 fail, 0 skipped.
-- npm run test:visibility -w frontend: 25 pass, 0 fail, 0 skipped.
-- npm run typecheck BFF/frontend: exit 0. docker compose -f docker-compose.portal.yml build cde-portal-bff cde-portal-frontend: exit 0.
-- Lint dirigido BFF y nuevos módulos frontend limpio. Canvas: 8 errores / 13 warnings, idénticos por regla/mensaje al HEAD base; no se declara lint global limpio.
-- Read-only contra DB real con imagen final: 1842.1049999999998 (presentación 1842.105), raw 25305.046000000013; consulta ~6.7 s.
-- Fixture existente bim-oci-3f-evidence.json; regresión recorre consecutivamente los 72 miembros gráficos de A5 con Highlighter real.
-- git diff --check y cached --check sin errores antes del checkpoint.
+- PostgreSQL 16 temporal real: suite BIM BFF 244 pass / 0 fail / 0 skipped; incluye publicación, pipeline, resolver, property index, revision/model identity, API Authoring y 5D OCI.
+- Regresión frontend selección/5D/contexto/parámetros/polling: 65 pass / 0 fail / 0 skipped.
+- npm run test:visibility -w frontend: 25 pass / 0 fail / 0 skipped.
+- BFF npm run typecheck y npm run build: PASS. ESLint dirigido: PASS (0 errores/advertencias).
+- Fixture sintética de escala: 191481 observations, 96 INSERT batch, escritura 4405.02 ms, consulta 611.82 ms; RSS final 484225024 bytes. No benchmark de producción.
+- Evidencia real por miembro/native IDs de 3H preservada sin modificaciones en checkpoints/bim-core/2026-10-02-fase-3h-evidence.json.
 
 ## Risks
 
-- Validación visual pendiente. Pruebas de Highlighter/handlers no certifican píxeles.
-- Índice legacy no conserva origin.source: la política valida declaración de mapeo, no certifica que una propiedad arbitraria sea realmente stored_parameter. Mapeo incorrecto sigue siendo riesgo; cambio de propiedad desactiva consolidación automática.
-- Igualdad numérica exacta y cobertura completa son conservadoras: discrepancias legítimas quedan pendientes. Fases/zonas no mapeadas no tienen validación contractual automática.
-- JS usa double; no redondeo antes de consolidar. Tabla muestra 3 decimales. Sin normalización/conversión de unidades.
-- Consulta agrega metadata proporcional a entidades y membresías; no N+1 ni nueva apertura IFC. ~6.7 s reales; no se certifica rendimiento interactivo universal.
-- CSV lógico exporta todas las filas recibidas (hasta el límite de partidas de la consulta), no todo el proyecto ilimitadamente.
-- API instalada Highlighter permite material/color/opacidad/caras; no se encontró opción de eliminar fronteras internas de la composición. No se cambió geometría ni estilo.
+- RSS material: fixture +169672704 bytes; escritura +206020608 bytes (asignación/GC incluidas, no heap vivo). Consulta acotada evita transportar 191k objetos; escala real distribuida debe monitorearse al operar.
+- Generaciones históricas permanecen sin estas observaciones hasta procesamiento explícito autorizado.
+- Despliegue debe aplicar migración antes de usar código nuevo. Sin deployment ni reindex en esta fase.
+- Unit=$ permanece unknown; no se puede declarar mismatch contractual A5 con unidades no corroboradas.
+- Retención de generaciones superseded conserva también sus observations; política de limpieza futura fuera de este alcance.
 
 ## Next milestone
 
-Aceptación visual y revisión del checkpoint. No continuar automáticamente árbol, matching entre revisiones ni otra fase.
+Revisión del checkpoint. Futuro 5D Workspace como módulo principal, no panel inferior permanente: Schedule por AE, filtro partida, stored/QTO/delta/QA, selección sincronizada, members expandibles, gráficos/resumen, CSV, ancho suficiente, responsive y contexto 3D preservado. Viewer/5D/Quality/Coordination son posibilidades; navegación final no decidida. Futuro Inspector separará elemento lógico (autoría/root IFC class/members) de elemento clicado (IFC class/localId/GlobalId). No implementados.
 
 ## Last checkpoint
 
-Commit: commit que añade el documento siguiente (resolución indicada en HEAD).
-Checkpoint document: [2026-10-02-fase-3f-bimcollab.md](../checkpoints/bim-core/2026-10-02-fase-3f-bimcollab.md)
+Commit: commit que introduce 2026-10-02-fase-3h1.md; resolver con git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-02-fase-3h1.md.
+Checkpoint document: [2026-10-02-fase-3h1.md](../checkpoints/bim-core/2026-10-02-fase-3h1.md)
 
-Checkpoints anteriores inmutables. GeoBIM ajeno permanece untracked, nunca abierto/modificado/stageado. Sin push.
+Documentos 3H preservados e incluidos con este cierre. GeoBIM permanece ajeno y untracked. No push.
