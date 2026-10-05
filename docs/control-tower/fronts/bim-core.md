@@ -2,77 +2,80 @@
 
 Updated: 2026-10-05 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: 2ae2454351d76b01759c8d99d4fae7c0307dc8a4
-HEAD: commit que incorpora este estado; resolver con git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md. Base verificada antes del cierre.
+Base: c4eb1b5701cefd2a8c5e23a0e0cca2afd729bc30
+HEAD: commit que contiene este estado; resolver con `git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md`. HEAD comprobado antes del checkpoint: 33d0bb92e112aad7dd092c3bb0920ce4aaec3ad5.
 
 ## Current phase
 
-3I.2 — ghost según intención explícita de selección.
+3J — estabilidad de presentación, árbol lógico y Schedule BIM paginado.
 
 ## Status
 
-COMPLETE
+READY FOR CHECKPOINT
 
 ## Completed
 
-- Selección lógica, Inspector root/member, Metrados y quantities de 3I conservados.
-- Viewport, selección manual y llamadas programáticas por defecto: highlight-only. Metrados/Partidas solicitan context explícitamente al mismo adaptador serializado.
-- Intención viaja con la operación asíncrona y su token; resultado obsoleto no reactiva ghost. Clear retira sólo la capa de selección.
-- Contexto manual permanece independiente. Ghost usa el controlador existente y deltas de opacidad, sin nuevas llamadas showAll ni cambios de visibilidad.
-- Recorrido 5D legacy/raw usa el mismo commit de selección/contexto; deja de escribir ghost en la capa manual.
-- Frontend reconstruido y desplegado localmente: BUILD_ID 5bNlQ_oy3686chCHblyhJ. BFF/DB sin cambios ni reinicio en esta fase.
-- Validación OCI en navegador: click normal sin ghost; A5 72 geometrías con ghost; A5 -> viewport #185053 retira ghost y mantiene nueva selección; Partida 7/112 con ghost; SmartView 2161482 conserva color/filtro y catálogo 52 sin ghost automático. Metrados mantiene 7 filas/1842.105.
+- Ghost derivado de intención, selección gráfica vigente y visibilidad canónica. Escrituras de materiales serializadas; invalidación explícita de los IDs afectados por Highlighter, sin reset global ni showAll.
+- Adaptador de opacidad reutiliza definiciones de Fragments y conserva colores originales y estilos activos; evita el agotamiento de IDs Uint16 causado por setOpacity/resetOpacity con preserveOriginalMaterial.
+- Árbol espacial proyectado con AuthoringElement root/members; selección lógica sincronizada, reveal visual al cambiar selección, inspección individual del child y preferencias de collapse prioritarias. Una lectura batch por revisión; DOM de members sólo al expandir y properties bajo demanda.
+- Metrados es Schedule independiente de Partida: columnas del catálogo, filtros modelo/clase lógica/nivel/sector/tipo/partida/búsqueda/sin partida; una fila por AE. Conflictos visibles. Checkbox raw retirado de UI normal; backend diagnóstico conservado.
+- COUNT + página SQL estable y snapshot de publicación. JS recibe sólo la página; no recalcula Partidas/catálogo por cambio de página. CSV utiliza configuración idéntica y rechaza publicaciones mezcladas.
+- Runtime frontend reconstruido/desplegado: BUILD_ID `6ggt3mdDkfWhwhyWUZD3K`; imagen `sha256:85f3f3af71042b44398ea27767169afbd81d1b9fd1d856c0eb1df5f82e861594`. Hashes de canvas, Schedule y adaptador coinciden con workspace. BFF también reconstruido/desplegado.
 
 ## In progress
 
-None. No iniciar otra fase automáticamente.
+Cierre de evidencia de descarga CSV real: botón termina sin error, pero el navegador integrado no entrega evento/archivo descargado a la automatización. Contrato y generación Blob sí verificados en tests del componente real. No declarar descarga inspeccionada.
 
 ## Blocked
 
-None para IFC directo. Sigue pendiente la dependencia de entrada desde Documentos: requireFrag frente a entorno mock, registrada en 3I.1. No modificada aquí.
+Validación del archivo CSV descargado: falta acceso al artefacto entregado por el navegador o confirmación manual del usuario. No bloquea la implementación ni las pruebas independientes.
 
 ## Decisions
 
-- SelectionPresentation = highlight-only | context; opt-in explícito, nunca deducido de logicalSelection.
-- Estado de datasets/autoría no depende de presentación; identidad y properties mantienen contrato previo.
-- Operaciones serializadas mantienen el ghost anterior hasta commit; A -> B aplica sólo delta. Capa manual no se limpia con selección normal.
-- Sin cambios en stored-authoring-replicas@1, Quantity Provenance, generación ni fuentes/unidades.
+- Mantener `stored-authoring-replicas@1` y 1842.105; Schedule muestra propiedades, no introduce una suma alternativa de cantidades.
+- API legacy logical-metering permanece para compatibilidad/auditoría, con su coste anterior; la UI normal utiliza Schedule paginado. No duplicar la policy contractual en SQL.
+- Clases de composición provienen del root; standalone usa su entidad. QTO avanzado requiere source/set/quantity/type/role explícitos y queda diferido.
+- Context por selección sigue opt-in de 5D/Schedule. Viewport/árbol: highlight-only; contexto manual separado.
 
 ## Dependencies
 
-- CONTROL TOWER/usuario: revisión del checkpoint y aceptación visual adicional. No merge ni push.
-- Documents/operación: entrada normal a IFC requiere resolver FRAG/mock; validación por ifcUrl directo existente. Ninguna responsabilidad ajena modificada.
-- Futuro workspace 5D puede reutilizar selección con intención y tabla lógica sin cambiar identidad.
+- CONTROL TOWER/usuario: revisión del checkpoint y comprobación del CSV descargado. Sin push/merge.
+- Documents/operación: dependencia previa de entrada requireFrag frente a entorno mock; validado IFC directo existente. No se alteró Documents.
+- Fragments instalado: integración depende de semántica de materiales 3.4, protegida con prueba de compatibilidad del allocator real.
 
 ## Contracts / API changes
 
-Sin cambios HTTP/BFF. Contrato interno opcional en selectMember/selectLogical y callback de commit: SelectionPresentation, default highlight-only. Sólo handlers 5D pasan context. Contexto/Isolate explícitos permanecen separados.
+- GET `/api/bim-index/authoring/tree?projectCode&modelKey&revisionId`: composiciones de revisión publicada, root y arrays de members/graphical IDs en batch.
+- POST `/api/bim-index/schedule/rows`: columnas stored_parameter, filtros, offset/limit; total, publication, filas con contexto canónico y celdas resolved/multiple/ambiguous/missing. Máximo 24 columnas y 500 filas/página.
+- Configuración Schedule serializable version 1; sin persistencia de plantillas. Sin cambios a APIs existentes.
 
 ## Database changes
 
-None. Sin reindex, backfill, migraciones ni modificaciones de DB.
+None en schema/producción. Sólo lecturas de generación publicada. Sin reindex/backfill/migración. Pruebas PostgreSQL ejecutadas en contenedor temporal aislado.
 
 ## Tests / Evidence
 
-- Imagen frontend final: 75 tests logical*/cost-authoring-selection/viewer-bim-context/parameter-graphics/bim-index-polling PASS, 0 fail/skipped.
-- npm run test:visibility -w frontend: 25 PASS. selection-context.test.mjs: 4 PASS.
-- Pruebas nuevas: viewport/manual cero writes de opacidad; Metrados/Partidas context explícito; 5D->viewport->5D; A->B sin reset del fondo compartido entre lotes; resultado tardío ignorado; contexto manual/hidden/isolate/federación preservados. Wiring real de modules/index.ts y Highlighter real ejecutados.
-- npx tsc --noEmit y npm run build frontend PASS. Docker Compose build frontend PASS; runtime hashes del adaptador y wiring iguales al workspace.
-- ESLint dirigido: seis archivos limpios; canvas conserva 8 errores/13 advertencias preexistentes. No deuda nueva ni refactor para corregirla.
-- git diff --check y git diff --cached --check PASS antes de commit.
-- Checkpoint 3I.1 previamente untracked se incorpora intacto para trazabilidad del despliegue anterior.
+- BFF typecheck/build PASS; `tsx --test --test-concurrency=1 src/db/bim-*.test.ts src/services/bim-*.test.ts src/routes/bim-authoring.routes.integration.test.ts`: 245 PASS, 0 fail/skipped, PostgreSQL real aislado.
+- Frontend typecheck/build PASS. Selección/Inspector/cost/árbol-render/Schedule/CSV/opacidad/contexto BIM/graphics/polling: 82 PASS, 0 fail/skipped. Node24: context/materials/tree/CSV 11 PASS. `npm run test:visibility -w frontend`: 25 PASS.
+- Fixture 7100 AE: páginas 1/30/70, dos consultas/página, 100 filas llegan a JS; conflictos, sin partida, columnas dinámicas y aislamiento generacional verificados.
+- OCI navegador: A5→A4→A3→A5 con ghost; viewport retira ghost; SmartView→Schedule; Roof 2161482 seleccionado/revelado, collapse persiste, child #389463 muestra IfcSlab. Schedule total 10953, Sin Partida 8560, IfcRoof sin Partida 5. Navegación mantiene filas durante carga.
+- Latencia backend anterior 9427/10582/10679 ms; Schedule 1081/904/778/764 ms, offsets 0/100/2900/6900. SQL 1059/902/776/762 ms; payload 84186/80383/82673/77706 bytes con una columna Metrado. Detalle en checkpoint.
+- Navegador páginas 2/3: HTTP+parse 782.6/786.7 ms; respuesta→commit React 4.2/8.6 ms (no CPU render aislado).
+- Lint BFF y nuevos módulos limpios. Canvas conserva 7 errores/13 warnings previos (baseline 8/13). Diff checks PASS.
 
 ## Risks
 
-- Ghost enumera geometrías y aplica lotes; no benchmark de latencia ni grabación exhaustiva de frames. Tests verifican estados intermedios de opacidad.
-- 5D raw ahora destaca el mapa completo por el mismo adaptador que 5D lógico, en lugar del cutoff legacy que sólo aplicaba contexto manual; selecciones raw masivas pueden tener mayor coste de highlight. No afecta política/cantidades.
-- Deuda lint del canvas y dependencia Documents/FRAG siguen abiertas fuera del alcance.
+- CSV descargado pendiente de inspección manual; tests verifican misma semántica y columnas/filtros.
+- COUNT/filtros todavía examinan metadatos del scope en PostgreSQL; SQL paginado no significa O(page) de lectura física. Exportación acumula filas en navegador.
+- Tree conserva límites de la jerarquía espacial existente. Members se descargan en batch de IDs; sólo DOM/properties son lazy. Estado de configuración Schedule no persistente.
+- QTO avanzado, plantillas guardadas y filtro de clase lógica en otros módulos diferidos; sin cambios SmartView semánticos.
+- Deuda lint preexistente y revisión necesaria del adaptador al actualizar Fragments.
 
 ## Next milestone
 
-Revisión de Fase 3I.2. No continuar hacia otros cambios BIM automáticamente.
+Revisión humana del checkpoint 3J y verificación del CSV descargado. No iniciar otra fase automáticamente.
 
 ## Last checkpoint
 
-Commit: commit que introduce 2026-10-05-fase-3i2.md; obtener con git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-05-fase-3i2.md.
-Checkpoint document: [2026-10-05-fase-3i2.md](../checkpoints/bim-core/2026-10-05-fase-3i2.md)
+Commit: commit que introduce `2026-10-05-fase-3j.md`; obtener con `git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-05-fase-3j.md`.
+Checkpoint document: [2026-10-05-fase-3j.md](../checkpoints/bim-core/2026-10-05-fase-3j.md)

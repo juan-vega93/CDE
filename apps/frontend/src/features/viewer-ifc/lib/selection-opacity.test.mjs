@@ -9,8 +9,9 @@ test('opacity adapter uses reusable partial definitions and restores actual styl
   const red={color:{r:1,g:0,b:0},opacity:1,transparent:false,renderedFaces:0},blue={...red,color:{r:0,g:0,b:1}};
   const highlighter={selection:{manual:{M:new Set([1,2])},select:{M:new Set([2])}},styles:new Map([['manual',blue],['select',red]])};
   const adapter=exports.createSelectionOpacityModel(model,'M',highlighter);
-  await adapter.setOpacity([1,3],0.16);assert.equal(calls[0].definition.color,undefined);assert.equal(calls[0].definition.preserveOriginalMaterial,undefined);
-  await adapter.resetOpacity([1,2,3]);assert.deepEqual(calls[1].reset,[1,2,3]);assert.deepEqual(calls[2].ids,[1]);assert.equal(calls[2].definition,blue);assert.deepEqual(calls[3].ids,[2]);assert.equal(calls[3].definition,red);
+  await adapter.setOpacity([1,3],0.16);assert.deepEqual(calls[0].ids,[1]);assert.equal(calls[0].definition.color,blue.color);assert.equal(calls[0].definition.opacity,0.16);
+  assert.deepEqual(calls[1].ids,[3]);assert.equal(calls[1].definition.color,undefined);assert.equal(calls[1].definition.preserveOriginalMaterial,undefined);
+  await adapter.resetOpacity([1,2,3]);assert.deepEqual(calls[2].reset,[1,2,3]);assert.deepEqual(calls[3].ids,[1]);assert.equal(calls[3].definition,blue);assert.deepEqual(calls[4].ids,[2]);assert.equal(calls[4].definition,red);
 });
 test('installed Fragments material allocator deduplicates partial opacity; original per-tile colors survive',()=>{
   // Execute the installed library allocator, not a reimplementation. This is a

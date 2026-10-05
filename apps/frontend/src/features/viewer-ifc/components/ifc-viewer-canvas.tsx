@@ -2,7 +2,7 @@
 import { logicalInspectorMap, labelInspectorItems } from "../lib/logical-inspector";
 import { projectLogicalTree, treeExpansion, treeSelectionPath } from "../lib/logical-tree";
 import { useLogicalTree } from "../lib/use-logical-tree";
-import { LogicalMeteringPanel } from "./logical-metering-panel";
+import { BimSchedulePanel } from "./bim-schedule-panel";
 import { type LogicalCostDetail, type LogicalCostGroup } from "../lib/logical-cost-rows";
 import { resolveCostAuthoringSelection, getCostSelectionModelMap, type CostAuthoringSelection } from "../lib/cost-authoring-selection";
 import { createParameterGraphicsResolver } from "../lib/parameter-graphics";
@@ -6172,7 +6172,7 @@ function Cost5DPanel({
     { id: "level", label: "Nivel", set: "", property: "" },
     { id: "quantity", label: "Cantidad / metrado", set: "", property: "" }
   ]);
-  const [rawMetering, setRawMetering] = useState(false);
+  const rawMetering = false;
   const [search, setSearch] = useState("");
   const [chartMode, setChartMode] = useState<"bars" | "donut">("bars");
   const [chartLimit, setChartLimit] = useState<"10" | "15" | "25" | "all">(
@@ -6527,15 +6527,16 @@ function Cost5DPanel({
             Partidas desde la generación publicada. Selección por elemento de autoría y revisión exacta.
           </div>
         ) : null}
-        {mode === "metrados" && mapping.quantityPolicy ? <label className="text-xs text-zinc-400"><input type="checkbox" checked={rawMetering} onChange={event => setRawMetering(event.target.checked)} /> Diagnóstico por entidad IFC (cantidades sin consolidar)</label> : null}
-        {mode === "metrados" && mapping.quantityPolicy && !rawMetering ? (
-          <LogicalMeteringPanel request={{projectCode,modelKeys:loadedModelKeys,
-            itemId:toBimPropertyRefPayload(mapping.itemId),itemName:toBimPropertyRefPayload(mapping.itemName),
-            itemUnit:toBimPropertyRefPayload(mapping.itemUnit),quantity:toBimPropertyRefPayload(mapping.quantity),
-            quantityPolicy:mapping.quantityPolicy,quantitySource:'stored_parameter'}}
-            onSelect={(detail, group) => onSelectRow({ key: detail.key, primaryLocalId: detail.graphicalLocalIds[0] ?? detail.representativeLocalId, ...group, quantity: detail.quantity ?? 0, elementCount: 1, geometryCount: detail.graphicalLocalIds.length, modelCount: 1, modelIdMap: {},
-              selection: { version: 1, unresolvedEntityCount: 0, groups: [{ context: detail.context, authoringElements: [{ identityKey: detail.identityKey, memberCount: detail.memberLocalIds.length, graphicalLocalIds: detail.graphicalLocalIds }] }] } })} />
-        ) : mode === "metrados" ? (
+        {mode === "metrados" ? (
+          <BimSchedulePanel projectCode={projectCode} modelKeys={loadedModelKeys} catalog={propertyCatalog}
+            modelOptions={models.flatMap(m=>m.bimContext?[{key:m.bimContext.modelKey,name:m.name}]:[])}
+            onSelect={detail => onSelectRow({key:detail.key,primaryLocalId:detail.graphicalLocalIds[0] ?? detail.representativeLocalId,
+              itemId:detail.partida??"Sin partida",itemName:detail.name??detail.identityKey,itemUnit:"",quantity:0,
+              elementCount:1,geometryCount:detail.graphicalLocalIds.length,modelCount:1,modelIdMap:{},
+              selection:{version:1,unresolvedEntityCount:0,groups:[{context:detail.context,authoringElements:[{
+                identityKey:detail.identityKey,memberCount:detail.memberLocalIds.length,graphicalLocalIds:detail.graphicalLocalIds
+              }]}]}})} />
+        ) : rawMetering ? (
           <>
             <div className="rounded border border-zinc-800 bg-zinc-900 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
