@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import bimAuthoringRoutes from "./bim-authoring.routes";
 import { getLogicalMeteringRows } from "../db/bim-logical-metering";
+import { getBimSchedule, type ScheduleInput } from "../db/bim-schedule";
 import { indexDocumentBimProperties } from "../services/documents.service";
 import {
   bulkUpsertBimElements,
@@ -624,6 +625,21 @@ router.post("/cost5d/aggregate", async (req, res) => {
   } catch (error) {
     return sendRouteError(res, error);
   }
+});
+
+router.post("/schedule/rows", async (req, res) => {
+  try {
+    const body=req.body??{},projectCode=toProjectCode(body.projectCode);
+    const allowed=new Set(['modelKey','logicalIfcClass','level','sector','elementType','partida','withoutPartida','search']);
+    if(!projectCode || !Array.isArray(body.columns) || body.columns.length>24 || body.columns.some((c:Record<string,unknown>)=>
+      !c || c.source!=='stored_parameter' || typeof c.id!=='string' || typeof c.label!=='string' || typeof c.setName!=='string' || typeof c.propertyName!=='string' || /^Qto_/i.test(c.setName)) ||
+      (body.filters && (typeof body.filters!=='object' || Object.entries(body.filters).some(([k,v])=>!allowed.has(k)||(k==='withoutPartida'?typeof v!=='boolean':typeof v!=='string')))) ||
+      ['offset','limit'].some(k=>body[k]!==undefined&&(!Number.isSafeInteger(body[k])||body[k]<0)))
+      return res.status(400).json({success:false,message:'Invalid schedule configuration'});
+    const data=await getBimSchedule({projectCode,modelKeys:toStringArray(body.modelKeys),columns:body.columns,
+      filters:body.filters as ScheduleInput['filters'],offset:body.offset,limit:body.limit});
+    return res.json({success:true,data});
+  } catch(error) {return sendRouteError(res,error);}
 });
 
 router.post("/cost5d/logical-metering-rows", async (req, res) => {
