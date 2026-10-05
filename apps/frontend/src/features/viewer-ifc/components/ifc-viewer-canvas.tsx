@@ -10742,34 +10742,12 @@ export function IfcViewerCanvas({
       const modelIdMap = await expandModelIdMapForRendering(sourceMap);
       if (!isRenderOperationCurrent(token)) return;
 
-      const elementCount = countModelIdMapElements(modelIdMap);
-
-      if (elementCount <= TREE_ACTION_HIGHLIGHT_LIMIT) {
-        try {
-          await modules.selection.highlighter.highlightByID(
-            "select",
-            modelIdMap,
-            true,
-            false
-          );
-        } catch (selectionError) {
-          console.warn("[viewer-ifc] 5D selection highlight failed:", selectionError);
-        }
-
-        await fitSelectionInView(viewer, viewer.components, modelIdMap);
-      } else {
-        await modules.selection.clearSelection();
-        setStatus("Seleccion grande detectada. Aplicando contexto liviano por lotes...");
-      }
-
+      await modules.selection.selectLogical(modelIdMap, [], "context");
       if (!isRenderOperationCurrent(token)) return;
-      const ghostApplied = await applySelectionFocusMode(modelIdMap, token);
+      await fitSelectionInView(viewer, viewer.components, modelIdMap);
+      if (!isRenderOperationCurrent(token)) return;
       setHasSelection(true);
-      setStatus(
-        ghostApplied
-          ? successStatus
-          : successStatus + " Contexto atenuado omitido por tamano para proteger rendimiento."
-      );
+      setStatus(successStatus);
       requestViewerRefresh();
     } catch (error) {
       console.error("[viewer-ifc] Error seleccionando elementos tabulares:", error);
@@ -10788,9 +10766,9 @@ export function IfcViewerCanvas({
         if (!isRenderOperationCurrent(token)) return;
         if (!countModelIdMapElements(map)) throw new Error("La partida no tiene miembros gráficos presentes.");
         if (row.primaryLocalId != null && Object.keys(map).length === 1) {
-          await modules.selection.selectMember(Object.keys(map)[0], row.primaryLocalId);
+          await modules.selection.selectMember(Object.keys(map)[0], row.primaryLocalId, "context");
         } else {
-          await modules.selection.selectLogical(map, row.selection.groups.flatMap(group => group.authoringElements.map(element => ({ context: group.context, identityKey: element.identityKey }))));
+          await modules.selection.selectLogical(map, row.selection.groups.flatMap(group => group.authoringElements.map(element => ({ context: group.context, identityKey: element.identityKey }))), "context");
         }
         if (!isRenderOperationCurrent(token)) return;
         await fitSelectionInView(viewer, viewer.components, map);

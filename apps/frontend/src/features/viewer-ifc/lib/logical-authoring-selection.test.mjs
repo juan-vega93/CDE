@@ -337,10 +337,67 @@ test('real Highlighter commit applies selection context for OCI 7 logical / 112 
   }]));
   const {createSelectionContext}=load('./selection-context.ts');
   const context=createSelectionContext({models:()=>models,hidden:async()=>({A:[999999],B:[22]}),refresh:async()=>{}});
-  h.selection.setCommitListener(()=>context.setSelection(h.selection.getSelectionModelIdMap()));
-  await h.selection.selectLogical({A:new Set(graphical)},keys.map(identityKey=>({context:contextA,identityKey})));
+  h.selection.setCommitListener(presentation=>context.setSelection(presentation==='context'?h.selection.getSelectionModelIdMap():{}));
+  await h.selection.selectLogical({A:new Set(graphical)},keys.map(identityKey=>({context:contextA,identityKey})), 'context');
   assert.equal(h.selection.getLogicalIdentities().length,7);
   assert.deepEqual([...dimmed.get('A')],[999998]);assert.deepEqual([...dimmed.get('B')],[21]);
   await h.selection.clearSelection();assert.equal(dimmed.get('A').size,0);assert.equal(dimmed.get('B').size,0);
   assert.equal(h.visibilityWrites(),0);context.dispose();h.selection.dispose();
+});
+
+function attachPresentation(h) {
+  const dim={A:new Set(),B:new Set()},hidden={A:[3],B:[12]},writes=[];
+  const {createSelectionContext}=load('./selection-context.ts');
+  const context=createSelectionContext({models:()=>Object.entries({A:[1,2,3,4,5],B:[2,3,10,11,12]}).map(([id,ids])=>[id,{
+    getItemsIdsWithGeometry:async()=>ids,
+    setOpacity:async batch=>{writes.push(['dim',id,[...batch]]);batch.forEach(n=>dim[id].add(n));},
+    resetOpacity:async batch=>{assert.ok(Array.isArray(batch));writes.push(['reset',id,[...batch]]);batch.forEach(n=>dim[id].delete(n));}
+  }]),hidden:async()=>hidden,refresh:async()=>{}},2);
+  // Execute the production module wiring, not a second implementation of origin routing.
+  const source=fs.readFileSync(new URL('../modules/index.ts',import.meta.url),'utf8');
+  const ast=ts.createSourceFile('index.ts',source,ts.ScriptTarget.Latest,true);let found=false;
+  function visit(node){if(ts.isCallExpression(node)&&node.expression.getText(ast)==='selection.setCommitListener'){
+    vm.runInNewContext(ts.transpileModule(node.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,{selection:h.selection,context});found=true;
+  }ts.forEachChild(node,visit);}visit(ast);assert.ok(found);
+  return {dim,hidden,writes,context};
+}
+
+test('viewport logical pick and manual/SmartView highlights never request automatic ghost',async()=>{
+  const h=harness(),p=attachPresentation(h);await h.click('A',2);await settle();
+  assert.deepEqual(h.map(),{A:[2,3]});assert.equal(h.selection.getLogicalIdentities().length,1);assert.equal(p.writes.length,0);
+  await h.highlighter.highlightByID('select',{B:new Set([10])},true,false);
+  await h.click('A',4,{ctrlKey:true});await settle();assert.equal(p.writes.length,0);
+  assert.equal(h.visibilityWrites(),0);h.selection.dispose();p.context.dispose();
+});
+
+test('metering → viewport → metering requests context explicitly and preserves hidden/federated universe',async()=>{
+  const h=harness(),p=attachPresentation(h);
+  await h.selection.selectMember('A',2,'context');assert.ok(p.dim.A.has(4));assert.ok(p.dim.B.has(10));assert.ok(!p.dim.A.has(3));assert.ok(!p.dim.B.has(12));
+  await h.click('B',2);await settle();assert.deepEqual(h.map(),{B:[2,3]});assert.equal(p.dim.A.size+p.dim.B.size,0);
+  await h.selection.selectMember('A',2,'context');assert.ok(p.dim.B.has(10));
+  await h.selection.clearSelection();assert.equal(p.dim.A.size+p.dim.B.size,0);assert.deepEqual(p.hidden,{A:[3],B:[12]});assert.equal(h.visibilityWrites(),0);
+});
+
+test('5D A → B updates only opacity delta: shared background never resets between chunks',async()=>{
+  const h=harness(async(context,id)=>response(context,[member(1,'absent'),member(id)])),p=attachPresentation(h);
+  await h.selection.selectMember('A',2,'context');p.writes.length=0;
+  await h.selection.selectMember('A',4,'context');
+  assert.ok(p.writes.some(([op,id,ids])=>op==='reset'&&id==='A'&&ids.includes(4)));
+  assert.ok(p.writes.some(([op,id,ids])=>op==='dim'&&id==='A'&&ids.includes(2)));
+  assert.ok(p.writes.every(([op,id,ids])=>op!=='reset'||(id==='A'&&ids.every(n=>n===4))));
+  assert.ok(p.dim.A.has(5));assert.ok(p.dim.B.has(10));assert.equal(h.visibilityWrites(),0);
+});
+
+test('stale metering resolution cannot re-enable context after newer viewport intent',async()=>{
+  const pending=deferred(),h=harness(context=>context===contextA?pending.promise:Promise.resolve(response(context))),p=attachPresentation(h);
+  const old=h.selection.selectMember('A',2,'context');await h.click('B',2);await settle();
+  pending.resolve(response());await old;await settle();assert.deepEqual(h.map(),{B:[2,3]});assert.equal(p.writes.length,0);
+});
+
+test('highlight-only and clear preserve explicit context and isolate restriction',async()=>{
+  const h=harness(),p=attachPresentation(h);p.hidden.A.push(5);
+  await p.context.setContext({A:new Set([2])});const before=[...p.dim.A];
+  await h.selection.selectMember('B',2,'context');await h.click('A',2);await settle();
+  assert.deepEqual([...p.dim.A].sort(),before.sort());assert.ok(!p.dim.A.has(5));
+  await h.selection.clearSelection();assert.deepEqual([...p.dim.A].sort(),before.sort());assert.equal(h.visibilityWrites(),0);
 });

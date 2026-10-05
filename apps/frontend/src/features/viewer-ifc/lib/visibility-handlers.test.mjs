@@ -44,6 +44,10 @@ function harness(afterWrite = async () => {}) {
     models: () => [["model", {...models[0].runtimeModel,getItemsIdsWithGeometry:async()=>[1,2,3]}]],
     hidden: async()=>({model:[...hidden]}),refresh:async()=>{}
   });
+  modules.selection.selectLogical = async (map, _identities, presentation) => {
+    highlighted.push(['select', map]);
+    await modules.context.setSelection(presentation === 'context' ? map : {});
+  };
   const ctx = vm.createContext({
     console, Set, Map, Object, Array, Promise, parameterVisibilityKey,
     propertySet: "Pset", propertyName: "Type", modulesRef: { current: modules },

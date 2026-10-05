@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
 import * as OBF from "@thatopen/components-front";
-import { attachLogicalAuthoringSelection } from "../lib/logical-authoring-selection";
+import { attachLogicalAuthoringSelection, type SelectionPresentation } from "../lib/logical-authoring-selection";
 import { resolveAuthoringSelection } from "../lib/resolve-authoring-selection";
 import type { ViewerBimContext } from "../lib/viewer-bim-context";
 
@@ -16,7 +16,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
   const highlighter = components.get(OBF.Highlighter);
   const fragments = components.get(OBC.FragmentsManager);
   let getBimContext: (runtimeModelId: string) => ViewerBimContext | undefined = () => undefined;
-  let committed: (() => Promise<void>) | undefined;
+  let committed: ((presentation: SelectionPresentation) => Promise<void>) | undefined;
 
   async function refreshFragments() {
     await fragments.core.update(true);
@@ -94,7 +94,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
 
   const logicalSelection = attachLogicalAuthoringSelection({
     highlighter,
-    onCommitted: () => committed?.() ?? Promise.resolve(),
+    onCommitted: (presentation) => committed?.(presentation) ?? Promise.resolve(),
     resolve: resolveAuthoringSelection,
     pick: async () => {
       // The public declaration also covers plain Three intersections; only a
@@ -185,7 +185,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
   return {
     highlighter,
     getSelectionModelIdMap,
-    setCommitListener(listener: () => Promise<void>) { committed = listener; },
+    setCommitListener(listener: (presentation: SelectionPresentation) => Promise<void>) { committed = listener; },
     getPropertiesModelIdMap,
     isReplacingSelection: logicalSelection.isReplacingSelection,
     getLogicalSelection: logicalSelection.getLogicalSelection,

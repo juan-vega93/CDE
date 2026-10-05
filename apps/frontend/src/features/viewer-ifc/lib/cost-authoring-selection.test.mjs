@@ -31,11 +31,11 @@ test("wrong revision/case, missing context, duplicate runtimes, missing geometry
 test("unresolved membership is not a partial-success selection",async()=>{
   await assert.rejects(exports.resolveCostAuthoringSelection({...selection(),unresolvedEntityCount:1},[model()]));
 });
-test("actual canonical 5D handler highlights complete map without visibility/ghost/tree writes",async()=>{
+test("actual 5D Partida and Metrados handlers explicitly request context without visibility/tree writes",async()=>{
   const canvas=fs.readFileSync(new URL("../components/ifc-viewer-canvas.tsx",import.meta.url),"utf8");
   const body=canvas.split("  async function handleSelectCost5DRow(")[1].split("\n  async function ")[0];
   const calls=[];const forbidden=()=>assert.fail("visibility mutation");
-  const ctx={exports:{},modulesRef:{current:{visibility:{showAll:forbidden},selection:{selectLogical:async(...args)=>calls.push(args),highlighter:{highlightByID:forbidden}}}},
+  const ctx={exports:{},modulesRef:{current:{visibility:{showAll:forbidden},selection:{selectLogical:async(...args)=>calls.push(args),selectMember:async(...args)=>calls.push(args),highlighter:{highlightByID:forbidden}}}},
     viewerRef:{current:{components:{}}},models:[model()],resolveCostAuthoringSelection:exports.resolveCostAuthoringSelection,
     beginRenderOperation:()=>1,isRenderOperationCurrent:()=>true,countModelIdMapElements:m=>Object.values(m).reduce((n,s)=>n+s.size,0),
     fitSelectionInView:async()=>{},setHasSelection:()=>{},setStatus:()=>{},requestViewerRefresh:()=>{},
@@ -44,4 +44,7 @@ test("actual canonical 5D handler highlights complete map without visibility/gho
   await ctx.exports.run({selection:selection(),itemId:"any"});
   assert.equal(calls.length,1);assert.deepEqual(plain(calls[0][0]),{runtime:[2,3,5]});
   assert.deepEqual(Array.from(calls[0][1], x=>x.identityKey),["ae1","ae2"]);
+  assert.equal(calls[0][2],'context');
+  await ctx.exports.run({selection:selection(),itemId:'any',primaryLocalId:2});
+  assert.deepEqual(calls[1],['runtime',2,'context']);
 });

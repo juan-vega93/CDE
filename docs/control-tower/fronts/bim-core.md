@@ -2,12 +2,12 @@
 
 Updated: 2026-10-05 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: 540efc542a9cddd821f50bba62853a8468b100b1
-HEAD: commit que contiene este estado; resolver con `git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md`. Base verificada antes del cierre.
+Base: 2ae2454351d76b01759c8d99d4fae7c0307dc8a4
+HEAD: commit que incorpora este estado; resolver con git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md. Base verificada antes del cierre.
 
 ## Current phase
 
-3I — estabilidad de selección, contexto/ghost, Metrados lógicos e Inspector root/member.
+3I.2 — ghost según intención explícita de selección.
 
 ## Status
 
@@ -15,66 +15,64 @@ COMPLETE
 
 ## Completed
 
-- Selección resuelta antes de reemplazar highlight; clear interno no publica selección vacía en React. Estado de modelos/datasets separado de selección. Refresh de Partidas conserva datos anteriores.
-- Contexto automático mediante opacidad Fragments, deltas serializados y capas selección/contexto manual. Respeta hidden, SmartView, isolate y modelos federados; sin nuevas llamadas showAll.
-- Inspector presenta root lógico primero y miembro clicado separado, incluyendo root sin geometría. No mezcla propiedades ni asociaciones del child con root.
-- Metrados usa la consolidación existente, filtros Partida/Sector/clase lógica/búsqueda, páginas de 100 y CSV lógico filtrado. Tabla desacoplada del layout.
-- Fixture OCI: 115 entidades, 7 AE, 112 gráficos, 1842.105; A5: 1 AE, 72 gráficos, 156.616. Roof #389468 frente a Slab #389463: identidad primaria IfcRoof.
-- Quantity Provenance, stored-authoring-replicas@1 y publicación generacional preservadas.
+- Selección lógica, Inspector root/member, Metrados y quantities de 3I conservados.
+- Viewport, selección manual y llamadas programáticas por defecto: highlight-only. Metrados/Partidas solicitan context explícitamente al mismo adaptador serializado.
+- Intención viaja con la operación asíncrona y su token; resultado obsoleto no reactiva ghost. Clear retira sólo la capa de selección.
+- Contexto manual permanece independiente. Ghost usa el controlador existente y deltas de opacidad, sin nuevas llamadas showAll ni cambios de visibilidad.
+- Recorrido 5D legacy/raw usa el mismo commit de selección/contexto; deja de escribir ghost en la capa manual.
+- Frontend reconstruido y desplegado localmente: BUILD_ID 5bNlQ_oy3686chCHblyhJ. BFF/DB sin cambios ni reinicio en esta fase.
+- Validación OCI en navegador: click normal sin ghost; A5 72 geometrías con ghost; A5 -> viewport #185053 retira ghost y mantiene nueva selección; Partida 7/112 con ghost; SmartView 2161482 conserva color/filtro y catálogo 52 sin ghost automático. Metrados mantiene 7 filas/1842.105.
 
 ## In progress
 
-None. Implementación y validación automática cerradas. Validación visual OCI pendiente de QA; no ejecutada ni afirmada como evidencia.
+None. No iniciar otra fase automáticamente.
 
 ## Blocked
 
-None.
+None para IFC directo. Sigue pendiente la dependencia de entrada desde Documentos: requireFrag frente a entorno mock, registrada en 3I.1. No modificada aquí.
 
 ## Decisions
 
-- Dataset, selección, presentación ghost e identidad de Inspector tienen estados separados.
-- Resolución asíncrona conserva selección anterior; intención vigente controla el reemplazo. Errores/404 conservan datasets y permiten fallback a miembro.
-- Ghost usa setOpacity/resetOpacity por delta y nunca representa hidden.
-- Metrados reutiliza Partidas, consolida miembros completos antes de filtrar/paginar y conserva errores explícitos; no segunda política de cantidades.
-- Clase lógica deriva del representante root o standalone; Sector ambiguo/ausente queda null. Tipo usa propiedad inequívoca o Name como fallback.
+- SelectionPresentation = highlight-only | context; opt-in explícito, nunca deducido de logicalSelection.
+- Estado de datasets/autoría no depende de presentación; identidad y properties mantienen contrato previo.
+- Operaciones serializadas mantienen el ghost anterior hasta commit; A -> B aplica sólo delta. Capa manual no se limpia con selección normal.
+- Sin cambios en stored-authoring-replicas@1, Quantity Provenance, generación ni fuentes/unidades.
 
 ## Dependencies
 
-- QA/operación BIM: desplegar BFF y frontend juntos y ejecutar pasos visuales del checkpoint sobre OCI real. No despliegue ni reindex realizados aquí.
-- CONTROL TOWER: revisión del checkpoint 3I antes de integración. No merge/rebase/cherry-pick ni push.
-- 5D Workspace: puede reutilizar tabla data/actions y endpoint. Filtro clase lógica SmartView/Partidas queda diferido; no bloquea Metrados.
-- Sin cambios en responsabilidades Documents, Platform, GeoBIM, BCF/PDF/GIS.
+- CONTROL TOWER/usuario: revisión del checkpoint y aceptación visual adicional. No merge ni push.
+- Documents/operación: entrada normal a IFC requiere resolver FRAG/mock; validación por ifcUrl directo existente. Ninguna responsabilidad ajena modificada.
+- Futuro workspace 5D puede reutilizar selección con intención y tabla lógica sin cambiar identidad.
 
 ## Contracts / API changes
 
-POST /api/bim-index/cost5d/logical-metering-rows: mapping stored-authoring-replicas@1/stored_parameter, scope proyecto/modelos, filtros partida/sector/logicalIfcClass/search, offset/limit y exportAll. Retorna filas lógicas, total, suma o null, opciones y errores; contexto canónico/revisión en cada fila. Snapshot publicado compartido con consolidación Partidas. No QuantityObservations masivas al frontend.
+Sin cambios HTTP/BFF. Contrato interno opcional en selectMember/selectLogical y callback de commit: SelectionPresentation, default highlight-only. Sólo handlers 5D pasan context. Contexto/Isolate explícitos permanecen separados.
 
 ## Database changes
 
-None en 3I. Se conserva schema de 3H.1, sin migración nueva, DB real modificada, backfill ni reindex.
+None. Sin reindex, backfill, migraciones ni modificaciones de DB.
 
 ## Tests / Evidence
 
-- BFF: tsx --test --test-concurrency=1 src/db/bim-*.test.ts src/services/bim-*.test.ts src/routes/bim-authoring.routes.integration.test.ts: 244 pass, 0 fail, 0 skipped. PostgreSQL 16 temporal real aislado.
-- Frontend logical*.test.mjs + cost-authoring-selection/viewer-bim-context/parameter-graphics/bim-index-polling: 70 pass, 0 fail, 0 skipped; incluye Highlighter real, handlers canvas, SSR Inspector/Metrados y fixture OCI.
-- node --test apps/frontend/src/features/viewer-ifc/lib/selection-context.test.mjs: 4 pass. npm run test:visibility -w frontend: 25 pass. Sin fallos/skipped.
-- BFF npm run typecheck/build y frontend npx tsc --noEmit/npm run build: PASS en contenedores con fuentes montadas read-only; no deployment.
-- Lint BFF dirigido: PASS. Frontend dirigido: 8 errores y 14 warnings preexistentes (canvas 8/13; Inspector 0/1), baseline HEAD comprobado; otros 11 archivos frontend limpios. No corrección de deuda ajena.
-- git diff --check y git diff --cached --check requeridos antes de commit; resultado final registrado en checkpoint.
+- Imagen frontend final: 75 tests logical*/cost-authoring-selection/viewer-bim-context/parameter-graphics/bim-index-polling PASS, 0 fail/skipped.
+- npm run test:visibility -w frontend: 25 PASS. selection-context.test.mjs: 4 PASS.
+- Pruebas nuevas: viewport/manual cero writes de opacidad; Metrados/Partidas context explícito; 5D->viewport->5D; A->B sin reset del fondo compartido entre lotes; resultado tardío ignorado; contexto manual/hidden/isolate/federación preservados. Wiring real de modules/index.ts y Highlighter real ejecutados.
+- npx tsc --noEmit y npm run build frontend PASS. Docker Compose build frontend PASS; runtime hashes del adaptador y wiring iguales al workspace.
+- ESLint dirigido: seis archivos limpios; canvas conserva 8 errores/13 advertencias preexistentes. No deuda nueva ni refactor para corregirla.
+- git diff --check y git diff --cached --check PASS antes de commit.
+- Checkpoint 3I.1 previamente untracked se incorpora intacto para trazabilidad del despliegue anterior.
 
 ## Risks
 
-- QA visual OCI pendiente: los tests no sustituyen validación de apariencia/rendimiento del renderer real.
-- Una request por página/filtro/export, tres lecturas SQL batch constantes más control transaccional, no N+1. Consolidación completa del scope antes de paginar: coste backend/memoria proporcional al scope; no benchmark producción.
-- Ghost recorre universo gráfico federado; lotes 450 y deltas, latencia en modelos grandes pendiente de medición real.
-- Metadata Sector/Tipo depende de propiedades del representante; missing/ambiguous no se rellena desde child.
-- Deuda de lint frontend preexistente permanece; no nuevos diagnósticos.
+- Ghost enumera geometrías y aplica lotes; no benchmark de latencia ni grabación exhaustiva de frames. Tests verifican estados intermedios de opacidad.
+- 5D raw ahora destaca el mapa completo por el mismo adaptador que 5D lógico, en lugar del cutoff legacy que sólo aplicaba contexto manual; selecciones raw masivas pueden tener mayor coste de highlight. No afecta política/cantidades.
+- Deuda lint del canvas y dependencia Documents/FRAG siguen abiertas fuera del alcance.
 
 ## Next milestone
 
-Validación visual de los seis pasos OCI del checkpoint y revisión de integración. No iniciar nueva fase automáticamente.
+Revisión de Fase 3I.2. No continuar hacia otros cambios BIM automáticamente.
 
 ## Last checkpoint
 
-Commit: commit que introduce 2026-10-05-fase-3i.md; resolver con `git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-05-fase-3i.md`.
-Checkpoint document: [2026-10-05-fase-3i.md](../checkpoints/bim-core/2026-10-05-fase-3i.md)
+Commit: commit que introduce 2026-10-05-fase-3i2.md; obtener con git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-05-fase-3i2.md.
+Checkpoint document: [2026-10-05-fase-3i2.md](../checkpoints/bim-core/2026-10-05-fase-3i2.md)

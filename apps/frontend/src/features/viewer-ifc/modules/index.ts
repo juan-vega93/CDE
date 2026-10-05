@@ -31,7 +31,9 @@ export function setupViewerModules({
     hidden: () => components.get(OBC.Hider).getVisibilityMap(false),
     refresh: async () => { await fragments.core.update(true); }
   });
-  selection.setCommitListener(() => context.setSelection(selection.getSelectionModelIdMap()));
+  selection.setCommitListener(presentation => context.setSelection(
+    presentation === "context" ? selection.getSelectionModelIdMap() : {}
+  ));
   visibility.subscribe(() => { void visibility.reconcile().then(() => context.reconcile()).catch(console.warn); });
 
   const clipper = setupClipper({
