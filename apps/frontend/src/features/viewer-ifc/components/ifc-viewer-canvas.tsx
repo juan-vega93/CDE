@@ -1,6 +1,7 @@
 "use client";
-import { LogicalCostTable } from "./logical-cost-table";
-import { logicalCostCsv, type LogicalCostDetail, type LogicalCostGroup } from "../lib/logical-cost-rows";
+import { logicalInspectorMap, labelInspectorItems } from "../lib/logical-inspector";
+import { LogicalMeteringPanel } from "./logical-metering-panel";
+import { type LogicalCostDetail, type LogicalCostGroup } from "../lib/logical-cost-rows";
 import { resolveCostAuthoringSelection, getCostSelectionModelMap, type CostAuthoringSelection } from "../lib/cost-authoring-selection";
 import { createParameterGraphicsResolver } from "../lib/parameter-graphics";
 import { pollBimIndex } from "../lib/bim-index-polling";
@@ -121,7 +122,7 @@ type FederatedModelEntry = {
 };
 
 type SelectedBimElementProperties = {
-  model: { documentName: string };
+  model: { documentName: string; projectCode?: string; documentPath?: string; metadata?: {bimRevisionId?:string} };
   localId: number;
   globalId: string | null;
   ifcClass: string | null;
@@ -1830,6 +1831,7 @@ type Cost5DMapping = {
 };
 type Cost5DRow = {
   quantityPending?: boolean;
+  primaryLocalId?: number | null;
   selection?: CostAuthoringSelection;
   key: string;
   itemId: string;
@@ -1948,7 +1950,6 @@ const PARAMETER_ANALYSIS_LOCAL_BUCKET_MAX_IDS = 25000;
 const MAX_NATIVE_LEVEL_INDEX_LOCAL_IDS = 80000;
 const NATIVE_LEVEL_INDEX_BATCH_SIZE = 80;
 const TREE_ACTION_HIGHLIGHT_LIMIT = 1200;
-const CONTEXT_GHOST_MAX_DIM_IDS = 12000;
 const MAX_SMART_VIEW_PROPERTY_SETS_PER_ITEM = 48;
 const MAX_SMART_VIEW_PROPERTIES_PER_SET = 140;
 const MAX_SMART_VIEW_NESTED_ARRAY_SCAN = 160;
@@ -6241,7 +6242,6 @@ function Cost5DPanel({
       }
 
       setServerAggregationLoading(true);
-      setServerAggregation(null);
       const data = await loadCost5DAggregationFromDatabase({
         projectCode,
         modelKeys: loadedModelKeys,
@@ -6518,9 +6518,11 @@ function Cost5DPanel({
         ) : null}
         {mode === "metrados" && mapping.quantityPolicy ? <label className="text-xs text-zinc-400"><input type="checkbox" checked={rawMetering} onChange={event => setRawMetering(event.target.checked)} /> Diagnóstico por entidad IFC (cantidades sin consolidar)</label> : null}
         {mode === "metrados" && mapping.quantityPolicy && !rawMetering ? (
-          <LogicalCostTable groups={serverAggregation?.rows ?? []}
-            onExport={() => downloadTextFile(`metrados-logicos-${Date.now()}.csv`, logicalCostCsv(serverAggregation?.rows ?? []), "text/csv;charset=utf-8")}
-            onSelect={(detail, group) => onSelectRow({ key: detail.key, ...group, quantity: detail.quantity ?? 0, elementCount: 1, geometryCount: detail.graphicalLocalIds.length, modelCount: 1, modelIdMap: {},
+          <LogicalMeteringPanel request={{projectCode,modelKeys:loadedModelKeys,
+            itemId:toBimPropertyRefPayload(mapping.itemId),itemName:toBimPropertyRefPayload(mapping.itemName),
+            itemUnit:toBimPropertyRefPayload(mapping.itemUnit),quantity:toBimPropertyRefPayload(mapping.quantity),
+            quantityPolicy:mapping.quantityPolicy,quantitySource:'stored_parameter'}}
+            onSelect={(detail, group) => onSelectRow({ key: detail.key, primaryLocalId: detail.graphicalLocalIds[0] ?? detail.representativeLocalId, ...group, quantity: detail.quantity ?? 0, elementCount: 1, geometryCount: detail.graphicalLocalIds.length, modelCount: 1, modelIdMap: {},
               selection: { version: 1, unresolvedEntityCount: 0, groups: [{ context: detail.context, authoringElements: [{ identityKey: detail.identityKey, memberCount: detail.memberLocalIds.length, graphicalLocalIds: detail.graphicalLocalIds }] }] } })} />
         ) : mode === "metrados" ? (
           <>
@@ -7865,6 +7867,7 @@ export function IfcViewerCanvas({
   }, [measurementSnapConfig]);
   const [containmentLoading, setContainmentLoading] = useState(false);
   const [associationsLoading, setAssociationsLoading] = useState(false);
+  const [selectedModelIds, setSelectedModelIds] = useState<ReadonlySet<string>>(new Set());
   const [modelEntries, setModels] = useState<FederatedModelEntry[]>([]);
   const loadedRevisionSignature = JSON.stringify(modelEntries.map(model => [model.modelId, model.bimContext]));
   useEffect(() => {
@@ -8571,16 +8574,7 @@ export function IfcViewerCanvas({
           const hasAnySelection = Object.keys(map).length > 0;
           const selectedModelIds = new Set(Object.keys(map));
 
-          setModels((prev) =>
-            prev.map((model) => ({
-              ...model,
-              isSelected: model.modelId ? selectedModelIds.has(model.modelId) : false,
-              expanded:
-                model.modelId && selectedModelIds.has(model.modelId)
-                  ? true
-                  : model.expanded
-            }))
-          );
+          setSelectedModelIds(selectedModelIds);
 
           setHasSelection(hasAnySelection);
 
@@ -8607,16 +8601,12 @@ export function IfcViewerCanvas({
         });
 
         modules.selection.highlighter.events.select.onClear.add(() => {
+          if (modules.selection.isReplacingSelection()) return;
           if (selectionDataTimeoutRef.current !== null) {
             window.clearTimeout(selectionDataTimeoutRef.current);
             selectionDataTimeoutRef.current = null;
           }
-          setModels((prev) =>
-            prev.map((model) => ({
-              ...model,
-              isSelected: false
-            }))
-          );
+          setSelectedModelIds(new Set());
 
           setHasSelection(false);
           setSelectedItemsData([]);
@@ -8956,6 +8946,7 @@ export function IfcViewerCanvas({
       }
       modulesRef.current?.visibility.dispose();
       modulesRef.current?.selection.dispose();
+      modulesRef.current?.context.dispose();
       modulesRef.current = null;
       setVisibilityPolicy(null);
       viewerRef.current = null;
@@ -10656,14 +10647,9 @@ export function IfcViewerCanvas({
   }
 
   async function resetContextGhostOpacity() {
-    if (!lastGhostedSelectionRef.current) return;
-
-    for (const model of models) {
-      await model.runtimeModel.resetOpacity?.(undefined);
-    }
+    await modulesRef.current?.context.clearContext();
     lastGhostedSelectionRef.current = null;
   }
-
   async function getModelContextLocalIds(model: FederatedModelEntry) {
     const indexedIds = smartViewPropertyIndex.localIdsByModelKey?.[model.key];
     if (indexedIds?.length) return Array.from(new Set(indexedIds));
@@ -10730,72 +10716,13 @@ export function IfcViewerCanvas({
 
     return universeMap;
   }
-  async function applySelectionFocusMode(
-    modelIdMap: OBC.ModelIdMap,
-    token = beginRenderOperation()
-  ) {
-    const modules = modulesRef.current;
-
-    if (!modules) return false;
-
-    await modules.visibility.reconcile();
-    await waitForNextFrame();
+  async function applySelectionFocusMode(modelIdMap: OBC.ModelIdMap, token = beginRenderOperation()) {
+    if (!isRenderOperationCurrent(token) || !modulesRef.current) return false;
+    await modulesRef.current.context.setContext(modelIdMap);
     if (!isRenderOperationCurrent(token)) return false;
-    await resetContextGhostOpacity();
-
-    const dimWork: Array<{ model: (typeof models)[number]; ids: number[] }> = [];
-    let totalDimIds = 0;
-
-    for (const model of models) {
-      if (!isRenderOperationCurrent(token)) return false;
-
-      const modelId = model.modelId;
-      const selectedIds = modelId ? modelIdMap[modelId] : undefined;
-      if (!modelId || !selectedIds?.size || !model.runtimeModel.setOpacity) continue;
-
-      const contextIds = await getModelContextLocalIds(model);
-      const contextIdsToDim = contextIds.filter(
-        (localId) => !selectedIds.has(localId)
-      );
-
-      if (contextIdsToDim.length > 0) {
-        totalDimIds += contextIdsToDim.length;
-        dimWork.push({ model, ids: contextIdsToDim });
-      }
-    }
-
-    if (totalDimIds > CONTEXT_GHOST_MAX_DIM_IDS) {
-      for (const [modelId, selectedIds] of Object.entries(modelIdMap)) {
-        const model = models.find((entry) => entry.modelId === modelId);
-        if (model?.runtimeModel.resetOpacity && selectedIds?.size) {
-          await model.runtimeModel.resetOpacity(Array.from(selectedIds));
-        }
-      }
-      lastGhostedSelectionRef.current = null;
-      return false;
-    }
-
-    for (const { model, ids } of dimWork) {
-      if (!isRenderOperationCurrent(token)) return false;
-
-      for (let index = 0; index < ids.length; index += MODEL_ID_MAP_RENDER_CHUNK_SIZE) {
-        if (!isRenderOperationCurrent(token)) return false;
-        await model.runtimeModel.setOpacity(
-          ids.slice(index, index + MODEL_ID_MAP_RENDER_CHUNK_SIZE),
-          0.16
-        );
-        await waitForNextFrame();
-      }
-
-      const modelId = model.modelId;
-      const selectedIds = modelId ? modelIdMap[modelId] : undefined;
-      if (selectedIds?.size) await model.runtimeModel.resetOpacity?.(Array.from(selectedIds));
-    }
-
     lastGhostedSelectionRef.current = cloneModelIdMap(modelIdMap);
     return true;
   }
-
   async function handleSelectModelIdMap(
     sourceMap: OBC.ModelIdMap,
     successStatus: string,
@@ -10860,7 +10787,11 @@ export function IfcViewerCanvas({
         const map = await resolveCostAuthoringSelection(row.selection, models);
         if (!isRenderOperationCurrent(token)) return;
         if (!countModelIdMapElements(map)) throw new Error("La partida no tiene miembros gráficos presentes.");
-        await modules.selection.selectLogical(map, row.selection.groups.flatMap(group => group.authoringElements.map(element => ({ context: group.context, identityKey: element.identityKey }))));
+        if (row.primaryLocalId != null && Object.keys(map).length === 1) {
+          await modules.selection.selectMember(Object.keys(map)[0], row.primaryLocalId);
+        } else {
+          await modules.selection.selectLogical(map, row.selection.groups.flatMap(group => group.authoringElements.map(element => ({ context: group.context, identityKey: element.identityKey }))));
+        }
         if (!isRenderOperationCurrent(token)) return;
         await fitSelectionInView(viewer, viewer.components, map);
         setHasSelection(true);
@@ -11716,7 +11647,9 @@ async function handleIsolateModel(key: string) {
     const modules = modulesRef.current;
     if (!modules) return;
 
-    const map = modules.selection.getPropertiesModelIdMap();
+    const selectionIdentity = modules.selection.getLogicalSelection();
+    const map = logicalInspectorMap(modules.selection.getPropertiesModelIdMap(), selectionIdentity);
+    const isCurrent = () => modules.selection.getLogicalSelection() === selectionIdentity && getSelectionCacheKey(logicalInspectorMap(modules.selection.getPropertiesModelIdMap(), selectionIdentity)) === getSelectionCacheKey(map);
     if (Object.keys(map).length === 0) return;
 
     const selectedCount = countModelIdMapElements(map);
@@ -11778,7 +11711,10 @@ async function handleIsolateModel(key: string) {
                   if (!response.ok) return null;
 
                   const payload = (await response.json()) as { success?: boolean; data?: unknown };
-                  return payload.success && isSelectedBimElementProperties(payload.data)
+                  return payload.success && isSelectedBimElementProperties(payload.data) && (!selectionIdentity ||
+                    (payload.data.model.metadata?.bimRevisionId === selectionIdentity.context.revisionId &&
+                      payload.data.model.projectCode === selectionIdentity.context.projectCode &&
+                      payload.data.model.documentPath === selectionIdentity.context.modelKey))
                     ? toSelectedPropertiesPanelItem(payload.data)
                     : null;
                 })
@@ -11793,8 +11729,9 @@ async function handleIsolateModel(key: string) {
       );
       const data = usingDatabase
         ? dbData
-        : await Promise.race([modules.selection.getSelectedItemsData(), timeout]);
-      const typedData = data as Record<string, unknown>[];
+        : await Promise.race([modules.selection.getSelectedItemsData(map), timeout]);
+      if (!isCurrent()) return;
+      const typedData = labelInspectorItems(data as Record<string, unknown>[], selectionIdentity);
 
       propertiesCacheRef.current.set(cacheKey, typedData);
       setSelectedItemsData(typedData);
@@ -11802,11 +11739,13 @@ async function handleIsolateModel(key: string) {
       setStatus(usingDatabase ? "Propiedades cargadas desde PostgreSQL" : "Propiedades cargadas");
     } catch (error) {
       console.error("[viewer-ifc] Error loading selected item data:", error);
-      setStatus("Error cargando propiedades. Revisa la consola.");
+      if (isCurrent()) setStatus("Error cargando propiedades. Revisa la consola.");
     } finally {
-      setPropertiesLoading(false);
-      setContainmentLoading(false);
-      setAssociationsLoading(false);
+      if (isCurrent()) {
+        setPropertiesLoading(false);
+        setContainmentLoading(false);
+        setAssociationsLoading(false);
+      }
     }
   }
 
@@ -11870,9 +11809,7 @@ async function handleIsolateModel(key: string) {
       await modules.visibility.showAll();
       await waitForNextFrame();
 
-      for (const model of models) {
-        await model.runtimeModel.resetOpacity?.(undefined);
-      }
+      await modules.context.clearAll();
       lastGhostedSelectionRef.current = null;
 
       setModels((prev) =>
@@ -14347,7 +14284,7 @@ async function handleIsolateModel(key: string) {
               </div>
 
               <IfcModelsPanelV2
-                models={models}
+                models={models.map(model => ({ ...model, isSelected: !!model.modelId && selectedModelIds.has(model.modelId) }))}
                 propertyIndex={smartViewPropertyIndex}
                 propertiesIndexLoading={smartViewPropertiesIndexLoading}
                 onBuildLevelIndex={handleBuildNativeLevelIndex}

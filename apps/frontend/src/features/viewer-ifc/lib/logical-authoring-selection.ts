@@ -11,10 +11,11 @@ type Options = {
   getContext: (runtimeModelId: string) => ViewerBimContext | undefined;
   reportError: (error: unknown) => void;
   pick: () => Promise<{ runtimeModelId: string; localId: number } | undefined>;
+  onCommitted?: () => Promise<void>;
 };
 
 /** One adapter around the existing Highlighter. It never owns visibility. */
-export function attachLogicalAuthoringSelection({ highlighter, resolve, getContext, reportError, pick }: Options) {
+export function attachLogicalAuthoringSelection({ highlighter, resolve, getContext, reportError, pick, onCommitted }: Options) {
   const originalHighlight = highlighter.highlightByID;
   const originalPick = highlighter.highlight;
   const originalClear = highlighter.clear;
@@ -52,7 +53,7 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
     // internal clear bypasses the queue; external clears must invalidate/serialize.
     invokingOriginal = true;
     try {
-      return originalHighlight.apply(highlighter, args);
+      return originalHighlight.apply(highlighter, args).then(() => onCommitted?.());
     } finally {
       invokingOriginal = false;
     }
@@ -61,28 +62,27 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
   async function expand(token: number, runtimeModelId: string, localId: number, context: ViewerBimContext) {
     const controller = new AbortController();
     pending = controller;
+    let result: AuthoringSelection | null = null;
     try {
-      const result = await resolve(context, localId, controller.signal);
-      if (disposed || token !== generation || !result) return;
-      await enqueue(async () => {
-        if (disposed || token !== generation) return;
-        const currentContext = getContext(runtimeModelId);
-        if (!currentContext || currentContext.projectCode !== context.projectCode ||
-            currentContext.modelKey !== context.modelKey || currentContext.revisionId !== context.revisionId) return;
-        logical = result;
-        identities = [{ context: result.context, identityKey: result.authoringElement.identityKey }];
-        const ids = result.members.filter((member) => member.geometryStatus === "present").map((member) => member.localId);
-        // Direct original call is the explicit recursion guard: this programmatic
-        // expansion cannot enter the user-pick resolver again. Never zoom here.
-        await invokeHighlight(["select", { [runtimeModelId]: new Set(ids) }, true, false]);
-      });
+      result = await resolve(context, localId, controller.signal);
     } catch (error) {
       if (!controller.signal.aborted && !disposed && token === generation) reportError(error);
     } finally {
       if (pending === controller) pending = undefined;
     }
+    if (disposed || token !== generation) return;
+    await enqueue(async () => {
+      if (disposed || token !== generation) return;
+      const current = getContext(runtimeModelId);
+      if (!current || current.projectCode !== context.projectCode || current.modelKey !== context.modelKey || current.revisionId !== context.revisionId) return;
+      // Resolve first, then publish identity and graphics together. A 404 keeps the raw picked entity.
+      primary = { runtimeModelId, localId };
+      logical = result ?? undefined;
+      identities = result ? [{ context: result.context, identityKey: result.authoringElement.identityKey }] : [];
+      const ids = result ? result.members.filter(m => m.geometryStatus === "present").map(m => m.localId) : [localId];
+      await invokeHighlight(["select", { [runtimeModelId]: new Set(ids) }, true, false]);
+    });
   }
-
   // Keep the library's mouse/drag handling, raycaster and Highlighter. Capture
   // intent before awaiting the raycast so an older pick cannot arrive as new.
   highlighter.highlight = async (name, removePrevious = true, zoom = highlighter.zoomToSelection, exclude = null) => {
@@ -92,12 +92,17 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
       invalidate();
       return originalPick.call(highlighter, name, removePrevious, zoom, exclude);
     }
-    const token = invalidate();
+    const token = invalidate(false);
     const simple = removePrevious && !modifiedPick;
     const hit = await pick();
     if (disposed || token !== generation) return;
     if (!hit) {
       if (removePrevious) await highlighter.clear(name);
+      return;
+    }
+    const context = getContext(hit.runtimeModelId);
+    if (context && simple) {
+      void expand(token, hit.runtimeModelId, hit.localId, context);
       return;
     }
     userPick = { token, simple };
@@ -140,7 +145,7 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
     if (invokingOriginal || (args[0] && args[0] !== "select")) return originalClear.apply(highlighter, args);
     invalidate();
     return enqueue(async () => {
-      if (!disposed) await originalClear.apply(highlighter, args);
+      if (!disposed) { await originalClear.apply(highlighter, args); await onCommitted?.(); }
     });
   };
 
@@ -155,8 +160,14 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
     getPrimaryModelIdMap(): ModelIdMap | undefined {
       return primary ? { [primary.runtimeModelId]: new Set([primary.localId]) } : undefined;
     },
+    isReplacingSelection: () => invokingOriginal,
     getLogicalSelection: () => logical,
     getLogicalIdentities: () => identities.slice(),
+    async selectMember(runtimeModelId: string, localId: number) {
+      const context = getContext(runtimeModelId);
+      if (context) await expand(invalidate(false), runtimeModelId, localId, context);
+      else await highlighter.highlightByID('select', { [runtimeModelId]: new Set([localId]) }, true, false);
+    },
     async selectLogical(map: ModelIdMap, requested: LogicalSelectionIdentity[]) {
       const token = invalidate();
       const snapshot = Object.fromEntries(Object.entries(map).map(([id, ids]) => [id, new Set(ids)]));

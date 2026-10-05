@@ -1358,7 +1358,7 @@ function normalizePropertyRef(ref: BimPropertyRef | undefined): BimPropertyRef |
 }
 
 async function read_getBimCost5DAggregation(
-  input: BimCost5DAggregationInput
+  input: BimCost5DAggregationInput, allGroups = false
 ): Promise<BimCost5DAggregation> {
   ensureBimDatabaseEnabled();
 
@@ -1370,7 +1370,7 @@ async function read_getBimCost5DAggregation(
   const itemName = normalizePropertyRef(input.itemName);
   const itemUnit = normalizePropertyRef(input.itemUnit);
   const quantity = normalizePropertyRef(input.quantity);
-  const limit = Math.max(1, Math.min(input.limit ?? 500, 5000));
+  const limit = allGroups ? null : Math.max(1, Math.min(input.limit ?? 500, 5000));
   const params = [
     input.projectCode,
     input.modelIds?.length ? input.modelIds : null,

@@ -6,6 +6,7 @@ import { setupColoring } from "./coloring.module";
 import { setupSectionBox } from "./section-box.module";
 import { setupMeasurement } from "./measurement.module";
 import * as OBF from "@thatopen/components-front";
+import { createSelectionContext } from "../lib/selection-context";
 
 type SetupViewerModulesParams = {
   components: OBC.Components;
@@ -24,6 +25,14 @@ export function setupViewerModules({
   const visibility = setupVisibility({
     components
   });
+  const fragments = components.get(OBC.FragmentsManager);
+  const context = createSelectionContext({
+    models: () => fragments.list,
+    hidden: () => components.get(OBC.Hider).getVisibilityMap(false),
+    refresh: async () => { await fragments.core.update(true); }
+  });
+  selection.setCommitListener(() => context.setSelection(selection.getSelectionModelIdMap()));
+  visibility.subscribe(() => { void visibility.reconcile().then(() => context.reconcile()).catch(console.warn); });
 
   const clipper = setupClipper({
     components,
@@ -56,6 +65,7 @@ export function setupViewerModules({
 
   return {
     selection,
+    context,
     visibility,
     clipper,
     coloring,

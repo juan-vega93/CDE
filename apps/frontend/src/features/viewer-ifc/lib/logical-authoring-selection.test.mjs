@@ -96,7 +96,7 @@ for (const clicked of [1, 2]) {
     await h.selection.getSelectedAssociationsData();
     assert.deepEqual(h.propertyReads, Array.from({length:3}, () => ({id:"A",ids:[clicked]})));
     assert.equal(h.calls.length, 1, "programmatic expansion must not recurse");
-    assert.equal(h.highlights.length, 2, "one original pick and one expansion");
+    assert.equal(h.highlights.length, 1, "one atomic logical commit after resolution");
   });
 }
 test("standalone remains one graphical element", async () => {
@@ -167,11 +167,11 @@ for (const modifier of ["ctrlKey","shiftKey","metaKey"]) {
 }
 test("model unload blocks pending expansion",async()=>{
   const request=deferred(); const h=harness(()=>request.promise); await h.click("A",2);
-  h.runtimeModels.delete("A"); request.resolve(response()); await settle(); assert.deepEqual(h.map(),{A:[2]});
+  h.runtimeModels.delete("A"); request.resolve(response()); await settle(); assert.deepEqual(h.map(),{});
 });
 test("changed runtime revision blocks pending expansion",async()=>{
   const request=deferred(); const h=harness(()=>request.promise); await h.click("A",2);
-  h.contexts.set("A",contextB); request.resolve(response()); await settle(); assert.deepEqual(h.map(),{A:[2]});
+  h.contexts.set("A",contextB); request.resolve(response()); await settle(); assert.deepEqual(h.map(),{});
 });
 test("Ctrl after a logical pick preserves legacy multiselection without another resolve",async()=>{
   const h=harness(); await h.click("A",2); await settle();
@@ -190,7 +190,7 @@ test("dispose aborts request and restores original Highlighter methods",async()=
   const request=deferred(); const h=harness(()=>request.promise); await h.click("A",2);
   h.selection.dispose(); assert.equal(h.calls[0][2].aborted,true);
   assert.equal(h.highlighter.highlightByID,OBF.Highlighter.prototype.highlightByID);
-  request.resolve(response()); await settle(); assert.deepEqual(h.map(),{A:[2]});
+  request.resolve(response()); await settle(); assert.deepEqual(h.map(),{});
 });
 test("slow old raycast cannot overwrite a newer pick or start another request",async()=>{
   const slow=deferred(); const h=harness(); let count=0;
@@ -284,4 +284,63 @@ test("actual hide/isolate/focus handlers consume the complete logical selection,
   }
   assert.deepEqual(calls.map(c=>c[0]),["hide","isolate","fit","fit"]);
   assert.ok(calls.every(c=>JSON.stringify(c[1])===JSON.stringify({A:[2,3]})));
+});
+
+// Execute the actual canvas event handlers with the real Highlighter. Dataset setters are
+// intentionally absent: selection events may mutate only selection/inspector presentation.
+function attachCanvasState(h) {
+  const source=fs.readFileSync(new URL('../components/ifc-viewer-canvas.tsx',import.meta.url),'utf8');
+  const ast=ts.createSourceFile('canvas.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  const dataset={smartView:['S'],partidas:['P'],metrados:['M'],charts:['C'],catalog:['K']};
+  const state={selected:false,models:[{key:'A'}],...dataset};
+  const globals={modules:{selection:h.selection},selectionDataTimeoutRef:{current:null},window:{clearTimeout(){}},
+    setSelectedModelIds(){},setHasSelection:value=>{state.selected=value;},setStatus(){},setSelectedItemsData(){},
+    setPropertiesRequested(){},setPropertiesLoading(){},setContainmentData(){},setAssociationsData(){},setContainmentLoading(){},setAssociationsLoading(){},
+    setModels(){throw new Error('Selection must not mutate dataset model identity');},Set,Object};
+  function visit(node) {
+    if(ts.isCallExpression(node)) for(const event of ['onHighlight','onClear']) {
+      if(node.expression.getText(ast)===`modules.selection.highlighter.events.select.${event}.add`) {
+        const code=ts.transpileModule(`exports.callback=${node.arguments[0].getText(ast)}`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+        const exports={};vm.runInNewContext(code,{...globals,exports});h.highlighter.events.select[event].add(exports.callback);
+      }
+    }
+    ts.forEachChild(node,visit);
+  }
+  visit(ast);
+  return {state,assertStable(){for(const key of Object.keys(dataset)) assert.equal(state[key],dataset[key],key);}};
+}
+test('pending A → B snapshots preserve SmartView, Partidas, Metrados, charts and catalog; clear affects only selection',async()=>{
+  const next=deferred();let count=0;
+  const h=harness(async context=>++count===1?response(context):next.promise);
+  const ui=attachCanvasState(h);
+  await h.click('A',2);await settle();assert.equal(ui.state.selected,true);ui.assertStable();
+  const before=h.map();await h.click('B',2);ui.assertStable();assert.deepEqual(h.map(),before);
+  next.resolve(response(contextB,[member(2),member(30)]));await settle();ui.assertStable();assert.deepEqual(h.map(),{B:[2,30]});
+  await h.selection.clearSelection();assert.equal(ui.state.selected,false);ui.assertStable();
+});
+test('404 fallback and rapid out-of-order requests never clear datasets or committed selection while pending',async()=>{
+  const slow=deferred();const h=harness(context=>context===contextA?slow.promise:Promise.resolve(null));const ui=attachCanvasState(h);
+  await h.click('A',2);ui.assertStable();await h.click('B',20);await settle();assert.deepEqual(h.map(),{B:[20]});ui.assertStable();
+  slow.resolve(response());await settle();assert.deepEqual(h.map(),{B:[20]});ui.assertStable();
+});
+
+test('real Highlighter commit applies selection context for OCI 7 logical / 112 graphical and clear preserves hidden',async()=>{
+  const evidence=JSON.parse(fs.readFileSync(new URL('../../../../../bff/src/services/fixtures/bim-oci-3f-evidence.json',import.meta.url),'utf8'));
+  const graphical=evidence.members.filter(m=>m.geometryStatus==='present').map(m=>m.localId);
+  const keys=[...new Set(evidence.members.map(m=>m.authoringKey))];
+  assert.equal(graphical.length,112);assert.equal(keys.length,7);
+  const h=harness(),dimmed=new Map([['A',new Set()],['B',new Set()]]);
+  const models=new Map([['A',[...graphical,999998,999999]],['B',[21,22]]].map(([id,ids])=>[id,{
+    getItemsIdsWithGeometry:async()=>ids,
+    setOpacity:async batch=>batch.forEach(n=>dimmed.get(id).add(n)),
+    resetOpacity:async batch=>batch.forEach(n=>dimmed.get(id).delete(n))
+  }]));
+  const {createSelectionContext}=load('./selection-context.ts');
+  const context=createSelectionContext({models:()=>models,hidden:async()=>({A:[999999],B:[22]}),refresh:async()=>{}});
+  h.selection.setCommitListener(()=>context.setSelection(h.selection.getSelectionModelIdMap()));
+  await h.selection.selectLogical({A:new Set(graphical)},keys.map(identityKey=>({context:contextA,identityKey})));
+  assert.equal(h.selection.getLogicalIdentities().length,7);
+  assert.deepEqual([...dimmed.get('A')],[999998]);assert.deepEqual([...dimmed.get('B')],[21]);
+  await h.selection.clearSelection();assert.equal(dimmed.get('A').size,0);assert.equal(dimmed.get('B').size,0);
+  assert.equal(h.visibilityWrites(),0);context.dispose();h.selection.dispose();
 });

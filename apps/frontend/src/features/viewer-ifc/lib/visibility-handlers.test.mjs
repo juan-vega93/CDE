@@ -4,6 +4,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { stripTypeScriptTypes } from "node:module";
 import { createVisibilityPolicy, parameterVisibilityKey } from "./visibility-policy.ts";
+import { createSelectionContext } from "./selection-context.ts";
 
 // Exercise the actual canvas handlers without WebGL, a browser, or production data.
 const source = fs.readFileSync(new URL("../components/ifc-viewer-canvas.tsx", import.meta.url), "utf8");
@@ -39,6 +40,10 @@ function harness(afterWrite = async () => {}) {
       highlightByID: async (...args) => highlighted.push(args)
     } }
   };
+  modules.context = createSelectionContext({
+    models: () => [["model", {...models[0].runtimeModel,getItemsIdsWithGeometry:async()=>[1,2,3]}]],
+    hidden: async()=>({model:[...hidden]}),refresh:async()=>{}
+  });
   const ctx = vm.createContext({
     console, Set, Map, Object, Array, Promise, parameterVisibilityKey,
     propertySet: "Pset", propertyName: "Type", modulesRef: { current: modules },

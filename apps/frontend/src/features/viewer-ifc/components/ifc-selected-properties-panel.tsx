@@ -386,7 +386,21 @@ function downloadPropertiesCsv(
   URL.revokeObjectURL(url);
 }
 
-export function IfcSelectedPropertiesPanel({
+export function IfcSelectedPropertiesPanel(props: IfcSelectedPropertiesPanelProps) {
+  const root = props.items.find(item => item.__inspectorRole === 'root');
+  if (!root) return <IfcEntityPropertiesPanel {...props} />;
+  const child = props.items.find(item => item.__inspectorRole === 'child');
+  return <div>
+    <div className="bg-zinc-900 p-3 text-sm text-zinc-100"><strong>Elemento lógico</strong>
+      <p>{String(root.__authoringKey)} · ID autoría: {String(root.__authoringId ?? '-')}</p></div>
+    <IfcEntityPropertiesPanel {...props} items={[root]} associationsData={child ? [] : props.associationsData} />
+    {child && <details className="border-t border-zinc-700"><summary className="cursor-pointer bg-zinc-900 p-3 text-sm text-zinc-100">Miembro clicado · role = child</summary>
+      <IfcEntityPropertiesPanel {...props} items={[child]} />
+    </details>}
+  </div>;
+}
+
+function IfcEntityPropertiesPanel({
   items,
   associationsData
 }: IfcSelectedPropertiesPanelProps) {

@@ -16,6 +16,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
   const highlighter = components.get(OBF.Highlighter);
   const fragments = components.get(OBC.FragmentsManager);
   let getBimContext: (runtimeModelId: string) => ViewerBimContext | undefined = () => undefined;
+  let committed: (() => Promise<void>) | undefined;
 
   async function refreshFragments() {
     await fragments.core.update(true);
@@ -93,6 +94,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
 
   const logicalSelection = attachLogicalAuthoringSelection({
     highlighter,
+    onCommitted: () => committed?.() ?? Promise.resolve(),
     resolve: resolveAuthoringSelection,
     pick: async () => {
       // The public declaration also covers plain Three intersections; only a
@@ -117,6 +119,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
   });
 
   highlighter.events.select.onClear.add(() => {
+    if (logicalSelection.isReplacingSelection()) return;
     void refreshFragments();
   });
 
@@ -140,8 +143,7 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
     await refreshFragments();
   }
 
-  async function getSelectedItemsData(): Promise<Record<string, unknown>[]> {
-    const modelIdMap = getPropertiesModelIdMap();
+  async function getSelectedItemsData(modelIdMap = getPropertiesModelIdMap()): Promise<Record<string, unknown>[]> {
     const results: Record<string, unknown>[] = [];
 
     for (const [modelId, localIds] of Object.entries(modelIdMap)) {
@@ -183,10 +185,13 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
   return {
     highlighter,
     getSelectionModelIdMap,
+    setCommitListener(listener: () => Promise<void>) { committed = listener; },
     getPropertiesModelIdMap,
+    isReplacingSelection: logicalSelection.isReplacingSelection,
     getLogicalSelection: logicalSelection.getLogicalSelection,
     getLogicalIdentities: logicalSelection.getLogicalIdentities,
     selectLogical: logicalSelection.selectLogical,
+    selectMember: logicalSelection.selectMember,
     setBimContextResolver(resolver: typeof getBimContext) {
       getBimContext = resolver;
     },

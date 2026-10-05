@@ -1,5 +1,6 @@
 import { Router, type Response } from "express";
 import bimAuthoringRoutes from "./bim-authoring.routes";
+import { getLogicalMeteringRows } from "../db/bim-logical-metering";
 import { indexDocumentBimProperties } from "../services/documents.service";
 import {
   bulkUpsertBimElements,
@@ -623,6 +624,22 @@ router.post("/cost5d/aggregate", async (req, res) => {
   } catch (error) {
     return sendRouteError(res, error);
   }
+});
+
+router.post("/cost5d/logical-metering-rows", async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const projectCode = toProjectCode(body.projectCode), itemId = parsePropertyRef(body.itemId);
+    if (!projectCode || !itemId || body.quantityPolicy !== 'stored-authoring-replicas@1' || body.quantitySource !== 'stored_parameter')
+      return res.status(400).json({success:false,message:'Canonical stored mapping required'});
+    const data = await getLogicalMeteringRows({projectCode,itemId,modelKeys:toStringArray(body.modelKeys),
+      itemName:parsePropertyRef(body.itemName),itemUnit:parsePropertyRef(body.itemUnit),quantity:parsePropertyRef(body.quantity),
+      quantityPolicy:body.quantityPolicy,quantitySource:body.quantitySource,
+      partida:toText(body.partida),sector:toText(body.sector),logicalIfcClass:toText(body.logicalIfcClass),search:toText(body.search),
+      limit:Number.isFinite(Number(body.limit))?Number(body.limit):undefined,
+      offset:Number.isFinite(Number(body.offset))?Number(body.offset):undefined,exportAll:body.exportAll===true});
+    return res.json({success:true,data});
+  } catch(error) { return sendRouteError(res,error); }
 });
 
 router.post("/cost5d/metering-rows", async (req, res) => {
