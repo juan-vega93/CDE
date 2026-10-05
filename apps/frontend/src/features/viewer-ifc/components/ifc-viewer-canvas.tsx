@@ -1,5 +1,7 @@
 "use client";
 import { logicalInspectorMap, labelInspectorItems } from "../lib/logical-inspector";
+import { projectLogicalTree, treeExpansion, treeSelectionPath } from "../lib/logical-tree";
+import { useLogicalTree } from "../lib/use-logical-tree";
 import { LogicalMeteringPanel } from "./logical-metering-panel";
 import { type LogicalCostDetail, type LogicalCostGroup } from "../lib/logical-cost-rows";
 import { resolveCostAuthoringSelection, getCostSelectionModelMap, type CostAuthoringSelection } from "../lib/cost-authoring-selection";
@@ -1745,6 +1747,8 @@ type ModelTreeNode = {
   localId?: number;
   aggregateLocalIds?: number[];
   truncatedChildrenCount?: number;
+  memberInspection?: boolean;
+  logicalKey?: string;
   children: ModelTreeNode[];
 };
 type ModelTreeMode = "spatial" | "type" | "level";
@@ -2516,12 +2520,12 @@ function groupTreeByType(nodes: ModelTreeNode[]): ModelTreeNode[] {
   const groups = new Map<string, ModelTreeNode[]>();
 
   for (const node of flattenModelTreeNodes(nodes)) {
-    if (!isModelTreeElement(node)) continue;
+    if (!isModelTreeElement(node) || node.memberInspection) continue;
 
     const type = (node.type || "IFC").toUpperCase();
     const label = getIfcTypeGroupLabel(type);
     const group = groups.get(label) ?? [];
-    group.push({ ...node, depth: 1, children: [] });
+    group.push(node.logicalKey ? cloneTreeNodeWithDepth(node,1) : { ...node, depth: 1, children: [] });
     groups.set(label, group);
   }
 
@@ -2551,7 +2555,7 @@ function groupTreeByPropertyLevels(
     if (typeof node.localId !== "number") continue;
     knownLocalIds.add(node.localId);
 
-    if (isModelTreeElement(node)) {
+    if (isModelTreeElement(node) && !node.memberInspection) {
       nodeByLocalId.set(node.localId, node);
     }
   }
@@ -2562,7 +2566,7 @@ function groupTreeByPropertyLevels(
       const children = uniqueLocalIds.map((localId) => {
         const sourceNode = nodeByLocalId.get(localId);
 
-        if (sourceNode) return { ...sourceNode, depth: 1, children: [] };
+        if (sourceNode) return sourceNode.logicalKey ? cloneTreeNodeWithDepth(sourceNode,1) : { ...sourceNode, depth: 1, children: [] };
         if (knownLocalIds.has(localId)) return null;
 
         return {
@@ -2603,9 +2607,10 @@ function groupTreeByLevel(
   function collectLevelElements(node: ModelTreeNode, result: ModelTreeNode[] = []) {
     for (const child of node.children) {
       if (isBuildingStoreyNode(child)) continue;
+      if (child.memberInspection) continue;
 
       if (isModelTreeElement(child)) {
-        result.push({ ...child, depth: 1, children: [] });
+        result.push(child.logicalKey ? cloneTreeNodeWithDepth(child,1) : { ...child, depth: 1, children: [] });
       }
 
       collectLevelElements(child, result);
@@ -3628,6 +3633,10 @@ function ModelTreeRows({
   onIsolateNode: (node: ModelTreeNode) => void;
   onToggleNodeVisibility: (node: ModelTreeNode) => void;
 }) {
+  const selectedRowRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    selectedRowRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [selectedNodeId]);
   return (
     <>
       {nodes.map((node) => {
@@ -3639,6 +3648,8 @@ function ModelTreeRows({
         return (
           <div key={node.id}>
             <div
+              ref={isSelected ? selectedRowRef : undefined}
+              aria-current={isSelected ? "true" : undefined}
               className={`grid grid-cols-[20px_1fr_22px_22px] items-center gap-1 py-1 text-xs ${
                 isSelected
                   ? "bg-red-950/70 text-white"
@@ -7429,6 +7440,8 @@ function AuditPanel({
 }
 
 function IfcModelsPanelV2({
+  selectedTreeLocalIds,
+  treeLogicalSelection,
   models,
   propertyIndex,
   propertiesIndexLoading,
@@ -7443,6 +7456,8 @@ function IfcModelsPanelV2({
   onIsolateTreeNode,
   onToggleTreeNodeVisibility
 }: {
+  selectedTreeLocalIds: Record<string, number[]>;
+  treeLogicalSelection: boolean;
   models: FederatedModelEntry[];
   projectCode?: string;
   propertyIndex: SmartViewPropertyIndex;
@@ -7464,7 +7479,8 @@ function IfcModelsPanelV2({
 }) {
   const [query, setQuery] = useState("");
   const [treeMode, setTreeMode] = useState<ModelTreeMode>("spatial");
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [userExpandedNodes, setUserExpandedNodes] = useState<Map<string, boolean>>(new Map());
+  const compositions = useLogicalTree(models);
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
   const [hiddenNodeIds, setHiddenNodeIds] = useState<Set<string>>(new Set());
   const levelIndexRequestedRef = useRef(false);
@@ -7497,34 +7513,8 @@ function IfcModelsPanelV2({
     treeMode
   ]);
 
-  useEffect(() => {
-    setExpandedNodes((current) => {
-      const next = new Set(current);
-
-      for (const model of models) {
-        if (!model.expanded || !model.spatialTree?.length) continue;
-
-        for (const id of collectDefaultExpandedTreeNodeIds(model.spatialTree)) {
-          next.add(id);
-        }
-      }
-
-      return next;
-    });
-  }, [models]);
-
-  function toggleNode(id: string) {
-    setExpandedNodes((current) => {
-      const next = new Set(current);
-
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-
-      return next;
-    });
+  function toggleNode(id: string, expanded: boolean) {
+    setUserExpandedNodes(current => new Map(current).set(id,!expanded));
   }
 
   return (
@@ -7592,13 +7582,20 @@ function IfcModelsPanelV2({
         ) : (
           <div className="space-y-1">
             {visibleModels.map((model) => {
-              const sourceTreeNodes = model.spatialTree ?? [];
+              const sourceTreeNodes = projectLogicalTree(model.spatialTree ?? [], compositions[model.key] ?? []);
               const treeNodes = getTreeNodesForMode(
                 sourceTreeNodes,
                 treeMode,
                 propertyIndex.levelLocalIdsByModelKey?.[model.key]
               );
               const nodeCount = countModelTreeNodes(sourceTreeNodes);
+              const path = treeSelectionPath(treeNodes,new Set(selectedTreeLocalIds[model.modelId ?? ""] ?? []),treeLogicalSelection);
+              const modelExpansion = new Map([...userExpandedNodes].flatMap(([key,value])=>{
+                const [scope,id] = JSON.parse(key) as [string,string];
+                return scope===model.key ? [[id,value] as [string,boolean]] : [];
+              }));
+              const expandedNodes = treeExpansion(collectDefaultExpandedTreeNodeIds(treeNodes),path.slice(0,-1),modelExpansion);
+              const logicalSelectedNodeId = path.at(-1) ?? selectedNodeId;
 
               return (
                 <div
@@ -7683,9 +7680,9 @@ function IfcModelsPanelV2({
                         <ModelTreeRows
                           nodes={treeNodes}
                           expandedNodes={expandedNodes}
-                          selectedNodeId={selectedNodeId}
+                          selectedNodeId={logicalSelectedNodeId}
                           hiddenNodeIds={hiddenNodeIds}
-                          onToggleNode={toggleNode}
+                          onToggleNode={id => toggleNode(JSON.stringify([model.key,id]),expandedNodes.has(id))}
                           onSelectNode={(node) => {
                             setSelectedNodeId(node.id);
                             onSelectTreeNode(model.key, node);
@@ -7867,6 +7864,8 @@ export function IfcViewerCanvas({
   }, [measurementSnapConfig]);
   const [containmentLoading, setContainmentLoading] = useState(false);
   const [associationsLoading, setAssociationsLoading] = useState(false);
+  const [treeLogicalSelection, setTreeLogicalSelection] = useState(false);
+  const [selectedTreeLocalIds, setSelectedTreeLocalIds] = useState<Record<string,number[]>>({});
   const [selectedModelIds, setSelectedModelIds] = useState<ReadonlySet<string>>(new Set());
   const [modelEntries, setModels] = useState<FederatedModelEntry[]>([]);
   const loadedRevisionSignature = JSON.stringify(modelEntries.map(model => [model.modelId, model.bimContext]));
@@ -8575,6 +8574,11 @@ export function IfcViewerCanvas({
           const selectedModelIds = new Set(Object.keys(map));
 
           setSelectedModelIds(selectedModelIds);
+          setTreeLogicalSelection(modules.selection.getLogicalIdentities().length>0);
+          const logical = modules.selection.getLogicalSelection();
+          const primary = modules.selection.getPropertiesModelIdMap();
+          setSelectedTreeLocalIds(Object.fromEntries(Object.entries(primary).map(([id,ids])=>
+            [id, logical?.authoringElement.rootLocalId ? [logical.authoringElement.rootLocalId] : [...ids]])));
 
           setHasSelection(hasAnySelection);
 
@@ -8607,6 +8611,7 @@ export function IfcViewerCanvas({
             selectionDataTimeoutRef.current = null;
           }
           setSelectedModelIds(new Set());
+          setSelectedTreeLocalIds({});
 
           setHasSelection(false);
           setSelectedItemsData([]);
@@ -9281,23 +9286,16 @@ export function IfcViewerCanvas({
       return;
     }
 
-    const selectionMap: OBC.ModelIdMap = {
-      [model.modelId]: new Set([node.localId])
-    };
-
     try {
-      await modules.selection.highlighter.highlightByID(
-        "select",
-        selectionMap,
-        true,
-        false
-      );
+      if(node.memberInspection) await modules.selection.inspectMember(model.modelId,node.localId);
+      else await modules.selection.selectMember(model.modelId,node.localId);
+      const graphicalMap = modules.selection.getSelectionModelIdMap();
 
       setHasSelection(true);
       setStatus(`Elemento seleccionado: ${node.name}`);
 
       try {
-        await fitSelectionInView(viewer, viewer.components, selectionMap);
+        await fitSelectionInView(viewer, viewer.components, graphicalMap);
       } catch (fitError) {
         console.warn("[viewer-ifc] No se pudo enfocar nodo IFC:", fitError);
       }
@@ -14262,6 +14260,8 @@ async function handleIsolateModel(key: string) {
               </div>
 
               <IfcModelsPanelV2
+                selectedTreeLocalIds={selectedTreeLocalIds}
+                treeLogicalSelection={treeLogicalSelection}
                 models={models.map(model => ({ ...model, isSelected: !!model.modelId && selectedModelIds.has(model.modelId) }))}
                 propertyIndex={smartViewPropertyIndex}
                 propertiesIndexLoading={smartViewPropertiesIndexLoading}

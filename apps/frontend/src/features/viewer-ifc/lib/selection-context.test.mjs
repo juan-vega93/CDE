@@ -44,3 +44,29 @@ test('Roof root stays identity primary even without geometry; clicked Slab prope
   assert.equal(root.__inspectorRole,undefined);
   assert.deepEqual([...logicalInspectorMap({OCI:new Set([301309])},{authoringElement:{resolutionMethod:'standalone'}}).OCI],[301309]);
 });
+
+test('material rebuilds cannot invalidate A → B → C → A or repeated row ghost',async()=>{
+  const h=setup();
+  for(const id of [1,2,4,1,1]) {
+    // Fragments resetHighlight, invoked by the real Highlighter.updateColors,
+    // removes opacity overrides independently of the presentation controller.
+    await h.controller.rebuildMaterials(async()=>{h.dim.A.clear();h.dim.B.clear();},()=>true);
+    await h.controller.setSelection({A:new Set([id])});
+    assert.deepEqual([...h.dim.A].sort(),[1,2,4,5].filter(n=>n!==id));
+    assert.deepEqual([...h.dim.B].sort(),[10,11]);
+  }
+  await h.controller.rebuildMaterials(async()=>{h.dim.A.clear();h.dim.B.clear();},()=>false);
+  assert.deepEqual([...h.dim.A].sort(),[2,4,5]);
+  await h.controller.setSelection({});assert.equal(h.dim.A.size+h.dim.B.size,0);
+});
+
+test('unloaded selection cannot ghost remaining models and mid-chunk unload stops writes',async()=>{
+  const writes=[], models=new Map();let unload=false;
+  const a={getItemsIdsWithGeometry:async()=>[1,2,3,4],setOpacity:async ids=>{writes.push(ids);if(unload)models.delete('A');},resetOpacity:async()=>{}};
+  const dim=new Set();
+  models.set('A',a);models.set('B',{getItemsIdsWithGeometry:async()=>[10,11],setOpacity:async ids=>ids.forEach(id=>dim.add(id)),resetOpacity:async ids=>ids.forEach(id=>dim.delete(id))});
+  const c=createSelectionContext({models:()=>models,hidden:async()=>({}),refresh:async()=>{}},1);
+  await c.setSelection({A:new Set([1])});assert.equal(dim.size,2);
+  unload=true;writes.length=0;await c.setSelection({A:new Set([2])});assert.equal(writes.length,1);
+  await c.reconcile();assert.equal(dim.size,0);
+});

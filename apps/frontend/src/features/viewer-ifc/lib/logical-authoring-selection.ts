@@ -30,6 +30,7 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
   let disposed = false;
   let queue: Promise<unknown> = Promise.resolve();
   let invokingOriginal = false;
+  let committingPresentation = 0;
   let userPick: { token: number; simple: boolean } | undefined;
 
   function invalidate(clearIdentity = true) {
@@ -54,8 +55,10 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
     // Highlighter calls clear synchronously before its first await. Only that
     // internal clear bypasses the queue; external clears must invalidate/serialize.
     invokingOriginal = true;
+    committingPresentation++;
     try {
-      return originalHighlight.apply(highlighter, args).then(() => onCommitted?.(presentation));
+      return originalHighlight.apply(highlighter, args).then(() => onCommitted?.(presentation))
+        .finally(() => { committingPresentation--; });
     } finally {
       invokingOriginal = false;
     }
@@ -163,8 +166,17 @@ export function attachLogicalAuthoringSelection({ highlighter, resolve, getConte
       return primary ? { [primary.runtimeModelId]: new Set([primary.localId]) } : undefined;
     },
     isReplacingSelection: () => invokingOriginal,
+    isCommittingPresentation: () => committingPresentation > 0,
     getLogicalSelection: () => logical,
     getLogicalIdentities: () => identities.slice(),
+    async inspectMember(runtimeModelId: string, localId: number) {
+      const token = invalidate();
+      await enqueue(async () => {
+        if(disposed || token !== generation || !getContext(runtimeModelId)) return;
+        primary = {runtimeModelId,localId};
+        await invokeHighlight(["select",{[runtimeModelId]:new Set([localId])},true,false],"highlight-only");
+      });
+    },
     async selectMember(runtimeModelId: string, localId: number, presentation: SelectionPresentation = "highlight-only") {
       const context = getContext(runtimeModelId);
       if (context) await expand(invalidate(false), runtimeModelId, localId, context, presentation);

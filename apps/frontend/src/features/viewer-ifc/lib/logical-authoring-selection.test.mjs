@@ -78,7 +78,7 @@ function harness(resolve = async (context) => response(context)) {
     const handlers = [...listeners.get("mouseup")].sort((a,b) => Number(Boolean(b.capture))-Number(Boolean(a.capture)));
     for (const {handler} of handlers) await handler(event);
   }
-  return { selection, highlighter, click, calls, errors, highlights, hidden, propertyReads, contexts, runtimeModels,
+  return { selection, highlighter, fragments, click, calls, errors, highlights, hidden, propertyReads, contexts, runtimeModels,
     visibilityWrites: () => visibilityWrites,
     setAfterHighlight: (value) => { afterHighlight = value; },
     setCastRay: (value) => { castRay = value; },
@@ -294,7 +294,7 @@ function attachCanvasState(h) {
   const dataset={smartView:['S'],partidas:['P'],metrados:['M'],charts:['C'],catalog:['K']};
   const state={selected:false,models:[{key:'A'}],...dataset};
   const globals={modules:{selection:h.selection},selectionDataTimeoutRef:{current:null},window:{clearTimeout(){}},
-    setSelectedModelIds(){},setHasSelection:value=>{state.selected=value;},setStatus(){},setSelectedItemsData(){},
+    setTreeLogicalSelection(){},setSelectedTreeLocalIds(){},setSelectedModelIds(){},setHasSelection:value=>{state.selected=value;},setStatus(){},setSelectedItemsData(){},
     setPropertiesRequested(){},setPropertiesLoading(){},setContainmentData(){},setAssociationsData(){},setContainmentLoading(){},setAssociationsLoading(){},
     setModels(){throw new Error('Selection must not mutate dataset model identity');},Set,Object};
   function visit(node) {
@@ -400,4 +400,29 @@ test('highlight-only and clear preserve explicit context and isolate restriction
   await h.selection.selectMember('B',2,'context');await h.click('A',2);await settle();
   assert.deepEqual([...p.dim.A].sort(),before.sort());assert.ok(!p.dim.A.has(5));
   await h.selection.clearSelection();assert.deepEqual([...p.dim.A].sort(),before.sort());assert.equal(h.visibilityWrites(),0);
+});
+
+
+test('real Highlighter material resets: A → B → C → A → same row, SmartView and member inspection',async()=>{
+  const h=harness(async(context,id)=>response(context,[member(1,'absent'),member(id)])),p=attachPresentation(h);
+  const {createSelectionMaterialBridge}=load('./selection-materials.ts');
+  const bridge=createSelectionMaterialBridge({selections:()=>h.highlighter.selection,reset:async map=>{
+    assert.ok(map,'global material reset forbidden');for(const [id,ids] of Object.entries(map))for(const n of ids)p.dim[id].delete(n);
+  }});
+  let changed;
+  h.fragments.resetHighlight=async()=>{changed=await bridge.reset();};
+  const update=h.highlighter.updateColors.bind(h.highlighter);
+  h.highlighter.updateColors=()=>p.context.rebuildMaterials(async()=>{await update();return changed;},h.selection.isCommittingPresentation);
+  for(const id of [2,4,5,2,2]) {
+    p.writes.length=0;
+    await h.selection.selectMember('A',id,'context');
+    assert.ok(p.writes.every(([op,model,ids])=>op!=='dim'||model!=='A'||!ids.includes(id)), 'new selected material must never be overwritten by previous context');
+    assert.deepEqual([...p.dim.A].sort(),[1,2,4,5].filter(n=>n!==id));
+    assert.deepEqual([...p.dim.B].sort(),[2,3,10,11].sort());
+  }
+  await h.highlighter.updateColors();assert.deepEqual([...p.dim.A].sort(),[1,4,5]);
+  await h.selection.inspectMember('A',4);assert.deepEqual(h.map(),{A:[4]});assert.equal(h.selection.getLogicalSelection(),undefined);
+  assert.deepEqual(h.primary(),{A:[4]});assert.equal(p.dim.A.size+p.dim.B.size,0);
+  await h.selection.selectMember('A',2,'context');assert.ok(p.dim.B.has(10));
+  await h.selection.clearSelection();assert.equal(p.dim.A.size+p.dim.B.size,0);assert.equal(h.visibilityWrites(),0);
 });

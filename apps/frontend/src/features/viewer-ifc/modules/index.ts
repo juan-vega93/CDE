@@ -7,6 +7,8 @@ import { setupSectionBox } from "./section-box.module";
 import { setupMeasurement } from "./measurement.module";
 import * as OBF from "@thatopen/components-front";
 import { createSelectionContext } from "../lib/selection-context";
+import { createSelectionMaterialBridge } from "../lib/selection-materials";
+import { createSelectionOpacityModel } from "../lib/selection-opacity";
 
 type SetupViewerModulesParams = {
   components: OBC.Components;
@@ -27,14 +29,30 @@ export function setupViewerModules({
   });
   const fragments = components.get(OBC.FragmentsManager);
   const context = createSelectionContext({
-    models: () => fragments.list,
+    models: () => Array.from(fragments.list,([id,model])=>[id,createSelectionOpacityModel(model,id,selection.highlighter)] as const),
     hidden: () => components.get(OBC.Hider).getVisibilityMap(false),
     refresh: async () => { await fragments.core.update(true); }
   });
   selection.setCommitListener(presentation => context.setSelection(
     presentation === "context" ? selection.getSelectionModelIdMap() : {}
   ));
+  // All material rebuilds (including SmartView/color operations) invalidate
+  // opacity overrides. Reconcile only after the library's writes have settled.
+  const updateColors = selection.highlighter.updateColors.bind(selection.highlighter);
+  const resetHighlight = fragments.resetHighlight.bind(fragments);
+  const materials = createSelectionMaterialBridge({selections:()=>selection.highlighter.selection,reset:resetHighlight});
+  selection.highlighter.updateColors = () => context.rebuildMaterials(async()=>{
+    let changed:OBC.ModelIdMap={};
+    const reset=fragments.resetHighlight;
+    fragments.resetHighlight=async map=>{
+      if(map) return resetHighlight(map);
+      changed=await materials.reset();
+    };
+    try {await updateColors();} finally {fragments.resetHighlight=reset;}
+    return changed;
+  },selection.isCommittingPresentation);
   visibility.subscribe(() => { void visibility.reconcile().then(() => context.reconcile()).catch(console.warn); });
+  fragments.list.onItemDeleted.add(() => { void context.reconcile().catch(console.warn); });
 
   const clipper = setupClipper({
     components,

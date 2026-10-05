@@ -188,10 +188,12 @@ export function setupSelection({ components, world }: SetupSelectionParams) {
     setCommitListener(listener: (presentation: SelectionPresentation) => Promise<void>) { committed = listener; },
     getPropertiesModelIdMap,
     isReplacingSelection: logicalSelection.isReplacingSelection,
+    isCommittingPresentation: logicalSelection.isCommittingPresentation,
     getLogicalSelection: logicalSelection.getLogicalSelection,
     getLogicalIdentities: logicalSelection.getLogicalIdentities,
     selectLogical: logicalSelection.selectLogical,
     selectMember: logicalSelection.selectMember,
+    inspectMember: logicalSelection.inspectMember,
     setBimContextResolver(resolver: typeof getBimContext) {
       getBimContext = resolver;
     },
