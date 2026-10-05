@@ -385,6 +385,7 @@ type Cost5DServerAggregation = {
   rows: Array<{
     selection?: CostAuthoringSelection;
     logicalRows?: LogicalCostDetail[];
+    quantityPolicy?: string;
     quantityProvenance?: LogicalCostGroup["quantityProvenance"];
     consolidationError?: string;
     rawQuantity?: number;
@@ -481,6 +482,7 @@ function serverCostRowsToCost5DRows(
       itemUnit: row.itemUnit,
       quantity: row.quantity ?? 0,
       quantityPending: row.quantity === null,
+      blockedQuantityCount: row.logicalRows?.filter(detail => detail.status !== "resolved").length,
       selection: row.selection,
       elementCount: row.elementCount,
       geometryCount: countModelIdMapElements(modelIdMap),
@@ -1827,7 +1829,7 @@ type Cost5DPropertyRef = {
   property: string;
 };
 type Cost5DMapping = {
-  quantityPolicy?: "stored-authoring-replicas@1";
+  quantityPolicy?: "stored-authoring-replicas@1" | "stored-authoring-replicas@2";
   itemId: Cost5DPropertyRef;
   itemName: Cost5DPropertyRef;
   itemUnit: Cost5DPropertyRef;
@@ -1835,6 +1837,7 @@ type Cost5DMapping = {
 };
 type Cost5DRow = {
   quantityPending?: boolean;
+  blockedQuantityCount?: number;
   primaryLocalId?: number | null;
   selection?: CostAuthoringSelection;
   key: string;
@@ -6161,7 +6164,7 @@ function Cost5DPanel({
 }) {
   const [mode, setMode] = useState<"partidas" | "metrados">("partidas");
   const [mapping, setMapping] = useState<Cost5DMapping>({
-    quantityPolicy: "stored-authoring-replicas@1",
+    quantityPolicy: "stored-authoring-replicas@2",
     itemId: EMPTY_COST_5D_REF,
     itemName: EMPTY_COST_5D_REF,
     itemUnit: EMPTY_COST_5D_REF,
@@ -6758,9 +6761,10 @@ function Cost5DPanel({
             />
           </div>
           <p className="mt-2 text-[11px] text-zinc-500">
-            La política de parámetro almacenado exige réplicas idénticas, unidad y composición corroborada. Conflictos: cantidad pendiente.
-            <select aria-label="Política de cantidad" value={mapping.quantityPolicy ?? "entity"} onChange={event => setMapping(current => ({ ...current, quantityPolicy: event.target.value === "stored-authoring-replicas@1" ? event.target.value : undefined }))} className="mt-2 w-full rounded bg-zinc-800 p-2">
-              <option value="stored-authoring-replicas@1">Parámetro almacenado · por elemento de autoría</option>
+            @1 exige réplicas idénticas y autoría corroborada. @2 también admite una observación almacenada exclusiva en una composición completa, con unidad inequívoca. Conflictos o datos ausentes: cantidad pendiente.
+            <select aria-label="Política de cantidad" value={mapping.quantityPolicy ?? "entity"} onChange={event => setMapping(current => ({ ...current, quantityPolicy: (event.target.value === "stored-authoring-replicas@1" || event.target.value === "stored-authoring-replicas@2") ? event.target.value : undefined }))} className="mt-2 w-full rounded bg-zinc-800 p-2">
+              <option value="stored-authoring-replicas@2">Parámetro almacenado · autoría y propietario exclusivo (@2)</option>
+              <option value="stored-authoring-replicas@1">Parámetro almacenado · autoría corroborada (@1)</option>
               <option value="entity">Diagnóstico por entidad IFC · sin consolidar</option>
             </select>
           </p>
@@ -6902,7 +6906,7 @@ function Cost5DPanel({
                         </span>
                       </span>
                       <span className="shrink-0 text-zinc-400">
-                        {row.quantityPending ? "Pendiente" : row.quantity.toLocaleString("es-PE", {
+                        {row.quantityPending ? `Pendiente · ${row.blockedQuantityCount ?? "?"} elementos` : row.quantity.toLocaleString("es-PE", {
                           maximumFractionDigits: 3
                         })}{" "}
                         {row.itemUnit}
@@ -6967,7 +6971,7 @@ function Cost5DPanel({
                     </div>
                   </td>
                   <td className="px-2 py-2 text-right text-zinc-100">
-                    {row.quantityPending ? "Pendiente" : row.quantity.toLocaleString("es-PE", {
+                    {row.quantityPending ? `Pendiente · ${row.blockedQuantityCount ?? "?"} elementos` : row.quantity.toLocaleString("es-PE", {
                       maximumFractionDigits: 3
                     })}
                   </td>

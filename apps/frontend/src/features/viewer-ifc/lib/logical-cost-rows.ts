@@ -7,13 +7,13 @@ export type LogicalCostDetail = {
 };
 export type LogicalCostGroup = {
   itemId: string; itemName: string; itemUnit: string; logicalRows?: LogicalCostDetail[];
-  consolidationError?: string;
+  quantityPolicy?: string; consolidationError?: string;
   quantityProvenance?: { source: "stored_parameter"; declaration: "mapping"; sourceProperty: { setName: string; propertyName: string }; unitProperty: { setName: string; propertyName: string } };
 };
 /** Both table and export consume the exact same server observations, including conflicts. */
 export function logicalCostTable(groups: LogicalCostGroup[]) {
   return groups.flatMap(group => (group.logicalRows ?? []).map(detail => ({ ...detail,
-    itemId: group.itemId, itemName: group.itemName, itemUnit: group.itemUnit, quantityProvenance: group.quantityProvenance
+    quantityPolicy: group.quantityPolicy, itemId: group.itemId, itemName: group.itemName, itemUnit: group.itemUnit, quantityProvenance: group.quantityProvenance
   })));
 }
 export function logicalCostCsv(groups: LogicalCostGroup[]) {
@@ -26,7 +26,7 @@ export function logicalCostCsv(groups: LogicalCostGroup[]) {
     "Project", "ModelKey", "RevisionId", "AuthoringElement", "Representante", "IFC members", "Gráficos", "Réplicas", "Policy", "Source", "Source property", "Unit property", "Source evidence", "Sector", "ID elemento", "Tipo", "IFC Class lógica"]];
   for (const row of logicalCostTable(groups)) rows.push([row.itemId, row.itemName, row.itemUnit, row.quantity,
     row.status, row.reason, row.context.projectCode, row.context.modelKey, row.context.revisionId, row.identityKey,
-    row.representativeLocalId, row.memberLocalIds.join("|"), row.graphicalLocalIds.join("|"), row.replicaCount, "stored-authoring-replicas@1", row.quantityProvenance?.source,
+    row.representativeLocalId, row.memberLocalIds.join("|"), row.graphicalLocalIds.join("|"), row.replicaCount, row.quantityPolicy ?? "stored-authoring-replicas@1", row.quantityProvenance?.source,
     row.quantityProvenance ? `${row.quantityProvenance.sourceProperty.setName}.${row.quantityProvenance.sourceProperty.propertyName}` : "",
     row.quantityProvenance ? `${row.quantityProvenance.unitProperty.setName}.${row.quantityProvenance.unitProperty.propertyName}` : "", row.quantityProvenance?.declaration,
     row.sector,row.authoringElementId,row.elementType,row.logicalIfcClass]);

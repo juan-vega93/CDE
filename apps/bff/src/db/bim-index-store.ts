@@ -1,4 +1,6 @@
-import { createStoredReplicaConsolidator, STORED_REPLICA_POLICY, type ReplicaSource, type CostObservation, type LogicalCostRow } from "./bim-cost-replicas";
+import { createStoredReplicaConsolidatorV2, STORED_REPLICA_POLICY_V2, type EvidenceSource } from './bim-cost-replicas-v2';
+import { readStoredOwnerEvidence } from './bim-cost-owner-evidence';
+import { createStoredReplicaConsolidator, STORED_REPLICA_POLICY, type CostObservation, type LogicalCostRow } from "./bim-cost-replicas";
 import { createCostSelectionResolver } from "./bim-cost-selection";
 import type { PoolClient } from "pg";
 import { getDatabasePool, isDatabaseEnabled } from "./client";
@@ -182,7 +184,7 @@ export type BimPropertyRef = {
 
 export type BimCost5DAggregationInput = {
   quantitySource?: "stored_parameter" | "ifc_quantity" | "viewer_geometry";
-  quantityPolicy?: typeof STORED_REPLICA_POLICY;
+  quantityPolicy?: typeof STORED_REPLICA_POLICY | typeof STORED_REPLICA_POLICY_V2;
   projectCode: string;
   modelIds?: string[];
   modelKeys?: string[];
@@ -239,7 +241,7 @@ export type BimCost5DAggregationRow = {
   rawEntityCount?: number;
   rawQuantity?: number;
   logicalRows?: LogicalCostRow[];
-  quantityPolicy?: typeof STORED_REPLICA_POLICY;
+  quantityPolicy?: typeof STORED_REPLICA_POLICY | typeof STORED_REPLICA_POLICY_V2;
   quantityProvenance?: { source: "stored_parameter"; declaration: "mapping"; sourceProperty: BimPropertyRef; unitProperty: BimPropertyRef };
   consolidationError?: string;
   selection?: import("./bim-cost-selection").CostSelection;
@@ -1566,9 +1568,9 @@ async function read_getBimCost5DAggregation(
   }));
 
   // Same repeatable-read snapshot as the quantity query. No inferred revision for legacy rows.
-  const sources = await getBimReadDatabase().query<ReplicaSource>(`
+  const sources = await getBimReadDatabase().query<EvidenceSource>(`
     select ${BIM_MODEL_KEY_ALIAS_SQL} as model_key, scope.project_code, scope.canonical_model_key,
-      g.revision_id, a.element_key, a.resolution_method, a.root_local_id,
+      g.revision_id, a.element_key, a.resolution_method, a.root_local_id, a.composition_evidence,
       (a.composition_evidence->'exportSplit'->>'representativeLocalId')::int representative_local_id,
       array_agg(am.local_id order by am.local_id) as member_ids,
       coalesce(array_agg(am.local_id order by am.local_id) filter (where am.geometry_status='present'), '{}') as graphical_ids
@@ -1582,10 +1584,12 @@ async function read_getBimCost5DAggregation(
     group by models.id, models.model_key, models.document_path, scope.project_code,scope.canonical_model_key,g.revision_id,a.id
     order by a.element_key`, params.slice(0,3));
   const resolveSelection = createCostSelectionResolver(sources.rows);
-  const consolidate = createStoredReplicaConsolidator(sources.rows);
+  const consolidate = input.quantityPolicy === STORED_REPLICA_POLICY_V2 && quantity && itemUnit
+    ? createStoredReplicaConsolidatorV2(sources.rows, await readStoredOwnerEvidence(sources.rows,quantity,itemUnit))
+    : createStoredReplicaConsolidator(sources.rows);
   for (const [index, row] of rows.entries()) {
     row.selection = resolveSelection(row.localIdsByModelKey);
-    if (input.quantityPolicy === STORED_REPLICA_POLICY) {
+    if ((input.quantityPolicy === STORED_REPLICA_POLICY || input.quantityPolicy === STORED_REPLICA_POLICY_V2)) {
       row.quantityPolicy = input.quantityPolicy;
       row.rawEntityCount = row.elementCount; row.rawQuantity = row.quantity ?? 0;
       row.elementCount = row.selection.groups.reduce((sum, group) => sum + group.authoringElements.length, 0);
@@ -1603,7 +1607,7 @@ async function read_getBimCost5DAggregation(
     projectCode: input.projectCode,
     rows,
     totals: {
-      quantity: rows.some(row => row.quantity === null) || (input.quantityPolicy === STORED_REPLICA_POLICY && new Set(rows.map(row => row.itemUnit)).size > 1) ? null : rows.reduce((sum, row) => sum + row.quantity!, 0),
+      quantity: rows.some(row => row.quantity === null) || ((input.quantityPolicy === STORED_REPLICA_POLICY || input.quantityPolicy === STORED_REPLICA_POLICY_V2) && new Set(rows.map(row => row.itemUnit)).size > 1) ? null : rows.reduce((sum, row) => sum + row.quantity!, 0),
       elementCount: rows.reduce((sum, row) => sum + row.elementCount, 0),
       rowCount: rows.length
     }

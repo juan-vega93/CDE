@@ -591,7 +591,7 @@ router.put("/properties/snapshot", async (req, res) => {
 router.post("/cost5d/aggregate", async (req, res) => {
   try {
     const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
-    if (body.quantityPolicy !== undefined && body.quantityPolicy !== "stored-authoring-replicas@1") {
+    if (body.quantityPolicy !== undefined && body.quantityPolicy !== "stored-authoring-replicas@1" && body.quantityPolicy !== "stored-authoring-replicas@2") {
       return res.status(400).json({ success: false, message: "Unsupported quantityPolicy" });
     }
     if (body.quantityPolicy && body.quantitySource !== "stored_parameter") {
@@ -617,7 +617,7 @@ router.post("/cost5d/aggregate", async (req, res) => {
       itemUnit: parsePropertyRef(body.itemUnit),
       quantity: parsePropertyRef(body.quantity),
       quantitySource: body.quantitySource === "stored_parameter" ? body.quantitySource : undefined,
-      quantityPolicy: body.quantityPolicy === "stored-authoring-replicas@1" ? body.quantityPolicy : undefined,
+      quantityPolicy: (body.quantityPolicy === "stored-authoring-replicas@1" || body.quantityPolicy === "stored-authoring-replicas@2") ? body.quantityPolicy : undefined,
       limit: Number.isFinite(limit) ? limit : undefined
     });
 
@@ -646,7 +646,7 @@ router.post("/cost5d/logical-metering-rows", async (req, res) => {
   try {
     const body = req.body ?? {};
     const projectCode = toProjectCode(body.projectCode), itemId = parsePropertyRef(body.itemId);
-    if (!projectCode || !itemId || body.quantityPolicy !== 'stored-authoring-replicas@1' || body.quantitySource !== 'stored_parameter')
+    if (!projectCode || !itemId || !['stored-authoring-replicas@1','stored-authoring-replicas@2'].includes(body.quantityPolicy) || body.quantitySource !== 'stored_parameter')
       return res.status(400).json({success:false,message:'Canonical stored mapping required'});
     const data = await getLogicalMeteringRows({projectCode,itemId,modelKeys:toStringArray(body.modelKeys),
       itemName:parsePropertyRef(body.itemName),itemUnit:parsePropertyRef(body.itemUnit),quantity:parsePropertyRef(body.quantity),

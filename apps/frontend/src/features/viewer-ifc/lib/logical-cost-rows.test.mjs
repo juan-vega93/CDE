@@ -24,3 +24,10 @@ test("ambiguity remains blank quantity with reason, never an implicit zero; erro
   assert.ok(csv.includes('"","ambiguous","conflicting_values"'));
   assert.ok(csv.includes("missing membership")); assert.ok(csv.includes("'=unsafe"));
 });
+
+test('CSV preserves the server policy version instead of relabeling @2 as @1',()=>{
+  const group={itemId:'P',itemName:'Owner',itemUnit:'m2',quantityPolicy:'stored-authoring-replicas@2',logicalRows:[detail]};
+  assert.equal(exports.logicalCostTable([group])[0].quantityPolicy,'stored-authoring-replicas@2');
+  const csv=exports.logicalCostCsv([group]);
+  assert.ok(csv.includes('stored-authoring-replicas@2'));assert.ok(!csv.includes('stored-authoring-replicas@1'));
+});

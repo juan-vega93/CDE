@@ -1,3 +1,4 @@
+import { STORED_REPLICA_POLICY_V2 } from './bim-cost-replicas-v2';
 import { getBimCost5DAggregation, type BimCost5DAggregationInput } from './bim-index-store';
 import { getBimReadDatabase, withBimPublishedRead } from './bim-index-generations';
 import { STORED_REPLICA_POLICY } from './bim-cost-replicas';
@@ -6,11 +7,11 @@ import { STORED_REPLICA_POLICY } from './bim-cost-replicas';
 export async function getLogicalMeteringRows(input: BimCost5DAggregationInput & {
   partida?: string; sector?: string; logicalIfcClass?: string; search?: string; offset?: number; exportAll?: boolean;
 }) {
-  if (input.quantityPolicy !== STORED_REPLICA_POLICY || input.quantitySource !== 'stored_parameter') throw new Error('Logical metering requires stored-authoring-replicas@1');
+  if ((input.quantityPolicy !== STORED_REPLICA_POLICY && input.quantityPolicy !== STORED_REPLICA_POLICY_V2) || input.quantitySource !== 'stored_parameter') throw new Error('Logical metering requires a versioned stored-authoring-replicas policy');
   return withBimPublishedRead(async () => {
     const aggregation = await getBimCost5DAggregation(input, true);
     const rows = aggregation.rows.flatMap(group => (group.logicalRows ?? []).map(detail => ({...detail,
-      itemId:group.itemId,itemName:group.itemName,itemUnit:group.itemUnit,quantityProvenance:group.quantityProvenance})));
+      quantityPolicy:group.quantityPolicy,itemId:group.itemId,itemName:group.itemName,itemUnit:group.itemUnit,quantityProvenance:group.quantityProvenance})));
     const targets = [...new Map(rows.map(row => [row.key,{key:row.key,model_key:row.context.modelKey,revision_id:row.context.revisionId,local_id:row.representativeLocalId,authoring_key:row.identityKey}])).values()];
     const metadata = await getBimReadDatabase().query<{key:string;logical_ifc_class:string|null;global_id:string|null;sector:string|null;element_type:string|null;authoring_id:string|null}>(`
       select r.key,e.ifc_class logical_ifc_class,e.global_id,a.authoring_element_id authoring_id,
