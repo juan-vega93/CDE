@@ -2,12 +2,12 @@
 
 Updated: 2026-10-05 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: b0f92f5081a5c59cd7fd497f0f20296e8abdbb7a
-HEAD: functional code 74dc5aed932ec17c5a2c9367751ec6f851781fc3; documentation carrier resolved with git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md.
+Base: 9cf51d4149da04d5d22140e5d999e4e9656d64e8 (phase baseline)
+HEAD: functional checkpoint 9c24abaaacf857aead81b568eca627d5f66fab40; documentation carrier: git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md.
 
 ## Current phase
 
-3K.1 — authoring-v2 deployed locally; one controlled canonical MBM reindex published and validated. Closed; no next phase started.
+3K.2 — audit of all pending canonical MBM 5D groups and versioned exclusive stored-quantity owner policy. Phase complete. Global 5D milestone OPEN; no next phase started.
 
 ## Status
 
@@ -15,66 +15,64 @@ COMPLETE
 
 ## Completed
 
-- Verified initial branch/HEAD and clean tracked tree. Old BFF was authoring-v1; rebuilt and restarted only BFF/frontend. Final frontend BUILD_ID d0lcWB6NSTr3MbqAiNf2e.
-- Inspected canonical DDL before applying migrations twice successfully. Enabled corroborated_export_split constraint and previously absent QuantityObservation schema; retained existing publication/data.
-- Verified exact 46104979 IFC bytes: sha256:6f991deefc1b895555992219490f877930db38fe968efac6e64a350787c01cdd.
-- Exactly one real reindex of /AR3173/100021-JYS01-000-ZZZ-MBM-OCI-E3-000100.ifc. Generation 634cf258-d6e7-47aa-b4d6-edeb7d0b46cb published; job ready, error null, 46/46 batches, 11362 entities, 212375 properties, 191481 observations, 10920 AE. Old generation remained visible while building, then superseded.
-- Seven export splits: 40 IFC entities -> 7 AE. 1020025 = export-split:173301, two members/geometries, Metrado 116.076 m2 once. 0.2.1.8 = 1255.662 m2 (previously 1371.738). 0.2.1.3 unchanged: 7 AE, 112 graphics, 1842.105 m3.
-- Live Schedule single row, logical tree with two members, individual member inspection and ghost sequences verified. Viewport click restores opacity.
-- Demonstrated missing rootless Inspector header in deployed 3K; minimal fix in separate commit 74dc5ae. Shows logical key/authoring ID/representative/member count separately from native IFC member. No ghost/resolver/quantity behavior changes.
+- Audited 31 groups (ID/name/unit), 23 named codes plus placeholders. Traced all 1972 initially blocked AEs to members, persisted observations and native IFC. Inspected 5063 related native entities: no native Metrado missing from the index in this set.
+- Added stored-authoring-replicas@2; @1 unchanged and selectable. The exception requires one finite stored observation across the complete native component and one unequivocal unit. Authoring confidence/membership unchanged; no deduplication by value.
+- Resolved 263 quantities: groups 12 resolved/19 pending -> 18 resolved/13 pending. Remaining 1709 AEs lack native stored Metrado: 1551 placeholder-classified, 158 named. Seven named codes still have pending buckets.
+- .7 = 7621.600 m2; .11 = 14640.381 kg. .5 remains pending on #182637/#184782. .3 unchanged 1842.105 m3; .8 unchanged 1255.662 m2; 1020025 unchanged one AE/two graphics/116.076 m2.
+- User Revit GUID 2oOvFbrJH54vnWU9sjZ86H / ID996843 maps to IFC #165332, stored Metrado43.583m2, already resolved under @1. No full Revit schedule total supplied.
+- Local BFF/frontend rebuilt and deployed. Final frontend BUILD_ID T386SVkFmzTwS_4Si-J6b. Browser verifies results; no reindex or canonical DB mutation.
 
 ## In progress
 
-None. Awaiting review; no further phase authorized.
+None within 3K.2. Global 5D acceptance remains open.
 
 ## Blocked
 
-Manual CSV evidence only: browser download event timed out after 20s for 386 filtered logical rows with Datos_Partida.Metrado active. Requires an accessible downloaded CSV/user manual verification. Does not block the completed deployment gates; no export implementation change.
+Formal 5D closure requires model-owner correction of missing quantities/units/classifications. Prior manual downloaded-CSV check remains unverified. Full Revit schedule total unavailable; revision equivalence not assumed. These do not block completion of this audit/policy phase.
 
 ## Decisions
 
-- Preserve IFC entity identity; export split has no native root. Representative is not a fabricated root. Native quantities retained, consolidation remains stored-authoring-replicas@1.
-- No reindex retry; one canonical publication only. No new algorithms, endpoint contracts or schema definitions in this phase.
-- 0.2.1.7 remains ambiguous/null; resolved subtotal 7499.866 m2 is not a contractual total.
+- Separate quantity evaluability from authoring confidence. Native parent is not necessarily an AE root; singleton identity does not mean native standalone.
+- Whole-component evidence includes members outside the selected partida. Missing structure/provenance, multiple quantities even equal, invalid units or duplicate mapping entries fail closed.
+- Preserve stored parameter, IFC QTO and viewer geometry separately. No QTO substitution, unit conversion, cross-revision matching or subtotal-as-total.
+- No resolver/extractor/schema changes; no reindex required.
 
 ## Dependencies
 
-- CONTROL TOWER/user review before further phases/integration; no push/merge performed.
-- Manual CSV inspection requires browser download access. Documents, Platform and SmartView receive no new responsibilities.
-- Local DB uses existing canonical migrations; schema gate satisfied. No external DB operation pending for this local deployment.
+- Model owner: contractual quantities and suspicious classifications, mixed-unit .13/.17, placeholders, 1020025 Zona TERCERA ETAPA versus partida ETAPA 2.
+- CONTROL TOWER/user review before integration or 5D closure. No push/merge.
+- Manual CSV verification remains external evidence. No new Documents/Platform/SmartView responsibilities.
 
 ## Contracts / API changes
 
-None new in 3K.1. Existing v2 corroborated_export_split and representativeLocalId contracts now run on canonical local data.
+Existing 5D/metering routes accept @2 alongside @1. Additional resolved fallback evidence: evaluationBasis=exclusive_entity_observation; quantityEvidence={localId,occurrenceIndex,componentLocalIds}. UI defaults @2; CSV preserves response policy version. No new endpoints.
 
 ## Database changes
 
-Applied existing db:migrate twice: authoring method constraint updated; cde_bim_quantity_observations and its canonical indexes/schema installed. Generation schema already existed. No ad-hoc SQL writes, destructive resets or backfill; issue source_id backfill candidate count was zero. Single authorized MBM generation replacement; old data retained.
+None. Published snapshot/revision only. Generation 634cf258-d6e7-47aa-b4d6-edeb7d0b46cb unchanged; revision sha256:6f991deefc1b895555992219490f877930db38fe968efac6e64a350787c01cdd. Counts 11362 entities/10920 AE/191481 QP/212375 properties unchanged.
 
 ## Tests / Evidence
 
-- Real DB/API/Schedule + split tests: 25 PASS, 0 failures/skips (bim-oci-3k.integration.test.ts + bim-authoring-export-split.test.ts, BIM_OCI_3K_CONTEXT_READY=1).
-- Frontend Inspector/Schedule + logical selection: 54 PASS, 0 failures/skips. New SSR test covers rootless identity and preserves clicked member; existing Roof/Slab test passes.
-- Node24 context/visibility tests: 31 PASS, 0 failures/skips. Initial direct Node20 attempt could not load .ts (three loader failures); rerun with host Node24.21.0 passed without source changes.
-- Frontend typecheck PASS; directed lint 0 errors, one pre-existing unused extractContainment warning. BFF/frontend Docker builds PASS; frontend rebuilt/deployed again for Inspector fix.
-- Runtime visual checks: A5 -> A4 -> A3 -> A5; 1020025 -> 965198 -> 1020025; ghost stable; viewport click ghost OFF. Corrected Inspector verified live.
-- Reindex publication duration 283.731s. Post-publication Schedule measurements: .3 734ms, .7 1134ms, .8 849ms (individual samples, not benchmark).
-- Detailed immutable operational evidence: checkpoint linked below. Diff and staged diff checks PASS before documentation commit.
+- Policies @1/@2: 29 pass, zero failures/skips.
+- Full BIM with actual migrated isolated PostgreSQL: 289 tests, 286 pass, zero failures, three canonical OCI gated skips. Temporary DB removed; production DB untouched.
+- Canonical OCI read-only integration: one pass, zero failures/skips; Schedule/reader/version comparison/generation unchanged.
+- Frontend logical rows/selection/Inspector: 57 pass after required BFF fixture mount; initial attempt had three ENOENT fixture failures, corrected environment passed.
+- BFF/frontend typechecks and builds PASS. Directed lint: canvas seven errors/thirteen warnings, identical baseline counts/rule histogram; helper/test clean. No clean-global-lint claim.
+- Diff/staged-diff checks PASS. Browser confirmed .7/.11/.3/.8 and .5 pending-two on final build.
+- Exhaustive observation evidence and group inventory linked from checkpoint below.
 
 ## Risks
 
-- CSV actual downloaded file remains unverified; earlier Blob/export tests are not manual evidence.
-- Three existing .7 fallbacks (385943/386762/387948) remain uncorroborated. 1020025 Zona TERCERA ETAPA vs partida ETAPA 2 unchanged.
-- Web-IFC triangulation/invalid-line warnings and unavailable mock Nextcloud metadata endpoint occurred; exact IFC bytes verified and publication succeeded.
-- 191481 observations include 191478 member-linked plus three IfcProject #32 observations intentionally without authoring membership. Zero member authoring-key mismatches.
-- Job started_at is historical due to reuse; duration measured from current generation creation to publication.
-- Split inference remains conservative, export-specific and revision-scoped; no matching across revisions.
+- Legacy/absent provenance remains conservative. Whole-component evidence adds query/memory cost; no comprehensive benchmark claimed.
+- Scalar evaluability does not certify classification/contract validity. Placeholder --/Und yields78 but is not a valid named partida.
+- No software-caused quantity pending remains in audited MBM/mapping; no universal-model guarantee.
+- Manual CSV acceptance and baseline canvas lint debt remain.
 
 ## Next milestone
 
-Review 3K.1 and close manual CSV evidence. Do not initiate another phase automatically.
+Review 3K.2 and obtain model-data corrections/acceptance evidence. Do not begin another phase or close 5D automatically.
 
 ## Last checkpoint
 
-Commit: documentation carrier; resolve with git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-05-fase-3k1.md.
-Checkpoint document: [2026-10-05-fase-3k1.md](../checkpoints/bim-core/2026-10-05-fase-3k1.md)
+Commit: functional 9c24abaaacf857aead81b568eca627d5f66fab40; documentation carrier: git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-05-fase-3k2.md.
+Checkpoint document: [2026-10-05-fase-3k2.md](../checkpoints/bim-core/2026-10-05-fase-3k2.md)
