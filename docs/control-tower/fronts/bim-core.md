@@ -2,12 +2,12 @@
 
 Updated: 2026-10-05 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: 28d996a820bfb6866bc38982006372f89d3e211c
-HEAD: commit portador de este documento; obtener con `git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md`. HEAD previo verificado: 28d996a820bfb6866bc38982006372f89d3e211c.
+Base: b0f92f5081a5c59cd7fd497f0f20296e8abdbb7a
+HEAD: functional code 74dc5aed932ec17c5a2c9367751ec6f851781fc3; documentation carrier resolved with git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md.
 
 ## Current phase
 
-3K — reconciliación de piezas exportadas del mismo elemento de autoría. Implementación y validación aislada completas; no desplegada ni reindexada en producción.
+3K.1 — authoring-v2 deployed locally; one controlled canonical MBM reindex published and validated. Closed; no next phase started.
 
 ## Status
 
@@ -15,63 +15,66 @@ COMPLETE
 
 ## Completed
 
-- Auditoría READ-ONLY del MBM OCI publicado: 11362 entidades, 10953 AE; 200 IDs personalizados asociados a varios AE. Siete splits corroborados (40 entidades → 7 AE); 193 grupos con identidades nativas distintas conservados. Evidencia completa de los 200 grupos en fixture 3K.
-- Resolver authoring-v2: método corroborated_export_split con evidencia nativa conjunta, nunca cantidad ni ID aislados. Caso 1020025: piezas #173301/#173302 → export-split:173301; representante explícito, root IFC ausente.
-- Persistencia/API/árbol/Schedule aceptan composición sin root nativo. Ninguna geometría fusionada. La política stored-authoring-replicas@1 conserva igualdad exacta, membresía completa y rechazo de conflictos; adaptación limitada a reconocer la nueva identidad y representante.
-- IFC real SHA-256 6f991deefc1b895555992219490f877930db38fe968efac6e64a350787c01cdd procesado en PostgreSQL temporal: 10920 AE / 11362 members. 0.2.1.8 = 1255.662 m2 en 5D y Schedule; 0.2.1.3 = 1842.105 m3 sin cambio.
-- 3J preservado: ghost por origen, inspección individual, árbol/collapse, Schedule independiente de Partida, paginación SQL y columnas configurables.
+- Verified initial branch/HEAD and clean tracked tree. Old BFF was authoring-v1; rebuilt and restarted only BFF/frontend. Final frontend BUILD_ID d0lcWB6NSTr3MbqAiNf2e.
+- Inspected canonical DDL before applying migrations twice successfully. Enabled corroborated_export_split constraint and previously absent QuantityObservation schema; retained existing publication/data.
+- Verified exact 46104979 IFC bytes: sha256:6f991deefc1b895555992219490f877930db38fe968efac6e64a350787c01cdd.
+- Exactly one real reindex of /AR3173/100021-JYS01-000-ZZZ-MBM-OCI-E3-000100.ifc. Generation 634cf258-d6e7-47aa-b4d6-edeb7d0b46cb published; job ready, error null, 46/46 batches, 11362 entities, 212375 properties, 191481 observations, 10920 AE. Old generation remained visible while building, then superseded.
+- Seven export splits: 40 IFC entities -> 7 AE. 1020025 = export-split:173301, two members/geometries, Metrado 116.076 m2 once. 0.2.1.8 = 1255.662 m2 (previously 1371.738). 0.2.1.3 unchanged: 7 AE, 112 graphics, 1842.105 m3.
+- Live Schedule single row, logical tree with two members, individual member inspection and ghost sequences verified. Viewport click restores opacity.
+- Demonstrated missing rootless Inspector header in deployed 3K; minimal fix in separate commit 74dc5ae. Shows logical key/authoring ID/representative/member count separately from native IFC member. No ghost/resolver/quantity behavior changes.
 
 ## In progress
 
-None dentro de 3K. Pendiente operativo: despliegue y reindexación controlada, con autorización futura.
+None. Awaiting review; no further phase authorized.
 
 ## Blocked
 
-Evidencia manual heredada de 3J: el navegador integrado vuelve a agotar waitForEvent(download); no se obtuvo archivo CSV real para inspección. Requiere archivo descargado accesible o validación manual del usuario. No bloquea la corrección 3K ni sus pruebas independientes.
+Manual CSV evidence only: browser download event timed out after 20s for 386 filtered logical rows with Datos_Partida.Metrado active. Requires an accessible downloaded CSV/user manual verification. Does not block the completed deployment gates; no export implementation change.
 
 ## Decisions
 
-- Sin IfcRelAggregates/IfcRelNests no se inventa root. representativeLocalId vive en evidencia JSON; los dos miembros son piezas de composición lógica.
-- Corroboración exige Tag=ID, contenedor, Name base y sufijos consecutivos, misma clase/tipo/placement relativo/spatial containment, GlobalIds y Representations distintos, geometría presente, ausencia de composición/fallback previa.
-- La regla es conservadora y acotada a exportaciones Floor/IfcSlab/FLOOR; ausencia o contradicción conserva identidades separadas. Identidad persistente sigue acotada por project/model/revision.
-- QTO sólo corroboración QA; cantidades originales preservadas. 0.2.1.7 mantiene total null por tres fallbacks previos; no presentar subtotal como total válido.
+- Preserve IFC entity identity; export split has no native root. Representative is not a fabricated root. Native quantities retained, consolidation remains stored-authoring-replicas@1.
+- No reindex retry; one canonical publication only. No new algorithms, endpoint contracts or schema definitions in this phase.
+- 0.2.1.7 remains ambiguous/null; resolved subtotal 7499.866 m2 is not a contractual total.
 
 ## Dependencies
 
-- CONTROL TOWER/usuario: revisar checkpoint y autorizar despliegue/reindexación posteriores. No push/merge.
-- Operación/DB: aplicar constraint authoring aditivo antes del nuevo resolver. Producción observada carece de cde_bim_quantity_observations; revisar estado de migraciones ya existentes antes de cualquier despliegue/reindexado. No se modificó producción.
-- Validación manual CSV 3J pendiente de acceso al archivo; Documents, Platform y SmartView sin responsabilidades nuevas.
+- CONTROL TOWER/user review before further phases/integration; no push/merge performed.
+- Manual CSV inspection requires browser download access. Documents, Platform and SmartView receive no new responsibilities.
+- Local DB uses existing canonical migrations; schema gate satisfied. No external DB operation pending for this local deployment.
 
 ## Contracts / API changes
 
-Método adicional corroborated_export_split; representativeLocalId opcional en resolve/tree, rootLocalId puede faltar/null para composición sin root nativo. Sin endpoints nuevos. Semántica original IFC preservada.
+None new in 3K.1. Existing v2 corroborated_export_split and representativeLocalId contracts now run on canonical local data.
 
 ## Database changes
 
-Sólo constraint de métodos permitidos de cde_bim_authoring_elements; evidencia/representante en JSON existente. Sin columnas/tablas nuevas ni cambio Quantity Provenance/publicación. Migración probada sólo en PostgreSQL temporal.
+Applied existing db:migrate twice: authoring method constraint updated; cde_bim_quantity_observations and its canonical indexes/schema installed. Generation schema already existed. No ad-hoc SQL writes, destructive resets or backfill; issue source_id backfill candidate count was zero. Single authorized MBM generation replacement; old data retained.
 
 ## Tests / Evidence
 
-- IFC real: 11362 entidades, 212375 propiedades, 191481 observaciones persistidas. APIs resolve/tree devuelven un AE y ambas geometrías.
-- Suite BIM con PostgreSQL temporal vacío: 268 PASS, 0 fail, 1 skip condicionado OCI. Caso real + regresiones split: 25 PASS, 0 fail/skipped (23 se solapan con suite BIM).
-- Frontend selección/tree-render/Schedule: 62 PASS; contexto/opacidad/graphics/polling: 25 PASS; export final: 8 PASS; Node24 tree/context/materials/CSV: 12 PASS; visibility: 25 PASS.
-- CSV del componente: 7100 filas desde páginas 1/20/70; filtros activos con 237/4784 filas; ninguna dependencia de página actual. No equivale a inspección del download real.
-- BFF/frontend typecheck y build PASS; lint dirigido PASS; diff checks PASS al cierre.
-- Suite BFF global: 299 PASS / 2 fallos administrativos 403≠200, reproducidos sin cambios 3K en imagen anterior (29/31 PASS). Un intento secuencial con toda la BD OCI excedió timeout 60s de generación; repetición en BD vacía pasó sin aumentar timeout ni cambiar tests.
+- Real DB/API/Schedule + split tests: 25 PASS, 0 failures/skips (bim-oci-3k.integration.test.ts + bim-authoring-export-split.test.ts, BIM_OCI_3K_CONTEXT_READY=1).
+- Frontend Inspector/Schedule + logical selection: 54 PASS, 0 failures/skips. New SSR test covers rootless identity and preserves clicked member; existing Roof/Slab test passes.
+- Node24 context/visibility tests: 31 PASS, 0 failures/skips. Initial direct Node20 attempt could not load .ts (three loader failures); rerun with host Node24.21.0 passed without source changes.
+- Frontend typecheck PASS; directed lint 0 errors, one pre-existing unused extractContainment warning. BFF/frontend Docker builds PASS; frontend rebuilt/deployed again for Inspector fix.
+- Runtime visual checks: A5 -> A4 -> A3 -> A5; 1020025 -> 965198 -> 1020025; ghost stable; viewport click ghost OFF. Corrected Inspector verified live.
+- Reindex publication duration 283.731s. Post-publication Schedule measurements: .3 734ms, .7 1134ms, .8 849ms (individual samples, not benchmark).
+- Detailed immutable operational evidence: checkpoint linked below. Diff and staged diff checks PASS before documentation commit.
 
 ## Risks
 
-- Producción todavía contiene 10953 AE y 1371.738 m2 para 0.2.1.8 hasta reindexación controlada.
-- Convención de exportación específica; no regla universal por Tag/ID, cantidades o tolerancia. Sin matching entre revisiones.
-- Tres fallbacks en 0.2.1.7 y Zona TERCERA ETAPA vs partida ETAPA 2 en 1020025 son datos existentes, no corregidos.
-- Web-IFC emite avisos de triangulación en otras piezas del IFC real; pipeline completó. La inferencia exige geometría presente y no intenta reparar el IFC.
-- CSV real pendiente; fallos de seguridad baseline ajenos al frente.
+- CSV actual downloaded file remains unverified; earlier Blob/export tests are not manual evidence.
+- Three existing .7 fallbacks (385943/386762/387948) remain uncorroborated. 1020025 Zona TERCERA ETAPA vs partida ETAPA 2 unchanged.
+- Web-IFC triangulation/invalid-line warnings and unavailable mock Nextcloud metadata endpoint occurred; exact IFC bytes verified and publication succeeded.
+- 191481 observations include 191478 member-linked plus three IfcProject #32 observations intentionally without authoring membership. Zero member authoring-key mismatches.
+- Job started_at is historical due to reuse; duration measured from current generation creation to publication.
+- Split inference remains conservative, export-specific and revision-scoped; no matching across revisions.
 
 ## Next milestone
 
-Revisión de 3K, autorización operativa para migración/despliegue/reindexación controlada y cierre manual CSV 3J. No iniciar otra fase automáticamente.
+Review 3K.1 and close manual CSV evidence. Do not initiate another phase automatically.
 
 ## Last checkpoint
 
-Commit: commit que introduce 2026-10-05-fase-3k.md; obtener con `git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-05-fase-3k.md`.
-Checkpoint document: [2026-10-05-fase-3k.md](../checkpoints/bim-core/2026-10-05-fase-3k.md)
+Commit: documentation carrier; resolve with git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-05-fase-3k1.md.
+Checkpoint document: [2026-10-05-fase-3k1.md](../checkpoints/bim-core/2026-10-05-fase-3k1.md)
