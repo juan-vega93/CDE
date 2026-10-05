@@ -5,7 +5,7 @@ import path from "path";
 import { toCanonicalBimModelKey } from "./bim-model-identity";
 import { prepareBimIfcInput, type BimProcessingContext } from "./bim-revision-identity";
 import { resolveAuthoringElements, type AuthoringEntityFact } from "./bim-authoring-resolver";
-import { readAuthoringGeometry, readAuthoringRelations } from "./bim-authoring-extraction";
+import { readAuthoringGeometry, readAuthoringRelations, readAuthoringExportStructure } from "./bim-authoring-extraction";
 import { replaceAuthoringElementIndex } from "../db/bim-authoring-store";
 import { extractIfcQuantityObservations } from "./bim-quantity-extraction";
 import {
@@ -750,7 +750,7 @@ export async function indexPreparedBimProperties(
     if (finalJob?.status === "cancelled") throw new BimIndexingCancelledError();
     if (finalJob && finalJob.status !== "processing") throw new Error(`El job BIM dejó de estar activo (estado: ${finalJob.status}).`);
     if (timeoutMs !== undefined && Date.now() - startedAt >= timeoutMs) throw new BimIndexingTimeoutError(timeoutMs);
-    const authoringIndex = resolveAuthoringElements({ context, entities: authoringEntities, relations: authoringRelations });
+    const authoringIndex = resolveAuthoringElements({ context, entities: readAuthoringExportStructure(ifcApi, openedModelId, authoringEntities), relations: authoringRelations });
     const quantities = extractIfcQuantityObservations(ifcApi, openedModelId, context, authoringIndex);
     await replaceAuthoringElementIndex(authoringIndex);
     await replaceGenerationQuantityObservations(generationId, context, quantities.quantityObservations);

@@ -5,7 +5,7 @@ export type LogicalTreeNode = {
   memberInspection?: boolean; logicalKey?: string;
 };
 export type TreeComposition = {
-  identityKey: string; rootLocalId: number; name: string; ifcClass: string;
+  identityKey: string; rootLocalId?: number | null; representativeLocalId?:number|null; name: string; ifcClass: string;
   authoringElementId: string | null; memberLocalIds: number[]; graphicalLocalIds: number[];
 };
 
@@ -23,7 +23,7 @@ export function projectLogicalTree(nodes: LogicalTreeNode[], compositions: TreeC
       emitted.add(c.identityKey);
       return [{id:`authoring:${c.identityKey}`,name:`${c.name || c.ifcClass} — ID ${c.authoringElementId ?? c.rootLocalId} · ${c.memberLocalIds.length} miembros / ${c.graphicalLocalIds.length} geometrías`,
         type:c.ifcClass,depth,
-        localId:c.rootLocalId,logicalKey:c.identityKey,aggregateLocalIds:c.graphicalLocalIds,
+        localId:c.rootLocalId ?? c.representativeLocalId ?? undefined,logicalKey:c.identityKey,aggregateLocalIds:c.graphicalLocalIds,
         children:c.memberLocalIds.filter(id=>id!==c.rootLocalId).map(id=>({
           id:`authoring:${c.identityKey}:member:${id}`,name:original.get(id)?.name ?? `Miembro IFC #${id}`,
           type:original.get(id)?.type ?? 'IFC member',depth:depth+1,localId:id,memberInspection:true,children:[]

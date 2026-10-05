@@ -1568,7 +1568,9 @@ async function read_getBimCost5DAggregation(
   // Same repeatable-read snapshot as the quantity query. No inferred revision for legacy rows.
   const sources = await getBimReadDatabase().query<ReplicaSource>(`
     select ${BIM_MODEL_KEY_ALIAS_SQL} as model_key, scope.project_code, scope.canonical_model_key,
-      g.revision_id, a.element_key, a.resolution_method, a.root_local_id, array_agg(am.local_id order by am.local_id) as member_ids,
+      g.revision_id, a.element_key, a.resolution_method, a.root_local_id,
+      (a.composition_evidence->'exportSplit'->>'representativeLocalId')::int representative_local_id,
+      array_agg(am.local_id order by am.local_id) as member_ids,
       coalesce(array_agg(am.local_id order by am.local_id) filter (where am.geometry_status='present'), '{}') as graphical_ids
     from cde_bim_visible_models models
     join cde_bim_index_generations g on g.id=cde_bim_published_generation(models.project_code,models.document_path)

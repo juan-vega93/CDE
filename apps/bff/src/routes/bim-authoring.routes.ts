@@ -19,15 +19,16 @@ router.get("/tree", async (req, res) => {
     if(toCanonicalBimModelKey(modelKey)!==modelKey) return res.status(400).json({success:false,message:'Noncanonical model key'});
     const context={projectCode:normalizeProjectCode(projectCode),modelKey,revisionId};
     const data=await withBimPublishedRead(async()=> (await getBimReadDatabase().query(`
-      select a.element_key "identityKey",a.root_local_id "rootLocalId",e.name,
+      select a.element_key "identityKey",a.root_local_id "rootLocalId",
+        (a.composition_evidence->'exportSplit'->>'representativeLocalId')::int "representativeLocalId",e.name,
         e.ifc_class "ifcClass",a.authoring_element_id "authoringElementId",
         array_agg(m.local_id order by m.local_id) "memberLocalIds",
         coalesce(array_agg(m.local_id order by m.local_id) filter(where m.geometry_status='present'),'{}') "graphicalLocalIds"
       from cde_bim_authoring_contexts c
       join cde_bim_index_generations g on g.id=cde_bim_published_generation(c.project_code,c.model_key) and g.revision_id=c.revision_id
-      join cde_bim_authoring_elements a on a.context_id=c.id and a.resolution_method='corroborated_aggregate'
+      join cde_bim_authoring_elements a on a.context_id=c.id and a.resolution_method in ('corroborated_aggregate','corroborated_export_split')
       join cde_bim_authoring_members m on m.authoring_element_id=a.id
-      join cde_bim_elements e on e.generation_id=g.id and e.local_id=a.root_local_id
+      join cde_bim_elements e on e.generation_id=g.id and e.local_id=coalesce(a.root_local_id,(a.composition_evidence->'exportSplit'->>'representativeLocalId')::int)
       where c.project_code=$1 and c.model_key=$2 and c.revision_id=$3
       group by a.id,e.id order by a.element_key`,[context.projectCode,modelKey,revisionId])).rows);
     return res.json({success:true,context,data});
@@ -61,13 +62,13 @@ router.get("/resolve", async (req, res) => {
     const element = await resolveAuthoringElementByLocalId(context, localId);
     // Same not-found contract as existing BIM element resolution, including missing context.
     if (!element) return res.status(404).json({ success: false, message: "Elemento BIM no encontrado" });
-    const { identityKey, resolutionMethod, rootLocalId, authoringElementId,
+    const { identityKey, resolutionMethod, rootLocalId, representativeLocalId, authoringElementId,
       identityConfidence, resolutionStatus, sourceContainer } = element;
     const present = new Set(element.graphicalLocalIds);
     const unknown = new Set(element.geometryUnknownLocalIds);
     return res.json({ success: true, data: {
       context,
-      authoringElement: { identityKey, resolutionMethod, rootLocalId, authoringElementId,
+      authoringElement: { identityKey, resolutionMethod, rootLocalId, representativeLocalId, authoringElementId,
         identityConfidence, resolutionStatus, sourceContainer },
       members: element.memberLocalIds.map((id) => ({ localId: id,
         geometryStatus: present.has(id) ? "present" : unknown.has(id) ? "unknown" : "absent" }))

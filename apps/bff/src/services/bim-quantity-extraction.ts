@@ -40,7 +40,7 @@ export function extractIfcQuantityObservations(api: WEBIFC.IfcAPI, modelId: numb
   const enrichment = new Map<number, NonNullable<QuantityObservation["authoring"]>>();
   for (const element of authoring.elements) for (const localId of element.memberLocalIds) {
     enrichment.set(localId, { identityKey: element.identityKey,
-      role: element.resolutionMethod === "corroborated_aggregate" ? (element.rootLocalId === localId ? "root" : "child") : "standalone" });
+      role: element.resolutionMethod === "corroborated_aggregate" ? (element.rootLocalId === localId ? "root" : "child") : element.resolutionMethod === "corroborated_export_split" ? "child" : "standalone" });
   }
   const quantityObservations: QuantityObservation[] = [];
   const quantityExtractionDiagnostics: QuantityExtractionDiagnostic[] = [];

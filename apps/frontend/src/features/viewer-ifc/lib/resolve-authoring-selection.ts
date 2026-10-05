@@ -6,8 +6,9 @@ export type AuthoringSelection = {
   authoringElement: {
     identityKey: string;
     rootLocalId?: number;
+    representativeLocalId?:number;
     authoringElementId?: string;
-    resolutionMethod: "corroborated_aggregate" | "standalone" | "singleton_fallback";
+    resolutionMethod: "corroborated_aggregate" | "corroborated_export_split" | "standalone" | "singleton_fallback";
     identityConfidence: "high" | "unknown";
     resolutionStatus: "resolved" | "fallback";
     sourceContainer?: string;

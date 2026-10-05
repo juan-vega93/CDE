@@ -19,6 +19,12 @@ export async function replaceAuthoringElementIndex(resolution: AuthoringResoluti
     const graphical = new Set(element.graphicalLocalIds);
     const unknown = new Set(element.geometryUnknownLocalIds);
     const members = new Set(element.memberLocalIds);
+    if (element.resolutionMethod === "corroborated_export_split" &&
+      (element.rootLocalId !== undefined || element.representativeLocalId === undefined ||
+        !members.has(element.representativeLocalId) ||
+        element.compositionEvidence.exportSplit?.representativeLocalId !== element.representativeLocalId)) {
+      throw new Error("Inconsistent export split representative");
+    }
     if (!members.size || (element.rootLocalId !== undefined && !members.has(element.rootLocalId)) ||
       [...graphical, ...unknown].some((id) => !members.has(id)) ||
       [...graphical].some((id) => unknown.has(id))) throw new Error("Inconsistent resolver membership");
@@ -93,6 +99,7 @@ export async function resolveAuthoringElementByLocalId(
   return {
     identityKey: row.element_key,
     ...(row.root_local_id === null ? {} : { rootLocalId: row.root_local_id }),
+    ...(row.composition_evidence.exportSplit ? { representativeLocalId: row.composition_evidence.exportSplit.representativeLocalId } : {}),
     memberLocalIds: row.member_ids, graphicalLocalIds: row.graphical_ids,
     geometryUnknownLocalIds: row.unknown_ids,
     authoringElementId: row.authoring_element_id ?? undefined,

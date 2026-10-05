@@ -23,3 +23,12 @@ test('large composition appears once even when multiple spatial members are pres
   const tree=projectLogicalTree([{...spatial[0],children:ids.map(localId=>({...slab,localId}))}],[c]);
   assert.equal(tree[0].children.length,1);assert.equal(tree[0].children[0].children.length,72);
 });
+
+test('real rootless export split appears once and both graphical members remain inspectable',()=>{
+  const c={...roof,identityKey:'export-split:173301',rootLocalId:null,representativeLocalId:173301,authoringElementId:'1020025',memberLocalIds:[173301,173302],graphicalLocalIds:[173301,173302]};
+  const tree=projectLogicalTree([{...spatial[0],children:c.memberLocalIds.map(localId=>({...slab,localId}))}],[c]);
+  assert.equal(tree[0].children.length,1);const logical=tree[0].children[0];
+  assert.equal(logical.localId,173301);assert.deepEqual(logical.aggregateLocalIds,[173301,173302]);
+  assert.deepEqual(logical.children.map(n=>[n.localId,n.memberInspection]),[[173301,true],[173302,true]]);
+  assert.deepEqual(treeSelectionPath(tree,new Set([173302]),true),['level','authoring:export-split:173301']);
+});

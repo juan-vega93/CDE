@@ -41,6 +41,7 @@ const base=`with scope as materialized (
   join cde_bim_authoring_contexts c on c.project_code=scope.project_code and c.model_key=scope.model_key and c.revision_id=scope.revision_id
   join cde_bim_authoring_elements a on a.context_id=c.id
   join cde_bim_elements e on e.generation_id=scope.generation_id and e.local_id=coalesce(a.root_local_id,
+    (a.composition_evidence->'exportSplit'->>'representativeLocalId')::int,
     (select min(m.local_id) from cde_bim_authoring_members m where m.authoring_element_id=a.id having count(*)=1))
   cross join metadata_map p
 ), filtered as (

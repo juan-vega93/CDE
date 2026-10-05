@@ -2,80 +2,76 @@
 
 Updated: 2026-10-05 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: c4eb1b5701cefd2a8c5e23a0e0cca2afd729bc30
-HEAD: commit que contiene este estado; resolver con `git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md`. HEAD comprobado antes del checkpoint: 33d0bb92e112aad7dd092c3bb0920ce4aaec3ad5.
+Base: 28d996a820bfb6866bc38982006372f89d3e211c
+HEAD: commit portador de este documento; obtener con `git log -1 --format=%H -- docs/control-tower/fronts/bim-core.md`. HEAD previo verificado: 28d996a820bfb6866bc38982006372f89d3e211c.
 
 ## Current phase
 
-3J — estabilidad de presentación, árbol lógico y Schedule BIM paginado.
+3K — reconciliación de piezas exportadas del mismo elemento de autoría. Implementación y validación aislada completas; no desplegada ni reindexada en producción.
 
 ## Status
 
-READY FOR CHECKPOINT
+COMPLETE
 
 ## Completed
 
-- Ghost derivado de intención, selección gráfica vigente y visibilidad canónica. Escrituras de materiales serializadas; invalidación explícita de los IDs afectados por Highlighter, sin reset global ni showAll.
-- Adaptador de opacidad reutiliza definiciones de Fragments y conserva colores originales y estilos activos; evita el agotamiento de IDs Uint16 causado por setOpacity/resetOpacity con preserveOriginalMaterial.
-- Árbol espacial proyectado con AuthoringElement root/members; selección lógica sincronizada, reveal visual al cambiar selección, inspección individual del child y preferencias de collapse prioritarias. Una lectura batch por revisión; DOM de members sólo al expandir y properties bajo demanda.
-- Metrados es Schedule independiente de Partida: columnas del catálogo, filtros modelo/clase lógica/nivel/sector/tipo/partida/búsqueda/sin partida; una fila por AE. Conflictos visibles. Checkbox raw retirado de UI normal; backend diagnóstico conservado.
-- COUNT + página SQL estable y snapshot de publicación. JS recibe sólo la página; no recalcula Partidas/catálogo por cambio de página. CSV utiliza configuración idéntica y rechaza publicaciones mezcladas.
-- Runtime frontend reconstruido/desplegado: BUILD_ID `6ggt3mdDkfWhwhyWUZD3K`; imagen `sha256:85f3f3af71042b44398ea27767169afbd81d1b9fd1d856c0eb1df5f82e861594`. Hashes de canvas, Schedule y adaptador coinciden con workspace. BFF también reconstruido/desplegado.
+- Auditoría READ-ONLY del MBM OCI publicado: 11362 entidades, 10953 AE; 200 IDs personalizados asociados a varios AE. Siete splits corroborados (40 entidades → 7 AE); 193 grupos con identidades nativas distintas conservados. Evidencia completa de los 200 grupos en fixture 3K.
+- Resolver authoring-v2: método corroborated_export_split con evidencia nativa conjunta, nunca cantidad ni ID aislados. Caso 1020025: piezas #173301/#173302 → export-split:173301; representante explícito, root IFC ausente.
+- Persistencia/API/árbol/Schedule aceptan composición sin root nativo. Ninguna geometría fusionada. La política stored-authoring-replicas@1 conserva igualdad exacta, membresía completa y rechazo de conflictos; adaptación limitada a reconocer la nueva identidad y representante.
+- IFC real SHA-256 6f991deefc1b895555992219490f877930db38fe968efac6e64a350787c01cdd procesado en PostgreSQL temporal: 10920 AE / 11362 members. 0.2.1.8 = 1255.662 m2 en 5D y Schedule; 0.2.1.3 = 1842.105 m3 sin cambio.
+- 3J preservado: ghost por origen, inspección individual, árbol/collapse, Schedule independiente de Partida, paginación SQL y columnas configurables.
 
 ## In progress
 
-Cierre de evidencia de descarga CSV real: botón termina sin error, pero el navegador integrado no entrega evento/archivo descargado a la automatización. Contrato y generación Blob sí verificados en tests del componente real. No declarar descarga inspeccionada.
+None dentro de 3K. Pendiente operativo: despliegue y reindexación controlada, con autorización futura.
 
 ## Blocked
 
-Validación del archivo CSV descargado: falta acceso al artefacto entregado por el navegador o confirmación manual del usuario. No bloquea la implementación ni las pruebas independientes.
+Evidencia manual heredada de 3J: el navegador integrado vuelve a agotar waitForEvent(download); no se obtuvo archivo CSV real para inspección. Requiere archivo descargado accesible o validación manual del usuario. No bloquea la corrección 3K ni sus pruebas independientes.
 
 ## Decisions
 
-- Mantener `stored-authoring-replicas@1` y 1842.105; Schedule muestra propiedades, no introduce una suma alternativa de cantidades.
-- API legacy logical-metering permanece para compatibilidad/auditoría, con su coste anterior; la UI normal utiliza Schedule paginado. No duplicar la policy contractual en SQL.
-- Clases de composición provienen del root; standalone usa su entidad. QTO avanzado requiere source/set/quantity/type/role explícitos y queda diferido.
-- Context por selección sigue opt-in de 5D/Schedule. Viewport/árbol: highlight-only; contexto manual separado.
+- Sin IfcRelAggregates/IfcRelNests no se inventa root. representativeLocalId vive en evidencia JSON; los dos miembros son piezas de composición lógica.
+- Corroboración exige Tag=ID, contenedor, Name base y sufijos consecutivos, misma clase/tipo/placement relativo/spatial containment, GlobalIds y Representations distintos, geometría presente, ausencia de composición/fallback previa.
+- La regla es conservadora y acotada a exportaciones Floor/IfcSlab/FLOOR; ausencia o contradicción conserva identidades separadas. Identidad persistente sigue acotada por project/model/revision.
+- QTO sólo corroboración QA; cantidades originales preservadas. 0.2.1.7 mantiene total null por tres fallbacks previos; no presentar subtotal como total válido.
 
 ## Dependencies
 
-- CONTROL TOWER/usuario: revisión del checkpoint y comprobación del CSV descargado. Sin push/merge.
-- Documents/operación: dependencia previa de entrada requireFrag frente a entorno mock; validado IFC directo existente. No se alteró Documents.
-- Fragments instalado: integración depende de semántica de materiales 3.4, protegida con prueba de compatibilidad del allocator real.
+- CONTROL TOWER/usuario: revisar checkpoint y autorizar despliegue/reindexación posteriores. No push/merge.
+- Operación/DB: aplicar constraint authoring aditivo antes del nuevo resolver. Producción observada carece de cde_bim_quantity_observations; revisar estado de migraciones ya existentes antes de cualquier despliegue/reindexado. No se modificó producción.
+- Validación manual CSV 3J pendiente de acceso al archivo; Documents, Platform y SmartView sin responsabilidades nuevas.
 
 ## Contracts / API changes
 
-- GET `/api/bim-index/authoring/tree?projectCode&modelKey&revisionId`: composiciones de revisión publicada, root y arrays de members/graphical IDs en batch.
-- POST `/api/bim-index/schedule/rows`: columnas stored_parameter, filtros, offset/limit; total, publication, filas con contexto canónico y celdas resolved/multiple/ambiguous/missing. Máximo 24 columnas y 500 filas/página.
-- Configuración Schedule serializable version 1; sin persistencia de plantillas. Sin cambios a APIs existentes.
+Método adicional corroborated_export_split; representativeLocalId opcional en resolve/tree, rootLocalId puede faltar/null para composición sin root nativo. Sin endpoints nuevos. Semántica original IFC preservada.
 
 ## Database changes
 
-None en schema/producción. Sólo lecturas de generación publicada. Sin reindex/backfill/migración. Pruebas PostgreSQL ejecutadas en contenedor temporal aislado.
+Sólo constraint de métodos permitidos de cde_bim_authoring_elements; evidencia/representante en JSON existente. Sin columnas/tablas nuevas ni cambio Quantity Provenance/publicación. Migración probada sólo en PostgreSQL temporal.
 
 ## Tests / Evidence
 
-- BFF typecheck/build PASS; `tsx --test --test-concurrency=1 src/db/bim-*.test.ts src/services/bim-*.test.ts src/routes/bim-authoring.routes.integration.test.ts`: 245 PASS, 0 fail/skipped, PostgreSQL real aislado.
-- Frontend typecheck/build PASS. Selección/Inspector/cost/árbol-render/Schedule/CSV/opacidad/contexto BIM/graphics/polling: 82 PASS, 0 fail/skipped. Node24: context/materials/tree/CSV 11 PASS. `npm run test:visibility -w frontend`: 25 PASS.
-- Fixture 7100 AE: páginas 1/30/70, dos consultas/página, 100 filas llegan a JS; conflictos, sin partida, columnas dinámicas y aislamiento generacional verificados.
-- OCI navegador: A5→A4→A3→A5 con ghost; viewport retira ghost; SmartView→Schedule; Roof 2161482 seleccionado/revelado, collapse persiste, child #389463 muestra IfcSlab. Schedule total 10953, Sin Partida 8560, IfcRoof sin Partida 5. Navegación mantiene filas durante carga.
-- Latencia backend anterior 9427/10582/10679 ms; Schedule 1081/904/778/764 ms, offsets 0/100/2900/6900. SQL 1059/902/776/762 ms; payload 84186/80383/82673/77706 bytes con una columna Metrado. Detalle en checkpoint.
-- Navegador páginas 2/3: HTTP+parse 782.6/786.7 ms; respuesta→commit React 4.2/8.6 ms (no CPU render aislado).
-- Lint BFF y nuevos módulos limpios. Canvas conserva 7 errores/13 warnings previos (baseline 8/13). Diff checks PASS.
+- IFC real: 11362 entidades, 212375 propiedades, 191481 observaciones persistidas. APIs resolve/tree devuelven un AE y ambas geometrías.
+- Suite BIM con PostgreSQL temporal vacío: 268 PASS, 0 fail, 1 skip condicionado OCI. Caso real + regresiones split: 25 PASS, 0 fail/skipped (23 se solapan con suite BIM).
+- Frontend selección/tree-render/Schedule: 62 PASS; contexto/opacidad/graphics/polling: 25 PASS; export final: 8 PASS; Node24 tree/context/materials/CSV: 12 PASS; visibility: 25 PASS.
+- CSV del componente: 7100 filas desde páginas 1/20/70; filtros activos con 237/4784 filas; ninguna dependencia de página actual. No equivale a inspección del download real.
+- BFF/frontend typecheck y build PASS; lint dirigido PASS; diff checks PASS al cierre.
+- Suite BFF global: 299 PASS / 2 fallos administrativos 403≠200, reproducidos sin cambios 3K en imagen anterior (29/31 PASS). Un intento secuencial con toda la BD OCI excedió timeout 60s de generación; repetición en BD vacía pasó sin aumentar timeout ni cambiar tests.
 
 ## Risks
 
-- CSV descargado pendiente de inspección manual; tests verifican misma semántica y columnas/filtros.
-- COUNT/filtros todavía examinan metadatos del scope en PostgreSQL; SQL paginado no significa O(page) de lectura física. Exportación acumula filas en navegador.
-- Tree conserva límites de la jerarquía espacial existente. Members se descargan en batch de IDs; sólo DOM/properties son lazy. Estado de configuración Schedule no persistente.
-- QTO avanzado, plantillas guardadas y filtro de clase lógica en otros módulos diferidos; sin cambios SmartView semánticos.
-- Deuda lint preexistente y revisión necesaria del adaptador al actualizar Fragments.
+- Producción todavía contiene 10953 AE y 1371.738 m2 para 0.2.1.8 hasta reindexación controlada.
+- Convención de exportación específica; no regla universal por Tag/ID, cantidades o tolerancia. Sin matching entre revisiones.
+- Tres fallbacks en 0.2.1.7 y Zona TERCERA ETAPA vs partida ETAPA 2 en 1020025 son datos existentes, no corregidos.
+- Web-IFC emite avisos de triangulación en otras piezas del IFC real; pipeline completó. La inferencia exige geometría presente y no intenta reparar el IFC.
+- CSV real pendiente; fallos de seguridad baseline ajenos al frente.
 
 ## Next milestone
 
-Revisión humana del checkpoint 3J y verificación del CSV descargado. No iniciar otra fase automáticamente.
+Revisión de 3K, autorización operativa para migración/despliegue/reindexación controlada y cierre manual CSV 3J. No iniciar otra fase automáticamente.
 
 ## Last checkpoint
 
-Commit: commit que introduce `2026-10-05-fase-3j.md`; obtener con `git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-05-fase-3j.md`.
-Checkpoint document: [2026-10-05-fase-3j.md](../checkpoints/bim-core/2026-10-05-fase-3j.md)
+Commit: commit que introduce 2026-10-05-fase-3k.md; obtener con `git log -1 --format=%H -- docs/control-tower/checkpoints/bim-core/2026-10-05-fase-3k.md`.
+Checkpoint document: [2026-10-05-fase-3k.md](../checkpoints/bim-core/2026-10-05-fase-3k.md)

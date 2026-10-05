@@ -1,3 +1,4 @@
+import { reconcileExportSplits, type ExportStructure } from './bim-authoring-export-split';
 /** Pure, revision-scoped resolution. No quantities or runtime model identities. */
 export type AuthoringModelContext = Readonly<{
   projectCode: string;
@@ -15,6 +16,7 @@ export type AuthoringEntityFact = Readonly<{
   sourceContainer?: string;
   hasRepresentation?: boolean;
   geometryStatus: "present" | "absent" | "unknown";
+  exportStructure?: ExportStructure;
   /** Optional assertion at extraction boundaries; otherwise the enclosing context applies. */
   context?: AuthoringModelContext;
 }>;
@@ -47,6 +49,7 @@ export type AuthoringResolutionIssue =
   | "conflicting_source_container";
 
 export type AuthoringCompositionEvidence = Readonly<{
+  exportSplit?: Readonly<{ representativeLocalId: number; members: readonly Readonly<{localId:number;structure:ExportStructure}>[] }>;
   relations: readonly Readonly<{
     relationLocalId: number;
     relationType: string;
@@ -69,12 +72,14 @@ export type AuthoringElementResolution = Readonly<{
   /** Only unique together with AuthoringResolution.context. */
   identityKey: string;
   rootLocalId?: number;
+  /** Export anchor for rootless compositions; never an asserted IFC root. */
+  representativeLocalId?: number;
   memberLocalIds: readonly number[];
   graphicalLocalIds: readonly number[];
   geometryUnknownLocalIds: readonly number[];
   authoringElementId?: string;
   sourceContainer?: string;
-  resolutionMethod: "corroborated_aggregate" | "standalone" | "singleton_fallback";
+  resolutionMethod: "corroborated_aggregate" | "corroborated_export_split" | "standalone" | "singleton_fallback";
   /** Confidence in common authorship, not in the existence of an IFC entity. */
   identityConfidence: "high" | "unknown";
   resolutionStatus: "resolved" | "fallback";
@@ -83,7 +88,7 @@ export type AuthoringElementResolution = Readonly<{
 
 export type AuthoringResolution = Readonly<{
   context: AuthoringModelContext;
-  resolverVersion: "authoring-v1";
+  resolverVersion: "authoring-v2";
   elements: readonly AuthoringElementResolution[];
   identityKeyByLocalId: Readonly<Record<number, string>>;
   /** Includes malformed relations with no existing entity to attach a fallback to. */
@@ -270,10 +275,11 @@ export function resolveAuthoringElements(input: Readonly<{
     resolveComponent(sortedIds(component), [...indices].sort((a, b) => a - b));
   }
   for (const index of orphanRelationIndices) resolveComponent([], [index]);
-  elements.sort((a, b) => a.memberLocalIds[0] - b.memberLocalIds[0]);
+  const reconciled = reconcileExportSplits(elements, entities);
+  reconciled.sort((a, b) => a.memberLocalIds[0] - b.memberLocalIds[0]);
   const identityKeyByLocalId: Record<number, string> = {};
-  for (const element of elements) {
+  for (const element of reconciled) {
     for (const id of element.memberLocalIds) identityKeyByLocalId[id] = element.identityKey;
   }
-  return { context, resolverVersion: "authoring-v1", elements, identityKeyByLocalId, diagnostics };
+  return { context, resolverVersion: "authoring-v2", elements: reconciled, identityKeyByLocalId, diagnostics };
 }

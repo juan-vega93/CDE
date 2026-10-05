@@ -62,3 +62,31 @@ test('actual CSV action uses table configuration across bounded pages and reject
     else {assert.equal(h.downloads.length,1);const csv=await h.downloads[0].text();assert.match(csv,/Custom.X/);assert.match(csv,/17.45/);assert.equal(csv.split('\r\n').length,3);}
   }
 });
+
+for(const page of [1,20,70])test(`page ${page}: row selection retains logical identity, export starts at zero and includes ALL filtered rows`,async()=>{
+  const h=harness();h.render();const total=7100;
+  const row=n=>({key:`logical-${n}`,identityKey:`entity:${n+1}`,context:{projectCode:'P',modelKey:'/M.ifc',revisionId:'sha256:r'},memberLocalIds:[n+1],graphicalLocalIds:[n+1],representativeLocalId:n+1,modelName:'M',name:`Element ${n}`,partida:null,cells:{}});
+  h.reply(0,[row(0)],total);await tick();let tree=h.render();
+  for(let p=1;p<page;p++){h.find(tree,n=>n.type==='button'&&n.props.children==='Siguiente').props.onClick();tree=h.render();h.reply(h.requests.length-1,[row(p*100)],total);await tick();tree=h.render();}
+  const table=h.find(tree,n=>n.type?.name==='ScheduleTable');table.props.onSelect(table.props.rows[0]);
+  assert.equal(h.selected().identityKey,`entity:${(page-1)*100+1}`);assert.deepEqual(h.selected().graphicalLocalIds,[(page-1)*100+1]);
+  const first=h.requests.length;h.find(tree,n=>n.type==='button'&&n.props.children==='Exportar CSV').props.onClick();
+  assert.equal(h.requests[first].body.offset,0);
+  for(let offset=0;offset<total;offset+=500){const index=h.requests.length-1;assert.equal(h.requests[index].body.offset,offset);h.reply(index,Array.from({length:Math.min(500,total-offset)},(_,i)=>row(offset+i)),total);await tick();}
+  assert.equal(h.downloads.length,1);const csv=await h.downloads[0].text();assert.equal(csv.split('\r\n').length,total+1);
+  assert.equal(new Set(csv.split('\r\n').slice(1)).size,total);
+});
+
+for(const total of [237,4784])test(`filtered CSV includes ${total} rows from page two with active search`,async()=>{
+  const h=harness();let tree=h.render();
+  h.find(tree,n=>n.props?.['aria-label']==='Buscar Metrados').props.onChange({target:{value:'Floor'}});tree=h.render();
+  const row=i=>({key:`ae-${i}`,name:`Floor ${i}`,modelName:'M',cells:{}});
+  h.reply(h.requests.length-1,[row(0)],total);await tick();tree=h.render();
+  h.find(tree,n=>n.type==='button'&&n.props.children==='Siguiente').props.onClick();tree=h.render();
+  h.reply(h.requests.length-1,[row(100)],total);await tick();tree=h.render();
+  h.find(tree,n=>n.type==='button'&&n.props.children==='Exportar CSV').props.onClick();
+  for(let offset=0;offset<total;offset+=500){const index=h.requests.length-1;assert.equal(h.requests[index].body.offset,offset);
+    assert.deepEqual(h.requests[index].body.filters,{search:'Floor'});
+    h.reply(index,Array.from({length:Math.min(500,total-offset)},(_,i)=>row(offset+i)),total);await tick();}
+  assert.equal((await h.downloads[0].text()).split('\r\n').length,total+1);
+});

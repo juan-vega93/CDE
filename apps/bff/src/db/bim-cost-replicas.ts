@@ -2,7 +2,7 @@ import type { CostSelection, CostSelectionSource } from "./bim-cost-selection";
 
 export const STORED_REPLICA_POLICY = "stored-authoring-replicas@1" as const;
 export type CostObservation = { localId: number; value: number | null; candidates: number };
-export type ReplicaSource = CostSelectionSource & { resolution_method: string; root_local_id: number | null };
+export type ReplicaSource = CostSelectionSource & { resolution_method: string; root_local_id: number | null; representative_local_id?:number|null };
 export type LogicalCostRow = {
   key: string; context: CostSelection["groups"][number]["context"];
   identityKey: string; representativeLocalId: number | null;
@@ -33,13 +33,14 @@ export function createStoredReplicaConsolidator(sources: ReplicaSource[]) {
       const context = { projectCode: source.project_code, modelKey: source.canonical_model_key, revisionId: source.revision_id };
       const ids = new Set(entries.map(e => e.localId));
       let reason: string | null = null;
-      if (!["standalone", "corroborated_aggregate"].includes(source.resolution_method)) reason = "uncorroborated_composition";
+      if (!["standalone", "corroborated_aggregate", "corroborated_export_split"].includes(source.resolution_method)) reason = "uncorroborated_composition";
       else if (entries.length !== source.member_ids.length || ids.size !== entries.length || source.member_ids.some(id => !ids.has(id))) reason = "incomplete_or_split_classification";
       else if (!unit.trim() || ["-", "sin valor", "null", "undefined"].includes(unit.trim().toLowerCase())) reason = "missing_unit";
       else if (entries.some(e => e.candidates !== 1 || e.value === null || !Number.isFinite(e.value))) reason = "missing_or_multiple_observations";
       else if (entries.some(e => e.value !== entries[0].value)) reason = "conflicting_values";
-      const representative = source.root_local_id ?? (source.member_ids.length === 1 ? source.member_ids[0] : null);
+      const representative = source.root_local_id ?? (source.resolution_method === 'corroborated_export_split' ? source.representative_local_id ?? null : source.member_ids.length === 1 ? source.member_ids[0] : null);
       if (!reason && representative === null) reason = "missing_root";
+      if (!reason && !source.member_ids.includes(representative!)) reason = "missing_representative";
       return { key: JSON.stringify([context, source.element_key]), context, identityKey: source.element_key,
         representativeLocalId: representative, memberLocalIds: source.member_ids, graphicalLocalIds: source.graphical_ids,
         quantity: reason ? null : entries[0].value, status: reason ? "ambiguous" : "resolved", reason,

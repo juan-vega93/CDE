@@ -426,3 +426,10 @@ test('real Highlighter material resets: A → B → C → A → same row, SmartV
   await h.selection.selectMember('A',2,'context');assert.ok(p.dim.B.has(10));
   await h.selection.clearSelection();assert.equal(p.dim.A.size+p.dim.B.size,0);assert.equal(h.visibilityWrites(),0);
 });
+
+for(const clicked of [173301,173302])test(`real export split pick ${clicked} resolves both graphics without fabricating a root`,async()=>{
+  const h=harness(async context=>({...response(context,[member(173301),member(173302)]),authoringElement:{identityKey:'export-split:173301',representativeLocalId:173301,resolutionMethod:'corroborated_export_split',resolutionStatus:'resolved',identityConfidence:'high'}}));
+  await h.click('A',clicked);await settle();assert.deepEqual(h.map(),{A:[173301,173302]});
+  assert.deepEqual(h.primary(),{A:[clicked]});assert.equal(h.selection.getLogicalSelection().authoringElement.rootLocalId,undefined);
+  assert.equal(h.visibilityWrites(),0);
+});

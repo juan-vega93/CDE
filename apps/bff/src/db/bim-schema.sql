@@ -18,7 +18,7 @@ create table if not exists cde_bim_authoring_elements (
   context_id uuid not null references cde_bim_authoring_contexts(id) on delete cascade,
   element_key text collate "C" not null,
   root_local_id integer check (root_local_id > 0),
-  resolution_method text not null check (resolution_method in ('corroborated_aggregate', 'standalone', 'singleton_fallback')),
+  resolution_method text not null check (resolution_method in ('corroborated_aggregate', 'corroborated_export_split', 'standalone', 'singleton_fallback')),
   identity_confidence text not null check (identity_confidence in ('high', 'unknown')),
   resolution_status text not null check (resolution_status in ('resolved', 'fallback')),
   authoring_element_id text,
@@ -28,6 +28,11 @@ create table if not exists cde_bim_authoring_elements (
   unique (context_id, element_key),
   unique (context_id, id)
 );
+
+-- Additive authoring method; root_local_id remains NULL for rootless export splits.
+alter table cde_bim_authoring_elements drop constraint if exists cde_bim_authoring_elements_resolution_method_check;
+alter table cde_bim_authoring_elements add constraint cde_bim_authoring_elements_resolution_method_check
+  check (resolution_method in ('corroborated_aggregate', 'corroborated_export_split', 'standalone', 'singleton_fallback'));
 
 create table if not exists cde_bim_authoring_members (
   context_id uuid not null,
