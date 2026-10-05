@@ -387,6 +387,15 @@ function downloadPropertiesCsv(
 }
 
 export function IfcSelectedPropertiesPanel(props: IfcSelectedPropertiesPanelProps) {
+  const exportMember = props.items.find(item => item.__inspectorRole === 'export-member');
+  if (exportMember) return <div>
+    <div className="bg-zinc-900 p-3 text-sm text-zinc-100"><strong>AuthoringElement · sin root IFC</strong>
+      <p>{String(exportMember.__authoringKey)} · ID autoría: {String(exportMember.__authoringId ?? '-')}</p>
+      <p>Representante: #{String(exportMember.__representativeLocalId)} · {String(exportMember.__memberCount)} miembros</p>
+    </div>
+    <div className="border-t border-zinc-700 p-3 text-sm text-zinc-100">Miembro inspeccionado · pieza IFC</div>
+    <IfcEntityPropertiesPanel {...props} />
+  </div>;
   const root = props.items.find(item => item.__inspectorRole === 'root');
   if (!root) return <IfcEntityPropertiesPanel {...props} />;
   const child = props.items.find(item => item.__inspectorRole === 'child');

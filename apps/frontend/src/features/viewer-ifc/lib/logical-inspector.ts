@@ -9,6 +9,13 @@ export function logicalInspectorMap(primary: ModelIdMap, logical?: AuthoringSele
     [model, new Set(root === undefined ? ids : [root, ...ids])]));
 }
 export function labelInspectorItems(items: Record<string, unknown>[], logical?: AuthoringSelection) {
+  if (logical?.authoringElement.resolutionMethod === 'corroborated_export_split') {
+    return items.map(item => ({...item, __inspectorRole:'export-member',
+      __authoringKey:logical.authoringElement.identityKey,
+      __authoringId:logical.authoringElement.authoringElementId,
+      __representativeLocalId:logical.authoringElement.representativeLocalId,
+      __memberCount:logical.members.length}));
+  }
   if (logical?.authoringElement.resolutionMethod !== 'corroborated_aggregate') return items;
   return items.map(item => {
     const id = item._localId as number | {value?:number} | undefined;

@@ -32,3 +32,14 @@ test('actual Inspector renders logical Roof first and preserves clicked Slab ide
   const html=renderToStaticMarkup(React.createElement(inspector.IfcSelectedPropertiesPanel,{items,containmentData:[],associationsData:[],containmentLoading:false,associationsLoading:false,onLoadContainment(){},onLoadAssociations(){}}));
   assert.ok(html.includes('Elemento lógico'));assert.ok(html.includes('Miembro clicado'));assert.ok(html.indexOf('IfcRoof')<html.indexOf('IfcSlab'));assert.ok(html.includes(items[0]._guid));assert.ok(html.includes(items[1]._guid));
 });
+
+test('rootless export split Inspector labels logical identity separately without inventing a root',()=>{
+  const labels=load('./logical-inspector.ts');
+  const original={_category:'IfcSlab',_localId:173302,_guid:'1YVXWKFlZYgXPnT7XWywcn'};
+  const logical={authoringElement:{identityKey:'export-split:173301',authoringElementId:'1020025',representativeLocalId:173301,resolutionMethod:'corroborated_export_split'},members:[{localId:173301},{localId:173302}]};
+  const items=labels.labelInspectorItems([original],logical);
+  assert.equal(items[0].__inspectorRole,'export-member');assert.equal(original.__inspectorRole,undefined);
+  const html=renderToStaticMarkup(React.createElement(inspector.IfcSelectedPropertiesPanel,{items,containmentData:[],associationsData:[],containmentLoading:false,associationsLoading:false,onLoadContainment(){},onLoadAssociations(){}}));
+  for(const text of ['AuthoringElement · sin root IFC','export-split:173301','1020025','Representante: #173301','2 miembros','Miembro inspeccionado',original._guid,'173302'])assert.ok(html.includes(text),text);
+  assert.equal(items.some(item=>item.__inspectorRole==='root'),false);
+});
