@@ -6,6 +6,7 @@ import { BimSchedulePanel } from "./bim-schedule-panel";
 import { type LogicalCostDetail, type LogicalCostGroup } from "../lib/logical-cost-rows";
 import { resolveCostAuthoringSelection, getCostSelectionModelMap, type CostAuthoringSelection } from "../lib/cost-authoring-selection";
 import { createParameterGraphicsResolver } from "../lib/parameter-graphics";
+import { loadGraphicalRepresentation } from "../lib/load-graphical-representation";
 import { pollBimIndex } from "../lib/bim-index-polling";
 import { useSession } from "next-auth/react";
 import type { BcfTopic } from "@/features/viewer-ifc/types/bcf-topic";
@@ -5370,6 +5371,7 @@ function BimIndexStatusCard({
 
 function ParameterAnalysisPanel({
   models,
+  resolveGraphics,
   projectCode,
   propertyIndex,
   propertyCatalog,
@@ -5387,6 +5389,7 @@ function ParameterAnalysisPanel({
   onClear
 }: {
   models: FederatedModelEntry[];
+  resolveGraphics: ReturnType<typeof createParameterGraphicsResolver>;
   projectCode?: string;
   propertyIndex: SmartViewPropertyIndex;
   propertyCatalog: SmartViewPropertyCatalog | null;
@@ -5506,7 +5509,6 @@ function ParameterAnalysisPanel({
     [models, projectCode, propertyIndex, propertySet, propertyName, shouldBuildLocalBuckets]
   );
   const buckets = databaseAnalysis?.buckets ?? localBuckets;
-  const resolveGraphics = useMemo(() => createParameterGraphicsResolver(models), [models]);
   const [graphicalState, setGraphicalState] = useState<{ buckets: ParameterValueBucket[]; counts: Record<string, number> } | null>(null);
   const graphicalCounts = graphicalState?.buckets === buckets ? graphicalState.counts : {};
   useEffect(() => {
@@ -7914,7 +7916,7 @@ export function IfcViewerCanvas({
   const [bimIndexOverviewLoading, setBimIndexOverviewLoading] = useState(false);
   const catalogRequestRef = useRef(0);
   const overviewRequestRef = useRef(0);
-  const resolveParameterGraphics = useMemo(() => createParameterGraphicsResolver(models), [models]);
+  const resolveParameterGraphics = useMemo(() => createParameterGraphicsResolver(models, loadGraphicalRepresentation), [models]);
   const [smartViewPropertyIndexSignature, setSmartViewPropertyIndexSignature] =
     useState("");
   const [openProjectProjectId, setOpenProjectProjectId] = useState<string>("");
@@ -10297,7 +10299,8 @@ export function IfcViewerCanvas({
     setStatus("Aplicando SmartView...");
 
     try {
-      const modelIdMap = await getSmartViewModelIdMap(criteria);
+      const semanticMap = await getSmartViewModelIdMap(criteria);
+      const modelIdMap = await resolveParameterGraphics(semanticMap);
       if (!isRenderOperationCurrent(token)) return;
       const matchCount = Object.values(modelIdMap).reduce(
         (total, ids) => total + ids.size,
@@ -10436,32 +10439,6 @@ export function IfcViewerCanvas({
     return expanded;
   }
 
-  function takeExclusiveModelIdMap(
-    modelIdMap: OBC.ModelIdMap,
-    seenKeys: Set<string>
-  ) {
-    const exclusive: OBC.ModelIdMap = {};
-
-    for (const [modelId, ids] of Object.entries(modelIdMap)) {
-      const exclusiveIds = new Set<number>();
-
-      for (const localId of ids) {
-        const key = `${modelId}:${localId}`;
-        if (seenKeys.has(key)) continue;
-
-        seenKeys.add(key);
-        exclusiveIds.add(localId);
-      }
-
-      if (exclusiveIds.size > 0) {
-        exclusive[modelId] = exclusiveIds;
-      }
-    }
-
-    return exclusive;
-  }
-
-
   function beginRenderOperation() {
     renderOperationTokenRef.current += 1;
     return renderOperationTokenRef.current;
@@ -10534,34 +10511,20 @@ export function IfcViewerCanvas({
       await modules.visibility.reconcile();
 
       const coloredMap: OBC.ModelIdMap = {};
-      const seenKeys = new Set<string>();
-      let overlapCount = 0;
       const renderBuckets: ParameterValueBucket[] = [];
 
       const orderedBuckets = [...buckets].sort((a, b) => {
-        if (a.value === "Sin valor") return 1;
-        if (b.value === "Sin valor") return -1;
+        if (a.value === "Sin valor") return -1;
+        if (b.value === "Sin valor") return 1;
         return b.count - a.count || a.value.localeCompare(b.value);
       });
 
       for (const bucket of orderedBuckets) {
         const renderModelIdMap = await resolveParameterGraphics(bucket.modelIdMap);
-        const exclusiveModelIdMap = takeExclusiveModelIdMap(
-          renderModelIdMap,
-          seenKeys
-        );
-
-        for (const [modelId, ids] of Object.entries(renderModelIdMap)) {
-          for (const localId of ids) {
-            const key = `${modelId}:${localId}`;
-            if (!exclusiveModelIdMap[modelId]?.has(localId)) overlapCount += 1;
-          }
-        }
-
-        mergeModelIdMap(coloredMap, exclusiveModelIdMap);
+        mergeModelIdMap(coloredMap, renderModelIdMap);
         renderBuckets.push({
           ...bucket,
-          modelIdMap: exclusiveModelIdMap
+          modelIdMap: renderModelIdMap
         });
       }
 
@@ -10576,8 +10539,7 @@ export function IfcViewerCanvas({
             renderBuckets.find((item) => item.value === bucket.value)?.modelIdMap ??
               bucket.modelIdMap
           )
-        })),
-        { overlapCount }
+        }))
       );
 
       const completed = await applyChunkedColorSelections(
@@ -14303,6 +14265,7 @@ async function handleIsolateModel(key: string) {
 
           {rightPanelTab === "parameters" && (
             <ParameterAnalysisPanel
+              resolveGraphics={resolveParameterGraphics}
               models={models}
               projectCode={projectCode}
               propertyIndex={smartViewPropertyIndex}

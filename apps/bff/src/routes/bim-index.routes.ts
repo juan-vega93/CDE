@@ -1,5 +1,6 @@
 import { Router, type Response } from "express";
 import bimAuthoringRoutes from "./bim-authoring.routes";
+import bimGraphicalRepresentationRoutes from "./bim-graphical-representation.routes";
 import { getLogicalMeteringRows } from "../db/bim-logical-metering";
 import { getBimSchedule, type ScheduleInput } from "../db/bim-schedule";
 import { indexDocumentBimProperties } from "../services/documents.service";
@@ -33,6 +34,7 @@ import {
 const router = Router();
 // Inherits authenticateRequest and projectBimIndexRoute from the application mount.
 router.use("/authoring", bimAuthoringRoutes);
+router.use("/graphical-representation", bimGraphicalRepresentationRoutes);
 
 const MAX_ELEMENTS_PER_BATCH = 1200;
 const METERING_EXPORT_PAGE_SIZE = 500;
