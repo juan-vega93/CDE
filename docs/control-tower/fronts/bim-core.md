@@ -2,79 +2,76 @@
 
 Updated: 2026-10-06 (America/Lima)
 Branch: feat/bim-frag-pipeline
-Base: 90d8a030ca100f6f88d9ceebf57b040334d5a717 (this phase)
-HEAD: 90d8a030ca100f6f88d9ceebf57b040334d5a717 (pre-commit snapshot; closure is the commit carrying this document)
+Base: 90d8a030ca100f6f88d9ceebf57b040334d5a717 (previous BFF); daa144c059b63694e266d56745deaa320967307e (previous frontend)
+HEAD: 18147b96ada46bfd26dd44bff49a11458c1726e0 (functional release; documentary closure is the commit carrying this update)
 
 ## Current phase
 
-BIM Graphical Representation — Minimal. Local implementation complete; server deployment and visual acceptance require Control Tower gate. No push or deployment performed in this phase.
+Post-deployment closure of release 18147b9. DEPLOYMENT STATUS: ACCEPTED. BFF and frontend use release-18147b9. Server acceptance below is supplied by the user; this documentary closure performs no remote execution or new processing.
 
 ## Status
 
-READY FOR CHECKPOINT
+COMPLETE
 
 ## Completed
 
-- Pure batch semantic-to-graphical resolver: direct geometry first, otherwise persisted IfcRelAggregates; deterministic targets, deduplication, cycle rejection and explicit evidence.
-- Read-only revision-aware endpoint reuses authoring composition evidence and geometry status without changing Authoring membership, corroboration, quantities or Property Index.
-- Parameters and SmartView share the runtime resolver. Color/hide use full resolved target sets, including overlaps; semantic counts and Sin valor remain unchanged.
-- Context-scoped promise cache coalesces bucket requests, limits batches to 2048 IDs and retries failed reads. Runtime geometry intersects returned targets.
-- Local PostgreSQL integration and regression gates completed on a disposable database. Both application builds/typechecks pass. No production data accessed or changed.
+- POST_SWITCH_TECHNICAL_GATE = PASS: exact Docker images, BFF /health HTTP 200, preserved state bind, KEYCLOAK_INTERNAL_URL and PostgreSQL; clean BFF/frontend startup; no migration, reindex or FRAG regeneration (operator evidence).
+- Prior background validation retained: heavy IFC processing outside HTTP thread, /health HTTP 200 throughout processing, BFF responsive, job progressing, no OOM/restarts. Not repeated for this closure.
+- GRAPHICAL_REPRESENTATION_SERVER_GATE = PASS: EST Muro de contencion changed from 107 semantic elements/0 geometries to 107/563. Anclaje remains 163/163. User confirms correct color, hide/show, selection and functional Parameters/SmartView.
+- Graphical resolver remains separate from Authoring: direct geometry first, otherwise persisted IfcRelAggregates; revision-aware batch endpoint and runtime confirmation. Authoring corroboration, singleton_fallback, Quantity Provenance, quantity policies, 5D totals and Metrados semantics unchanged by this release.
+- Operational milestone: IFC, FRAG, federation, selection, measurement, properties, Parameters, SmartViews, AuthoringElement, Quantity Provenance, Metrados, background processing and graphical representation. 5D operational with documented pending/ambiguous cases. This is the scope accepted by the user, not an assertion of universal model correctness.
+- Source 18147b96ada46bfd26dd44bff49a11458c1726e0 pushed and verified against origin/feat/bim-frag-pipeline before closure. The documentary closure commit is not yet pushed.
 
 ## In progress
 
-Control Tower review and subsequent operator-run EST/OCI visual acceptance. No claim of server deployment or full 107-wall/163-anchor reproduction in this phase.
+None in this phase. Further development requires a new planning gate; no Quality work started.
 
 ## Blocked
 
-None for local implementation. Server acceptance depends on Control Tower authorization and operator evidence.
+None.
 
 ## Decisions
 
-- Graphical representation is separate from Authoring identity. Rejected Authoring compositions remain rejected.
-- Only IfcRelAggregates is supported; no class/name/Tag/spatial heuristics and no IfcRelNests.
-- Backend evidence is restricted to the currently published revision; 409 for unavailable/mismatched context. Frontend further confirms runtime membership.
-- No global cache. Resolver cache lasts for the loaded-model resolver instance and is keyed by project/model/revision.
-- 5D visual fallback and unconditional legacy has_geometry correction deferred; neither is needed for this scoped change.
+- Keep feat/bim-frag-pipeline as BIM CORE stabilization branch; no merge, rebase, cherry-pick or new branch.
+- Representation and Authoring identity remain different contracts. No relaxation of Authoring corroboration and no quantity consolidation through graphical delegation.
+- Only IfcRelAggregates delegates graphics; no IfcRelNests, class/name/Tag heuristics. Legacy unverified FRAG contexts retain direct-only resolution.
+- ROLLBACK REQUIRED = NO; REINDEX REQUIRED = NO; FRAG REGEN REQUIRED = NO.
+- Control Tower accepted lint baseline debt: 7 errors/13 warnings before, 7 errors/12 warnings after, new violations 0. LINT_GATE = PASS_WITH_BASELINE_DEBT.
 
 ## Dependencies
 
-- Control Tower and server operator: coordinated BFF/frontend release and manual acceptance. Deploying the new frontend against old BFF would leave the new endpoint unavailable.
-- Existing canonical FRAG/IFC provenance and published authoring context must be available. Legacy FRAGs without verified context retain direct-only rendering.
-- Documents/source storage and authentication remain external runtime dependencies. No Issues/PDF/GIS/Quality/Platform changes.
+- Control Tower: planning gate for subsequent work; Quality is a separate future front, excluded from this closure.
+- Model owner/Revit evidence: future EST Parts audit through Revit -> IFC parent/Parts -> property location -> QuantityObservation -> AuthoringElement -> 5D policy.
+- Existing Documents/source storage, authentication and verified IFC/FRAG provenance remain runtime dependencies. No changes to Issues/PDF/GIS/Platform or other-front responsibilities.
 
 ## Contracts / API changes
 
-POST /api/bim-index/graphical-representation accepts projectCode, canonical modelKey, revisionId and up to 2048 localIds. Returns context, generationId and per-semantic resolution (direct/structural_delegate/unresolved), graphicalLocalIds and relation evidence. Read-only; existing application authentication/project access wrapper applies. Invalid input:400; no matching published context:409.
+Deployed POST /api/bim-index/graphical-representation accepts projectCode, canonical modelKey, revisionId and up to 2048 localIds. Returns context, generationId and direct/structural_delegate/unresolved results with targets and relation evidence. Existing auth/project access applies. No further API changes in this documentary closure.
 
 ## Database changes
 
-None in this phase. Reads existing authoring contexts/members/composition_evidence and published generation elements in one read-only snapshot; three queries per batch. No migration, backfill or reindex.
+None for release 18147b9 or this closure. Existing published generation and authoring composition evidence reused. PostgreSQL preserved; no migration, reindex, backfill or FRAG regeneration.
 
 ## Tests / Evidence
 
-- BFF: node --import tsx --test --test-concurrency=1 over src/**/bim-*.test.ts from apps/bff with disposable PostgreSQL:304 tests,301 passed,0 failed,3 gated real-OCI skips.
-- Frontend: node --test --test-concurrency=1 over viewer-ifc *.test.mjs:135 passed,0 failed,0 skipped.
-- npm run typecheck -w bff; npm run typecheck -w frontend; npm run build -w bff; npm run build -w frontend:PASS.
-- npm run lint -w bff:PASS. Directed ESLint on the four graphical library/test files:PASS. Canvas:7 pre-existing errors/12 warnings; no new diagnostics compared with HEAD (7 errors/13 warnings).
-- git diff --check:PASS before documentation closure; final staged check recorded with commit delivery.
-- User-provided EST evidence reproduced as tests:125->145,697->710,758->771,819->832,1246->1291; standalone83541 direct. This does not re-run real IFC/FRAG extraction.
-- Local two-entity fixture graphics read:first observed6.631ms,warm5.433ms,return5.467ms. Not a cold-database or server-scale benchmark.
+- Accepted EST: 100021-JYS01-000-ZZZ-IFC-EST-E3-100300.ifc; revision sha256:02bdd48c83ae23f6514c5ec99dde75bfad20b016e1facee1d6a8fa04da892fc0. User-reported manual server results above.
+- Prior IFC+web-ifc+FRAG evidence: 125->145, 697->710, 758->771, 819->832, 1246->1291; semantic IfcWall without Representation/direct mesh, non-graphical FRAG item -> IfcRelAggregates -> graphical IfcBuildingElementPart with Representation, positive StreamMeshes/GetFlatMesh and matching GUID/localId. GRAPHICAL_DELEGATION_GATE = CONFIRMED.
+- Pre-deploy BFF tests: node --import tsx --test --test-concurrency=1 over src/**/bim-*.test.ts with disposable PostgreSQL: 304 total, 301 pass, 0 fail, 3 gated real-OCI skips. Frontend viewer *.test.mjs: 135 pass, 0 fail, 0 skipped.
+- Pre-deploy npm run typecheck -w bff / -w frontend and npm run build -w bff / -w frontend: PASS. BFF lint and directed graphical library/test lint: PASS. Canvas debt explicitly accepted by Control Tower; not corrected.
+- This phase is documentation-only: tests/builds not rerun; git diff --check and git diff --cached --check: PASS before the documentary commit. Historical checkpoints preserved.
 
 ## Risks
 
-- All 107 Muro de contención mappings and 163 Anclaje results still require server confirmation; only supplied five pairs and one direct example are represented by tests.
-- Shared targets may receive colors from multiple semantic buckets; visual color precedence needs manual validation. Hidden policies continue composing through the existing coordinator.
-- Each uncached batch reads model-wide facts/evidence; query count is bounded, row volume scales with model size. EST latency/memory not measured here.
-- A changed publication for the same loaded revision can leave the local resolver cache stale until model/resolver reload. No global invalidation service introduced.
-- Background isolation lifecycle limitations from the previous checkpoint remain deferred; this phase does not alter worker recovery. Historical frontend lint debt remains.
-- Legacy application rollback against migrated schema remains unsafe; do not reuse old BFF as a schema-compatible rollback assumption.
+- EST uses Revit Parts: one/multiple IFC Parts can represent a semantic parent; properties may reside on parent, Part or both. Pending 5D classifications are not yet established CDE bugs. OCI already demonstrated correct 5D behavior when authoring/quantity evidence is sufficient; do not extrapolate totals or completeness across revisions/models.
+- BIM INDEX READ PERFORMANCE / COLD-WARM CACHE ANALYSIS: initial SmartViews/Parameters/5D load may be slow; repeat improvement is an observation, not a sufficient production benchmark. No optimization now.
+- has_geometry remains known debt and must not be treated as authoritative geometry evidence.
+- Previously recorded worker lifecycle and same-revision cache-refresh limitations remain; this acceptance does not claim those were corrected. Legacy pre-migration BFF rollback remains unsafe against current schema.
 
 ## Next milestone
 
-Control Tower release gate, then manual EST Parameters/SmartView color-hide-select/ghost/federation checks and server cold/warm timing. No automatic next phase.
+New Control Tower planning gate. EST Parts/quantity audit and cold-warm read measurements are deferred debts, not implemented work. Quality excluded.
 
 ## Last checkpoint
 
-Commit: the commit carrying this document (parent90d8a030ca100f6f88d9ceebf57b040334d5a717).
-Checkpoint document: [2026-10-06-graphical-representation-minimal.md](../checkpoints/bim-core/2026-10-06-graphical-representation-minimal.md).
+Commit: documentary closure carrying this document; functional source 18147b96ada46bfd26dd44bff49a11458c1726e0.
+Checkpoint document: [2026-10-06-release-18147b9-server-accepted.md](../checkpoints/bim-core/2026-10-06-release-18147b9-server-accepted.md).
