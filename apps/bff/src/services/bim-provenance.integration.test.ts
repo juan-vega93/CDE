@@ -62,8 +62,10 @@ test("exact IFC → real FRAG → persistent authoring → guarded viewer delive
     await t.test("generation persists source digest and indexes the same acquired IFC despite current changing", async (t) => {
       const hash = t.mock.method(crypto, "createHash");
       const result = await generateAndStoreFrag(sourcePath);
-      // One IFC content hash + one FRAG integrity hash + existing metadata-based derivative ID.
-      assert.equal(hash.mock.callCount(), 3);
+      // HTTP thread hashes only the metadata-based derivative ID. IFC revision and
+      // FRAG integrity hashes now run in the worker; validate their results below.
+      assert.equal(hash.mock.callCount(), 1);
+      assert.equal(hash.mock.calls[0].arguments[0], "sha256");
       firstPath = result.fragPath;
       const record = findBimDerivative({ sourcePath, versionKey: "A" })!;
       assert.equal(record.sourceBimRevisionId, revisionA);

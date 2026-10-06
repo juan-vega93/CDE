@@ -602,7 +602,8 @@ export async function indexBimPropertiesFromBuffer(input: IndexBimPropertiesInpu
 /** Internal coordinated pipeline: prepared bytes must remain owned and unchanged by the caller. */
 export async function indexPreparedBimProperties(
   input: Omit<IndexBimPropertiesInput, "ifcBuffer">,
-  prepared: ReturnType<typeof prepareBimIfcInput>
+  prepared: ReturnType<typeof prepareBimIfcInput>,
+  onGenerationCreated?: (generationId: string) => void
 ): Promise<{ modelId: string; elementCount: number; propertyCount: number; context: BimProcessingContext } & ReturnType<typeof extractIfcQuantityObservations>> {
   const { ifcBytes, context } = prepared;
   if (context.projectCode !== input.projectCode || context.modelKey !== toCanonicalBimModelKey(input.documentPath)) {
@@ -634,6 +635,7 @@ export async function indexPreparedBimProperties(
     documentId: input.documentId, documentName: input.documentName,
     sourceVersion: input.sourceVersion, modelKey: input.modelKey
   });
+  onGenerationCreated?.(generationId);
   const ifcApi = new WEBIFC.IfcAPI();
   let openedModelId = -1;
   let elementCount = 0;

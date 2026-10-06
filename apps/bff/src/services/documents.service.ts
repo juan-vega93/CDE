@@ -5,9 +5,8 @@ import type {
 } from "../types/document.types";
 import { mapWorkflowStatusToUiStatus } from "./status-mapping.service";
 import { NextcloudAdapter } from "../adapters/nextcloud.adapter";
-import { generateFragFromBuffer } from "./fragments.service";
-import { indexBimPropertiesFromBuffer, indexPreparedBimProperties } from "./bim-property-indexer.service";
-import { prepareBimIfcInput, type BimProcessingContext } from "./bim-revision-identity";
+import { indexInBackground, prepareFragInBackground } from "./bim-background-processing";
+import type { BimProcessingContext } from "./bim-revision-identity";
 import path from "path";
 import { getWorkPackageLinks } from "./work-package-links.service";
 import type { FolderItem } from "../types/folder.types";
@@ -23,7 +22,6 @@ import {
 import {
   buildBimDerivativeId,
   getDerivativeBimContext,
-  getFragContentSha256,
   deleteBimDerivativesForSource,
   findBimDerivative,
   findBimDerivativeRecord,
@@ -263,16 +261,15 @@ export async function indexDocumentBimProperties(documentPath: string): Promise<
     const sourceHash = getBimIndexSourceHash(identity);
     const modelKey = getBimIndexModelKey(identity);
     const ifcFile = await getDocumentContent(cleanDocumentPath);
-    const result = await indexBimPropertiesFromBuffer({
+    const result = await indexInBackground({
       projectCode: identity.projectCode,
       documentId: identity.fileId ?? undefined,
       documentPath: identity.sourcePath,
       documentName: identity.sourceName,
       sourceVersion: identity.versionId,
       sourceHash,
-      modelKey,
-      ifcBuffer: ifcFile.buffer
-    });
+      modelKey
+    }, { ifcBuffer: ifcFile.buffer });
 
     clearDocumentExplorerCache();
     return {
@@ -1224,10 +1221,8 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<Gener
   const fragPath = identity.fragPath;
   try {
     const ifcFile = await getDocumentContent(documentPath);
-    const prepared = prepareBimIfcInput({ projectCode: identity.projectCode, documentPath: identity.sourcePath, ifcBuffer: ifcFile.buffer });
-    const fragBytes = await generateFragFromBuffer(prepared.ifcBytes);
+    const { prepared, fragBytes, fragContentSha256 } = await prepareFragInBackground({ projectCode: identity.projectCode, documentPath: identity.sourcePath, ifcBuffer: ifcFile.buffer });
     const sourceBimRevisionId = prepared.context.revisionId;
-    const fragContentSha256 = getFragContentSha256(fragBytes);
 
     await ensureDerivedFolderExists(fragPath);
 
@@ -1278,10 +1273,10 @@ async function generateAndStoreFragInternal(documentPath: string): Promise<Gener
       phase: "frag-generated"
     });
 
-    void indexPreparedBimProperties({ projectCode: identity.projectCode, documentPath: identity.sourcePath,
+    void indexInBackground({ projectCode: identity.projectCode, documentPath: identity.sourcePath,
       documentName: identity.sourceName, documentId: identity.fileId ?? undefined,
       modelKey: getBimIndexModelKey(identity), sourceHash: getBimIndexSourceHash(identity), sourceVersion: identity.versionId
-    }, prepared).catch((error) => {
+    }, { prepared }).catch((error) => {
       console.warn("[documents.service] No se pudo indexar propiedades BIM en servidor:", error);
     });
     return { fragPath, bimContext: prepared.context, fragContentSha256 };
